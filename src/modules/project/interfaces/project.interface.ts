@@ -19,7 +19,17 @@ export interface IProject {
   projectType?: IProjectType;
   members?: IProjectMember[];
   erpReference: string | null;
+  customerName: string | null;
+  customerCity: string | null;
+  customerUnit: string | null;
   driveFolderId: string | null;
+  customerFloor: number | null;
+  customerPhone: string | null;
+  customerEmail: string | null;
+  customerAddress: string | null;
+  customerApartment: string | null;
+  customerCompanyNumber: string | null;
+  customerAssociationNumber: string | null;
 }
 
 export interface IProjectFilter {
