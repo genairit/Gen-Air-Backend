@@ -133,15 +133,6 @@ export class Project
   @Column(DataType.STRING(FIELD_LENGTHS.CITY_NAME))
   declare addressCity: string | null;
 
-  @Column(DataType.DOUBLE)
-  declare addressLatitude: number | null;
-
-  @Column(DataType.DOUBLE)
-  declare addressLongitude: number | null;
-
-  @Column(DataType.DATE(3))
-  declare addressVerifiedAt: Date | null;
-
   @Column(DataType.STRING(FIELD_LENGTHS.CONTACT_NAME))
   declare contactName: string | null;
 

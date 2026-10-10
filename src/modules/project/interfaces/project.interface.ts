@@ -23,9 +23,6 @@ export interface IProjectAddress {
   address: string | null;
   addressCity: string | null;
   addressPlaceId: string | null;
-  addressLatitude: number | null;
-  addressVerifiedAt: Date | null;
-  addressLongitude: number | null;
 }
 
 export interface IProjectContact {
