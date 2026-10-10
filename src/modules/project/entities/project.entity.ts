@@ -18,6 +18,11 @@ import {
   TProjectCreationAttributes,
 } from '../interfaces/project.interface';
 
+import {
+  PaymentTermsType,
+  PAYMENT_TERMS_VALUES,
+} from '@Constants/payment-terms.constant';
+
 import { User } from '@Modules/user/entities/user.entity';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
@@ -112,6 +117,12 @@ export class Project
 
   @Column(DataType.STRING(FIELD_LENGTHS.BUILDING_UNIT))
   declare customerUnit: string | null;
+
+  @Column(DataType.ENUM(...PAYMENT_TERMS_VALUES))
+  declare paymentTerms: PaymentTermsType | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.PAYMENT_TERMS_NOTE))
+  declare paymentTermsNote: string | null;
 
   @CreatedAt
   declare createdAt: Date;
