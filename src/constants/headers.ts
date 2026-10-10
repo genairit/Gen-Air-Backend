@@ -1,0 +1,30 @@
+export const HEADERS = {
+  ORIGIN: 'Origin',
+  X_REQUESTED_WITH: 'X-Requested-With',
+  CONTENT_TYPE: 'Content-Type',
+  ACCEPT: 'Accept',
+  AUTHORIZATION: 'Authorization',
+  TOKEN_TYPE: 'Token-Type',
+  AUTOMATION_API_KEY: 'Automation-API-Key',
+  BETWEEN_SERVICES_TOKEN: 'between-services-token',
+  ACCESS_CONTROL_ALLOW_ORIGIN: 'Access-Control-Allow-Origin',
+  ACCESS_CONTROL_ALLOW_CREDENTIALS: 'Access-Control-Allow-Credentials',
+  ACCESS_CONTROL_ALLOW_HEADERS: 'Access-Control-Allow-Headers',
+  IDENTITY_TOKEN: 'identity-token',
+  VARY: 'Vary',
+  X_HTTP_STATUS: 'x-http-status',
+  X_SCHEMA_FILENAME: 'x-schema-filename',
+} as const;
+
+export const ALLOWED_HEADERS = [
+  HEADERS.ORIGIN,
+  HEADERS.X_REQUESTED_WITH,
+  HEADERS.CONTENT_TYPE,
+  HEADERS.ACCEPT,
+  HEADERS.AUTHORIZATION,
+  HEADERS.TOKEN_TYPE,
+  HEADERS.AUTOMATION_API_KEY,
+  HEADERS.BETWEEN_SERVICES_TOKEN,
+  HEADERS.ACCESS_CONTROL_ALLOW_ORIGIN,
+  HEADERS.IDENTITY_TOKEN,
+];
