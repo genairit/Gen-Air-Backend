@@ -83,6 +83,36 @@ export class Project
   @Column(DataType.DATE(3))
   declare erpSyncedAt: Date | null;
 
+  @Column(DataType.STRING(FIELD_LENGTHS.CUSTOMER_NAME))
+  declare customerName: string | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.REGISTRATION_NUMBER))
+  declare customerCompanyNumber: string | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.REGISTRATION_NUMBER))
+  declare customerAssociationNumber: string | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.STREET_ADDRESS))
+  declare customerAddress: string | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.CITY_NAME))
+  declare customerCity: string | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.PHONE))
+  declare customerPhone: string | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.EMAIL))
+  declare customerEmail: string | null;
+
+  @Column(DataType.SMALLINT)
+  declare customerFloor: number | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.APARTMENT))
+  declare customerApartment: string | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.BUILDING_UNIT))
+  declare customerUnit: string | null;
+
   @CreatedAt
   declare createdAt: Date;
 
