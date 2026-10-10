@@ -1,15 +1,24 @@
+import {
+  BadRequestException,
+  InternalServerErrorException,
+} from '@nestjs/common';
+
+import {
+  TProjectUpdateAttributes,
+  TProjectCreationAttributes,
+} from './interfaces/project.interface';
+
 import { Test } from '@nestjs/testing';
 import { ProjectService } from './project.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ProjectRepository } from './project.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
-import { InternalServerErrorException } from '@nestjs/common';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
-import { TProjectCreationAttributes } from './interfaces/project.interface';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
+import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 
@@ -17,6 +26,55 @@ const TRANSACTION = { id: 'transaction' };
 const PROJECT_ID = 'project-1';
 const QUOTE_STAGE_ID = 'stage-quote';
 const ORDER_STAGE_ID = 'stage-order';
+const COMPANY_TYPE_ID = 'type-company';
+const PRIVATE_TYPE_ID = 'type-private';
+
+const PROJECT_TYPES = {
+  [COMPANY_TYPE_ID]: {
+    id: COMPANY_TYPE_ID,
+    detailFieldSet: PROJECT_DETAIL_FIELD_SETS.COMPANY,
+  },
+  [PRIVATE_TYPE_ID]: {
+    id: PRIVATE_TYPE_ID,
+    detailFieldSet: PROJECT_DETAIL_FIELD_SETS.PRIVATE_CLIENT,
+  },
+};
+
+const COMPANY_DETAILS = {
+  customerPhone: '052-4418230',
+  customerName: 'בבלי נדל״ן בע״מ',
+  customerCompanyNumber: '514287937',
+  customerEmail: 'office@babli-re.co.il',
+  customerAddress: 'דרך נמיר 94, תל אביב',
+};
+
+const STORED_COMPANY_PROJECT = {
+  ...COMPANY_DETAILS,
+  id: PROJECT_ID,
+  customerCity: null,
+  customerUnit: null,
+  customerFloor: null,
+  stageId: QUOTE_STAGE_ID,
+  customerApartment: null,
+  projectTypeId: COMPANY_TYPE_ID,
+  customerAssociationNumber: null,
+};
+
+const LEGACY_PROJECT = {
+  id: PROJECT_ID,
+  customerName: null,
+  customerCity: null,
+  customerUnit: null,
+  customerFloor: null,
+  customerPhone: null,
+  customerEmail: null,
+  customerAddress: null,
+  stageId: QUOTE_STAGE_ID,
+  customerApartment: null,
+  customerCompanyNumber: null,
+  projectTypeId: COMPANY_TYPE_ID,
+  customerAssociationNumber: null,
+};
 
 const CREATOR: IUser = {
   id: 'user-1',
@@ -40,11 +98,11 @@ const createService = async () => {
     create: jest
       .fn<Promise<{ id: string }>, [TProjectCreationAttributes, object]>()
       .mockResolvedValue({ id: PROJECT_ID }),
-    update: jest.fn().mockResolvedValue(true),
+    update: jest
+      .fn<Promise<boolean>, [string, TProjectUpdateAttributes, object]>()
+      .mockResolvedValue(true),
     isCodeTaken: jest.fn().mockResolvedValue(false),
-    findById: jest
-      .fn()
-      .mockResolvedValue({ id: PROJECT_ID, stageId: QUOTE_STAGE_ID }),
+    findById: jest.fn().mockResolvedValue(STORED_COMPANY_PROJECT),
   };
   const projectStageService = {
     getById: jest.fn().mockResolvedValue({ id: ORDER_STAGE_ID }),
@@ -55,6 +113,11 @@ const createService = async () => {
     validateAssignments: jest.fn().mockResolvedValue(null),
   };
   const transitionService = { record: jest.fn().mockResolvedValue(null) };
+  const projectTypeService = {
+    getById: jest.fn((id: keyof typeof PROJECT_TYPES) =>
+      Promise.resolve(PROJECT_TYPES[id]),
+    ),
+  };
   const eventEmitter = { emitAsync: jest.fn().mockResolvedValue([]) };
   const transactionService = {
     run: jest.fn((work: (transaction: object) => Promise<unknown>) =>
@@ -71,10 +134,7 @@ const createService = async () => {
       { provide: ProjectMemberService, useValue: projectMemberService },
       { provide: DatabaseTransactionService, useValue: transactionService },
       { provide: ProjectStageTransitionService, useValue: transitionService },
-      {
-        provide: ProjectTypeService,
-        useValue: { getById: jest.fn().mockResolvedValue({ id: 'type-1' }) },
-      },
+      { provide: ProjectTypeService, useValue: projectTypeService },
     ],
   }).compile();
 
@@ -83,14 +143,16 @@ const createService = async () => {
     eventEmitter,
     projectRepository,
     transitionService,
+    projectTypeService,
     projectMemberService,
   };
 };
 
 describe('ProjectService.create', () => {
   const PROJECT = {
+    ...COMPANY_DETAILS,
     name: 'מגדל פארק בבלי C',
-    projectTypeId: 'type-1',
+    projectTypeId: COMPANY_TYPE_ID,
     members: [{ userId: 'user-2', role: USER_ROLES.SECRETARY }],
   };
 
@@ -157,6 +219,46 @@ describe('ProjectService.create', () => {
   });
 });
 
+describe('ProjectService.create customer details', () => {
+  const PROJECT = {
+    ...COMPANY_DETAILS,
+    members: [],
+    name: 'מגדל פארק בבלי C',
+    projectTypeId: COMPANY_TYPE_ID,
+  };
+
+  it('stores the field set of the project type and clears fields that belong to other types', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.create(
+      { ...PROJECT, customerCity: 'חיפה', customerFloor: 3 },
+      CREATOR,
+    );
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(createdAttributes).toMatchObject({
+      ...COMPANY_DETAILS,
+      customerCity: null,
+      customerFloor: null,
+      customerAssociationNumber: null,
+    });
+  });
+
+  it('rejects a project missing a field its type requires, naming the field', async () => {
+    const { service, projectRepository } = await createService();
+
+    await expect(
+      service.create({ ...PROJECT, customerCompanyNumber: null }, CREATOR),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Missing customer details for this project type: customerCompanyNumber',
+      ),
+    );
+    expect(projectRepository.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('ProjectService.move', () => {
   it('updates the stage and records who moved it', async () => {
     const { service, projectRepository, transitionService } =
@@ -201,6 +303,87 @@ describe('ProjectService.update', () => {
 
     expect(projectMemberService.replaceForProject).not.toHaveBeenCalled();
     expect(transitionService.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService.update customer details', () => {
+  const PRIVATE_ONLY_DETAILS = {
+    customerFloor: 7,
+    customerApartment: '24',
+    customerCity: 'תל אביב-יפו',
+  };
+
+  it('keeps legacy projects editable when neither the type nor the details change', async () => {
+    const { service, projectRepository, projectTypeService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(LEGACY_PROJECT);
+
+    await service.update(PROJECT_ID, { name: 'שם חדש' }, CREATOR);
+
+    const [, updatedAttributes] = projectRepository.update.mock.calls[0];
+
+    expect(projectTypeService.getById).not.toHaveBeenCalled();
+    expect(updatedAttributes).toMatchObject({ name: 'שם חדש' });
+    expect(updatedAttributes).not.toHaveProperty('customerName');
+  });
+
+  it('requires the complete field set once a legacy project edits its details', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(LEGACY_PROJECT);
+
+    await expect(
+      service.update(PROJECT_ID, { customerName: 'בבלי' }, CREATOR),
+    ).rejects.toThrow(BadRequestException);
+    expect(projectRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('carries shared fields over a type switch and asks only for the new ones', async () => {
+    const { service, projectRepository } = await createService();
+
+    await expect(
+      service.update(PROJECT_ID, { projectTypeId: PRIVATE_TYPE_ID }, CREATOR),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Missing customer details for this project type: customerCity, customerFloor, customerApartment',
+      ),
+    );
+    expect(projectRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('switches type with the new fields, keeping shared values and clearing the company number', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.update(
+      PROJECT_ID,
+      { ...PRIVATE_ONLY_DETAILS, projectTypeId: PRIVATE_TYPE_ID },
+      CREATOR,
+    );
+
+    expect(projectRepository.update).toHaveBeenCalledWith(
+      PROJECT_ID,
+      expect.objectContaining({
+        ...PRIVATE_ONLY_DETAILS,
+        customerCompanyNumber: null,
+        projectTypeId: PRIVATE_TYPE_ID,
+        customerName: COMPANY_DETAILS.customerName,
+        customerPhone: COMPANY_DETAILS.customerPhone,
+        customerEmail: COMPANY_DETAILS.customerEmail,
+        customerAddress: COMPANY_DETAILS.customerAddress,
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('rejects clearing a required field', async () => {
+    const { service } = await createService();
+
+    await expect(
+      service.update(PROJECT_ID, { customerPhone: null }, CREATOR),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Missing customer details for this project type: customerPhone',
+      ),
+    );
   });
 });
 

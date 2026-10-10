@@ -3,14 +3,24 @@ import {
   Injectable,
   forwardRef,
   NotFoundException,
+  BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
 
 import {
   IProject,
   IProjectStageCounts,
+  IProjectCustomerDetails,
   IProjectStageChangeRequest,
 } from './interfaces/project.interface';
+
+import {
+  pickCustomerDetails,
+  mergeCustomerDetails,
+  hasCustomerDetailChanges,
+  findMissingCustomerDetails,
+  scopeCustomerDetailsToFieldSet,
+} from './utilities/project-customer-details.utility';
 
 import { Transaction } from 'sequelize';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -31,6 +41,7 @@ import { GetProjectCountsByFilterDto } from './dto/get-counts-by-filter.dto';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
+import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { IProjectMemberAssignment } from '@Modules/project-member/interfaces/project-member.interface';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
@@ -102,12 +113,16 @@ export class ProjectService {
   }
 
   async create(project: CreateProjectDto, creator: IUser): Promise<IProject> {
-    const [initialStage] = await Promise.all([
+    const [initialStage, projectType] = await Promise.all([
       this.projectStageService.getInitialStage(),
       this.projectTypeService.getById(project.projectTypeId),
       this.projectMemberService.validateAssignments(project.members),
     ]);
 
+    const customerDetails = this.resolveCustomerDetails(
+      pickCustomerDetails(project),
+      projectType.detailFieldSet,
+    );
     const code = await this.generateAvailableCode(creator);
 
     const createdProject = await this.databaseTransactionService.run(
@@ -115,6 +130,7 @@ export class ProjectService {
         const created = await this.projectRepository.create(
           {
             code,
+            ...customerDetails,
             name: project.name,
             createdById: creator.id,
             stageId: initialStage.id,
@@ -165,11 +181,19 @@ export class ProjectService {
       this.getById(id),
       this.validateChanges(changes),
     ]);
+    const customerDetails = await this.resolveCustomerDetailChanges(
+      project,
+      changes,
+    );
 
     await this.databaseTransactionService.run(async (transaction) => {
       await this.projectRepository.update(
         id,
-        { name: changes.name, projectTypeId: changes.projectTypeId },
+        {
+          ...customerDetails,
+          name: changes.name,
+          projectTypeId: changes.projectTypeId,
+        },
         transaction,
       );
 
@@ -255,9 +279,6 @@ export class ProjectService {
 
   private async validateChanges(changes: UpdateProjectDto): Promise<void> {
     await Promise.all([
-      changes.projectTypeId
-        ? this.projectTypeService.getById(changes.projectTypeId)
-        : null,
       changes.stageId
         ? this.projectStageService.getById(changes.stageId)
         : null,
@@ -265,6 +286,45 @@ export class ProjectService {
         ? this.projectMemberService.validateAssignments(changes.members)
         : null,
     ]);
+  }
+
+  private async resolveCustomerDetailChanges(
+    project: IProject,
+    changes: UpdateProjectDto,
+  ): Promise<IProjectCustomerDetails | null> {
+    const targetTypeId = changes.projectTypeId ?? project.projectTypeId;
+    const isTypeChanging = targetTypeId !== project.projectTypeId;
+
+    if (!isTypeChanging && !hasCustomerDetailChanges(changes)) {
+      return null;
+    }
+
+    const projectType = await this.projectTypeService.getById(targetTypeId);
+    const mergedDetails = mergeCustomerDetails(
+      pickCustomerDetails(project),
+      changes,
+    );
+
+    return this.resolveCustomerDetails(
+      mergedDetails,
+      projectType.detailFieldSet,
+    );
+  }
+
+  private resolveCustomerDetails(
+    details: IProjectCustomerDetails,
+    fieldSet: ProjectDetailFieldSetType,
+  ): IProjectCustomerDetails {
+    const scopedDetails = scopeCustomerDetailsToFieldSet(details, fieldSet);
+    const missingFields = findMissingCustomerDetails(scopedDetails, fieldSet);
+
+    if (missingFields.length > 0) {
+      throw new BadRequestException(
+        `Missing customer details for this project type: ${missingFields.join(', ')}`,
+      );
+    }
+
+    return scopedDetails;
   }
 
   private async replaceMembersWhenProvided(

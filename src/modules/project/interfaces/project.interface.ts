@@ -3,7 +3,22 @@ import { IProjectType } from '@Modules/project-type/interfaces/project-type.inte
 import { IProjectStage } from '@Modules/project-stage/interfaces/project-stage.interface';
 import { IProjectMember } from '@Modules/project-member/interfaces/project-member.interface';
 
-export interface IProject {
+export interface IProjectCustomerDetails {
+  customerName: string | null;
+  customerCity: string | null;
+  customerUnit: string | null;
+  customerFloor: number | null;
+  customerPhone: string | null;
+  customerEmail: string | null;
+  customerAddress: string | null;
+  customerApartment: string | null;
+  customerCompanyNumber: string | null;
+  customerAssociationNumber: string | null;
+}
+
+export type ProjectCustomerDetailFieldType = keyof IProjectCustomerDetails;
+
+export interface IProject extends IProjectCustomerDetails {
   id: string;
   code: string;
   name: string;
@@ -19,17 +34,7 @@ export interface IProject {
   projectType?: IProjectType;
   members?: IProjectMember[];
   erpReference: string | null;
-  customerName: string | null;
-  customerCity: string | null;
-  customerUnit: string | null;
   driveFolderId: string | null;
-  customerFloor: number | null;
-  customerPhone: string | null;
-  customerEmail: string | null;
-  customerAddress: string | null;
-  customerApartment: string | null;
-  customerCompanyNumber: string | null;
-  customerAssociationNumber: string | null;
 }
 
 export interface IProjectFilter {
@@ -39,13 +44,11 @@ export interface IProjectFilter {
   projectTypeId: string | null;
 }
 
-export type TProjectCreationAttributes = Pick<
-  IProject,
-  'code' | 'name' | 'projectTypeId' | 'stageId' | 'createdById'
->;
+export type TProjectCreationAttributes = IProjectCustomerDetails &
+  Pick<IProject, 'code' | 'name' | 'projectTypeId' | 'stageId' | 'createdById'>;
 
 export type TProjectUpdateAttributes = Partial<
-  Pick<IProject, 'name' | 'projectTypeId' | 'stageId'>
+  IProjectCustomerDetails & Pick<IProject, 'name' | 'projectTypeId' | 'stageId'>
 >;
 
 export interface IProjectStageChangeRequest {
