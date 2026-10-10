@@ -1,4 +1,5 @@
 import { IUser } from '@Modules/user/interfaces/user.interface';
+import { PaymentTermsType } from '@Constants/payment-terms.constant';
 import { IProjectType } from '@Modules/project-type/interfaces/project-type.interface';
 import { IProjectStage } from '@Modules/project-stage/interfaces/project-stage.interface';
 import { IProjectMember } from '@Modules/project-member/interfaces/project-member.interface';
@@ -35,6 +36,8 @@ export interface IProject extends IProjectCustomerDetails {
   members?: IProjectMember[];
   erpReference: string | null;
   driveFolderId: string | null;
+  paymentTermsNote: string | null;
+  paymentTerms: PaymentTermsType | null;
 }
 
 export interface IProjectFilter {
