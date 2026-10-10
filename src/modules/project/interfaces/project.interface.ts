@@ -19,7 +19,20 @@ export interface IProjectCustomerDetails {
 
 export type ProjectCustomerDetailFieldType = keyof IProjectCustomerDetails;
 
-export interface IProject extends IProjectCustomerDetails {
+export interface IProjectAddress {
+  address: string | null;
+  addressCity: string | null;
+  addressPlaceId: string | null;
+}
+
+export interface IProjectContact {
+  contactName: string | null;
+  contactRole: string | null;
+  contactPhone: string | null;
+}
+
+export interface IProject
+  extends IProjectCustomerDetails, IProjectAddress, IProjectContact {
   id: string;
   code: string;
   name: string;

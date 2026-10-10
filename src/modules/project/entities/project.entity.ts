@@ -124,6 +124,24 @@ export class Project
   @Column(DataType.STRING(FIELD_LENGTHS.PAYMENT_TERMS_NOTE))
   declare paymentTermsNote: string | null;
 
+  @Column(DataType.STRING(FIELD_LENGTHS.FORMATTED_ADDRESS))
+  declare address: string | null;
+
+  @Column(DataType.TEXT)
+  declare addressPlaceId: string | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.CITY_NAME))
+  declare addressCity: string | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.CONTACT_NAME))
+  declare contactName: string | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.PHONE))
+  declare contactPhone: string | null;
+
+  @Column(DataType.STRING(FIELD_LENGTHS.CONTACT_ROLE))
+  declare contactRole: string | null;
+
   @CreatedAt
   declare createdAt: Date;
 

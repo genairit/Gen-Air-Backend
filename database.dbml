@@ -89,6 +89,12 @@ Table projects {
   customer_unit               varchar(60)  [note: 'Institutional projects: unit or wing']
   payment_terms               payment_terms [note: 'Legal options per project type are a module-layer rule']
   payment_terms_note          varchar(300) [note: 'Free-text terms; only set when payment_terms is other']
+  address                     varchar(255) [note: 'Project site address as formatted by Google Places; set together with address_place_id']
+  address_place_id            text         [note: 'Google Places id; its presence marks the address as verified']
+  address_city                varchar(80)  [note: 'Locality component of the Places result']
+  contact_name                varchar(120) [note: 'Project contact person: full name']
+  contact_phone               varchar(20)  [note: 'Project contact person: Israeli mobile']
+  contact_role                varchar(60)  [note: 'Project contact person: role, e.g. מנהל פרויקט']
   created_at      timestamptz(3)  [not null, default: `now()`]
   updated_at      timestamptz(3)  [not null, default: `now()`]
   deleted_at      timestamptz(3)
