@@ -3,6 +3,12 @@ Project nest_server_infrastructure {
   Note: 'GenAir CRM MVP schema. Keep in sync with the SQL files in migrations/.'
 }
 
+Enum project_detail_field_set {
+  company        [note: 'בנייה רוויה, מסחרי: company name, ח.פ / ת.פ, address, phone, email']
+  private_client [note: 'פרטי, יוקרה: name, address, city, phone, email, floor, apartment']
+  institution    [note: 'מוסד: name, מ״ע, phone, address, email, floor, unit']
+}
+
 Enum user_role {
   system_admin
   secretary
@@ -48,6 +54,7 @@ Table project_types {
   tag         varchar(80)
   icon        varchar(40)
   position    integer      [not null]
+  detail_field_set project_detail_field_set [not null, note: 'Which customer detail fields projects of this type require']
   created_at  timestamptz(3)  [not null, default: `now()`]
   updated_at  timestamptz(3)  [not null, default: `now()`]
 }
