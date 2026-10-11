@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AuthModule } from '@Modules/auth/auth.module';
 import { UserModule } from '@Modules/user/user.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { AddressModule } from '@Modules/address/address.module';
 import { ProjectModule } from '@Modules/project/project.module';
 import { DatabaseModule } from './providers/database/database.module';
 import { ProjectTypeModule } from '@Modules/project-type/project-type.module';
@@ -17,6 +18,7 @@ import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/
   imports: [
     DatabaseModule,
     EventEmitterModule.forRoot(),
+    AddressModule,
     AuthModule,
     DriveTemplateFolderModule,
     ProjectModule,
