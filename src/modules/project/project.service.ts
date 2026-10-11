@@ -10,13 +10,20 @@ import {
 import {
   IProject,
   IProjectStageCounts,
+  IProjectFieldSetTarget,
   IProjectCustomerDetails,
   IProjectStageChangeRequest,
 } from './interfaces/project.interface';
 
 import {
+  hasAddressChanges,
+  hasPaymentTermsChanges,
+} from './utilities/project-intake.utility';
+
+import {
   pickCustomerDetails,
   mergeCustomerDetails,
+  isProjectTypeChanging,
   hasCustomerDetailChanges,
   findMissingCustomerDetails,
   scopeCustomerDetailsToFieldSet,
@@ -29,6 +36,7 @@ import { ProjectRepository } from './project.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { ProjectIntakeService } from './project-intake.service';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toCursorBatch } from '@Utilities/cursor-batch.utility';
 import { IUser } from '@Modules/user/interfaces/user.interface';
@@ -51,6 +59,7 @@ export class ProjectService {
   constructor(
     private readonly eventEmitter: EventEmitter2,
     private readonly projectRepository: ProjectRepository,
+    private readonly projectIntakeService: ProjectIntakeService,
     private readonly projectTypeService: ProjectTypeService,
     private readonly projectMemberService: ProjectMemberService,
     private readonly databaseTransactionService: DatabaseTransactionService,
@@ -123,6 +132,10 @@ export class ProjectService {
       pickCustomerDetails(project),
       projectType.detailFieldSet,
     );
+    const intake = await this.projectIntakeService.resolveForCreate(
+      project,
+      projectType.detailFieldSet,
+    );
     const code = await this.generateAvailableCode(creator);
 
     const createdProject = await this.databaseTransactionService.run(
@@ -130,6 +143,7 @@ export class ProjectService {
         const created = await this.projectRepository.create(
           {
             code,
+            ...intake,
             ...customerDetails,
             name: project.name,
             createdById: creator.id,
@@ -181,15 +195,25 @@ export class ProjectService {
       this.getById(id),
       this.validateChanges(changes),
     ]);
-    const customerDetails = await this.resolveCustomerDetailChanges(
+    const isTypeChanging = isProjectTypeChanging(project, changes);
+    const fieldSet = await this.findTargetFieldSet(project, changes);
+    const customerDetails = this.resolveCustomerDetailChanges(
       project,
       changes,
+      { isTypeChanging, fieldSet },
     );
+    const intake = await this.projectIntakeService.resolveChanges({
+      project,
+      changes,
+      fieldSet,
+      isTypeChanging,
+    });
 
     await this.databaseTransactionService.run(async (transaction) => {
       await this.projectRepository.update(
         id,
         {
+          ...intake,
           ...customerDetails,
           name: changes.name,
           projectTypeId: changes.projectTypeId,
@@ -288,27 +312,45 @@ export class ProjectService {
     ]);
   }
 
-  private async resolveCustomerDetailChanges(
+  private async findTargetFieldSet(
     project: IProject,
     changes: UpdateProjectDto,
-  ): Promise<IProjectCustomerDetails | null> {
-    const targetTypeId = changes.projectTypeId ?? project.projectTypeId;
-    const isTypeChanging = targetTypeId !== project.projectTypeId;
+  ): Promise<ProjectDetailFieldSetType | null> {
+    const needsFieldSet =
+      isProjectTypeChanging(project, changes) ||
+      hasCustomerDetailChanges(changes) ||
+      hasAddressChanges(changes) ||
+      hasPaymentTermsChanges(changes);
 
-    if (!isTypeChanging && !hasCustomerDetailChanges(changes)) {
+    if (!needsFieldSet) {
       return null;
     }
 
-    const projectType = await this.projectTypeService.getById(targetTypeId);
+    const projectType = await this.projectTypeService.getById(
+      changes.projectTypeId ?? project.projectTypeId,
+    );
+
+    return projectType.detailFieldSet;
+  }
+
+  private resolveCustomerDetailChanges(
+    project: IProject,
+    changes: UpdateProjectDto,
+    target: IProjectFieldSetTarget,
+  ): IProjectCustomerDetails | null {
+    const isDetailChanging =
+      target.isTypeChanging || hasCustomerDetailChanges(changes);
+
+    if (!target.fieldSet || !isDetailChanging) {
+      return null;
+    }
+
     const mergedDetails = mergeCustomerDetails(
       pickCustomerDetails(project),
       changes,
     );
 
-    return this.resolveCustomerDetails(
-      mergedDetails,
-      projectType.detailFieldSet,
-    );
+    return this.resolveCustomerDetails(mergedDetails, target.fieldSet);
   }
 
   private resolveCustomerDetails(

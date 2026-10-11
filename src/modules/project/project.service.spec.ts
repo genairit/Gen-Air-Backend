@@ -1,4 +1,5 @@
 import {
+  NotFoundException,
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
@@ -13,7 +14,10 @@ import { ProjectService } from './project.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ProjectRepository } from './project.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
+import { ProjectIntakeService } from './project-intake.service';
 import { IUser } from '@Modules/user/interfaces/user.interface';
+import { AddressService } from '@Modules/address/address.service';
+import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
@@ -48,6 +52,71 @@ const COMPANY_DETAILS = {
   customerAddress: 'דרך נמיר 94, תל אביב',
 };
 
+const TEL_AVIV_PLACE_ID = 'ChIJ-tel-aviv' as const;
+const ROAD_PLACE_ID = 'ChIJ-road-without-city' as const;
+const UNKNOWN_PLACE_ID = 'ChIJ-unknown' as const;
+
+const VERIFIED_ADDRESSES = {
+  [TEL_AVIV_PLACE_ID]: {
+    countryCode: 'IL',
+    city: 'תל אביב-יפו',
+    placeId: TEL_AVIV_PLACE_ID,
+    formattedAddress: 'דרך נמיר 94, תל אביב-יפו',
+  },
+  [ROAD_PLACE_ID]: {
+    city: null,
+    countryCode: 'IL',
+    placeId: ROAD_PLACE_ID,
+    formattedAddress: 'כביש 6, ישראל',
+  },
+};
+
+interface IPlaceLookupFixture {
+  placeId: keyof typeof VERIFIED_ADDRESSES | typeof UNKNOWN_PLACE_ID;
+}
+
+const CONTACT = {
+  contactName: 'דנה לוי',
+  contactPhone: '052-7788990',
+  contactRole: 'מנהלת פרויקט',
+};
+
+const COMPANY_INTAKE = {
+  ...CONTACT,
+  addressPlaceId: TEL_AVIV_PLACE_ID,
+  paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
+};
+
+const STORED_COMPANY_INTAKE = {
+  ...CONTACT,
+  paymentTermsNote: null,
+  addressCity: 'תל אביב-יפו',
+  addressPlaceId: TEL_AVIV_PLACE_ID,
+  address: 'דרך נמיר 94, תל אביב-יפו',
+  paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
+};
+
+const EMPTY_INTAKE = {
+  address: null,
+  addressCity: null,
+  contactName: null,
+  contactRole: null,
+  paymentTerms: null,
+  contactPhone: null,
+  addressPlaceId: null,
+  paymentTermsNote: null,
+};
+
+const PRIVATE_DETAILS = {
+  customerFloor: 7,
+  customerName: 'משפחת לוי',
+  customerApartment: '24',
+  customerCity: 'תל אביב-יפו',
+  customerPhone: '052-4418230',
+  customerEmail: 'levi@example.co.il',
+  customerAddress: 'דרך נמיר 94, תל אביב',
+};
+
 const STORED_COMPANY_PROJECT = {
   ...COMPANY_DETAILS,
   id: PROJECT_ID,
@@ -58,6 +127,12 @@ const STORED_COMPANY_PROJECT = {
   customerApartment: null,
   projectTypeId: COMPANY_TYPE_ID,
   customerAssociationNumber: null,
+  ...EMPTY_INTAKE,
+};
+
+const STORED_INTAKE_PROJECT = {
+  ...STORED_COMPANY_PROJECT,
+  ...STORED_COMPANY_INTAKE,
 };
 
 const LEGACY_PROJECT = {
@@ -74,6 +149,7 @@ const LEGACY_PROJECT = {
   customerCompanyNumber: null,
   projectTypeId: COMPANY_TYPE_ID,
   customerAssociationNumber: null,
+  ...EMPTY_INTAKE,
 };
 
 const CREATOR: IUser = {
@@ -118,6 +194,15 @@ const createService = async () => {
       Promise.resolve(PROJECT_TYPES[id]),
     ),
   };
+  const addressService = {
+    getVerifiedAddress: jest.fn(({ placeId }: IPlaceLookupFixture) => {
+      if (placeId === UNKNOWN_PLACE_ID) {
+        return Promise.reject(new NotFoundException('Place was not found'));
+      }
+
+      return Promise.resolve(VERIFIED_ADDRESSES[placeId]);
+    }),
+  };
   const eventEmitter = { emitAsync: jest.fn().mockResolvedValue([]) };
   const transactionService = {
     run: jest.fn((work: (transaction: object) => Promise<unknown>) =>
@@ -128,6 +213,8 @@ const createService = async () => {
   const moduleRef = await Test.createTestingModule({
     providers: [
       ProjectService,
+      ProjectIntakeService,
+      { provide: AddressService, useValue: addressService },
       { provide: EventEmitter2, useValue: eventEmitter },
       { provide: ProjectRepository, useValue: projectRepository },
       { provide: ProjectStageService, useValue: projectStageService },
@@ -141,6 +228,7 @@ const createService = async () => {
   return {
     service: moduleRef.get(ProjectService),
     eventEmitter,
+    addressService,
     projectRepository,
     transitionService,
     projectTypeService,
@@ -151,6 +239,7 @@ const createService = async () => {
 describe('ProjectService.create', () => {
   const PROJECT = {
     ...COMPANY_DETAILS,
+    ...COMPANY_INTAKE,
     name: 'מגדל פארק בבלי C',
     projectTypeId: COMPANY_TYPE_ID,
     members: [{ userId: 'user-2', role: USER_ROLES.SECRETARY }],
@@ -222,6 +311,7 @@ describe('ProjectService.create', () => {
 describe('ProjectService.create customer details', () => {
   const PROJECT = {
     ...COMPANY_DETAILS,
+    ...COMPANY_INTAKE,
     members: [],
     name: 'מגדל פארק בבלי C',
     projectTypeId: COMPANY_TYPE_ID,
@@ -384,6 +474,366 @@ describe('ProjectService.update customer details', () => {
         'Missing customer details for this project type: customerPhone',
       ),
     );
+  });
+});
+
+describe('ProjectService.create intake fields', () => {
+  const PROJECT = {
+    ...COMPANY_DETAILS,
+    ...COMPANY_INTAKE,
+    members: [],
+    name: 'מגדל פארק בבלי C',
+    projectTypeId: COMPANY_TYPE_ID,
+  };
+
+  const PRIVATE_PROJECT = {
+    ...PRIVATE_DETAILS,
+    ...CONTACT,
+    members: [],
+    name: 'דירת משפחת לוי',
+    projectTypeId: PRIVATE_TYPE_ID,
+    addressPlaceId: TEL_AVIV_PLACE_ID,
+    paymentTerms: PAYMENT_TERMS.INSTALLMENTS_10_60_30,
+  };
+
+  const expectRejection = async (
+    project: Parameters<ProjectService['create']>[0],
+    message: string,
+  ) => {
+    const { service, projectRepository } = await createService();
+
+    await expect(service.create(project, CREATOR)).rejects.toThrow(
+      new BadRequestException(message),
+    );
+    expect(projectRepository.create).not.toHaveBeenCalled();
+  };
+
+  it('stores the address Google verified, the contact person and the payment terms', async () => {
+    const { service, projectRepository, addressService } =
+      await createService();
+
+    await service.create(PROJECT, CREATOR);
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(addressService.getVerifiedAddress).toHaveBeenCalledWith({
+      sessionToken: null,
+      placeId: TEL_AVIV_PLACE_ID,
+    });
+    expect(createdAttributes).toMatchObject(STORED_COMPANY_INTAKE);
+  });
+
+  it('rejects a project without an address', async () => {
+    await expectRejection(
+      { ...PROJECT, addressPlaceId: null },
+      'addressPlaceId is required; pick the address from the suggestions',
+    );
+  });
+
+  it('rejects an address Google cannot verify', async () => {
+    await expectRejection(
+      { ...PROJECT, addressPlaceId: UNKNOWN_PLACE_ID },
+      `Address ${UNKNOWN_PLACE_ID} could not be verified with Google; pick it again from the suggestions`,
+    );
+  });
+
+  it('requires a city in the address of a private project', async () => {
+    await expectRejection(
+      { ...PRIVATE_PROJECT, addressPlaceId: ROAD_PLACE_ID },
+      'This project type needs an address within a city; pick a street address',
+    );
+  });
+
+  it('accepts an address without a city for a company project', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.create(
+      { ...PROJECT, addressPlaceId: ROAD_PLACE_ID },
+      CREATOR,
+    );
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(createdAttributes).toMatchObject({
+      addressCity: null,
+      addressPlaceId: ROAD_PLACE_ID,
+    });
+  });
+
+  it('rejects a project without a complete contact person, naming the missing fields', async () => {
+    await expectRejection(
+      { ...PROJECT, contactPhone: null, contactRole: null },
+      'Missing contact person details: contactRole, contactPhone',
+    );
+  });
+
+  it('rejects a project without payment terms', async () => {
+    await expectRejection(
+      { ...PROJECT, paymentTerms: null },
+      'paymentTerms is required',
+    );
+  });
+
+  it('rejects payment terms that belong to another project type, listing the legal ones', async () => {
+    await expectRejection(
+      { ...PROJECT, paymentTerms: PAYMENT_TERMS.PREPAID },
+      'Payment terms "prepaid" are not available for this project type; choose one of: milestones_net_60, twelve_prepaid_checks, other',
+    );
+  });
+
+  it('accepts the private payment terms on a private project', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.create(PRIVATE_PROJECT, CREATOR);
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(createdAttributes).toMatchObject({
+      paymentTerms: PAYMENT_TERMS.INSTALLMENTS_10_60_30,
+    });
+  });
+
+  it('requires the detail when the payment terms are "other"', async () => {
+    await expectRejection(
+      { ...PROJECT, paymentTerms: PAYMENT_TERMS.OTHER },
+      'paymentTermsNote is required when paymentTerms is "other"',
+    );
+  });
+
+  it('stores the detail of "other" payment terms', async () => {
+    const { service, projectRepository } = await createService();
+    const paymentTermsNote = 'תשלום לפי שלבי ביצוע מאושרים';
+
+    await service.create(
+      { ...PROJECT, paymentTerms: PAYMENT_TERMS.OTHER, paymentTermsNote },
+      CREATOR,
+    );
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(createdAttributes).toMatchObject({
+      paymentTermsNote,
+      paymentTerms: PAYMENT_TERMS.OTHER,
+    });
+  });
+
+  it('clears the detail when a concrete payment option is chosen', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.create(
+      { ...PROJECT, paymentTermsNote: 'פרט שנשאר מהבחירה הקודמת' },
+      CREATOR,
+    );
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(createdAttributes).toMatchObject({ paymentTermsNote: null });
+  });
+});
+
+describe('ProjectService.update intake fields', () => {
+  const PAYMENT_TERMS_NOTE = 'תשלום לפי שלבי ביצוע מאושרים';
+
+  const expectRejection = async (
+    changes: Parameters<ProjectService['update']>[1],
+    message: string,
+  ) => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_INTAKE_PROJECT);
+
+    await expect(service.update(PROJECT_ID, changes, CREATOR)).rejects.toThrow(
+      new BadRequestException(message),
+    );
+    expect(projectRepository.update).not.toHaveBeenCalled();
+  };
+
+  const getUpdatedAttributes = async (
+    changes: Parameters<ProjectService['update']>[1],
+    storedProject: object = STORED_INTAKE_PROJECT,
+  ) => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(storedProject);
+
+    await service.update(PROJECT_ID, changes, CREATOR);
+
+    const [, updatedAttributes] = projectRepository.update.mock.calls[0];
+
+    return updatedAttributes;
+  };
+
+  it('lets a legacy project change its name without any intake fields', async () => {
+    const updatedAttributes = await getUpdatedAttributes(
+      { name: 'שם חדש' },
+      STORED_COMPANY_PROJECT,
+    );
+
+    expect(updatedAttributes).not.toHaveProperty('contactName');
+    expect(updatedAttributes).not.toHaveProperty('paymentTerms');
+    expect(updatedAttributes).not.toHaveProperty('addressPlaceId');
+  });
+
+  it('lets a legacy project add its contact person without asking for the other intake fields', async () => {
+    const updatedAttributes = await getUpdatedAttributes(
+      CONTACT,
+      STORED_COMPANY_PROJECT,
+    );
+
+    expect(updatedAttributes).toMatchObject(CONTACT);
+    expect(updatedAttributes).not.toHaveProperty('paymentTerms');
+  });
+
+  it('requires the whole contact person once a legacy project edits it', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_COMPANY_PROJECT);
+
+    await expect(
+      service.update(PROJECT_ID, { contactName: 'דנה לוי' }, CREATOR),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Missing contact person details: contactRole, contactPhone',
+      ),
+    );
+  });
+
+  it('changes one contact field and keeps the others', async () => {
+    const updatedAttributes = await getUpdatedAttributes({
+      contactPhone: '054-1112233',
+    });
+
+    expect(updatedAttributes).toMatchObject({
+      ...CONTACT,
+      contactPhone: '054-1112233',
+    });
+  });
+
+  it('rejects clearing a contact field', async () => {
+    await expectRejection(
+      { contactRole: null },
+      'Missing contact person details: contactRole',
+    );
+  });
+
+  it('verifies a new address with Google', async () => {
+    const updatedAttributes = await getUpdatedAttributes({
+      addressPlaceId: ROAD_PLACE_ID,
+    });
+
+    expect(updatedAttributes).toMatchObject({
+      addressCity: null,
+      address: 'כביש 6, ישראל',
+      addressPlaceId: ROAD_PLACE_ID,
+    });
+  });
+
+  it('rejects clearing the address', async () => {
+    await expectRejection(
+      { addressPlaceId: null },
+      'addressPlaceId is required; pick the address from the suggestions',
+    );
+  });
+
+  it('rejects an unverifiable address', async () => {
+    await expectRejection(
+      { addressPlaceId: UNKNOWN_PLACE_ID },
+      `Address ${UNKNOWN_PLACE_ID} could not be verified with Google; pick it again from the suggestions`,
+    );
+  });
+
+  it('rejects payment terms illegal for the project type', async () => {
+    await expectRejection(
+      { paymentTerms: PAYMENT_TERMS.INSTALLMENTS_10_60_30 },
+      'Payment terms "installments_10_60_30" are not available for this project type; choose one of: milestones_net_60, twelve_prepaid_checks, other',
+    );
+  });
+
+  it('rejects switching to "other" without its detail', async () => {
+    await expectRejection(
+      { paymentTerms: PAYMENT_TERMS.OTHER },
+      'paymentTermsNote is required when paymentTerms is "other"',
+    );
+  });
+
+  it('switches to "other" with its detail', async () => {
+    const updatedAttributes = await getUpdatedAttributes({
+      paymentTerms: PAYMENT_TERMS.OTHER,
+      paymentTermsNote: PAYMENT_TERMS_NOTE,
+    });
+
+    expect(updatedAttributes).toMatchObject({
+      paymentTerms: PAYMENT_TERMS.OTHER,
+      paymentTermsNote: PAYMENT_TERMS_NOTE,
+    });
+  });
+
+  it('clears the detail when switching from "other" to a concrete option', async () => {
+    const updatedAttributes = await getUpdatedAttributes(
+      { paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS },
+      {
+        ...STORED_INTAKE_PROJECT,
+        paymentTerms: PAYMENT_TERMS.OTHER,
+        paymentTermsNote: PAYMENT_TERMS_NOTE,
+      },
+    );
+
+    expect(updatedAttributes).toMatchObject({
+      paymentTermsNote: null,
+      paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS,
+    });
+  });
+
+  it('re-checks the current payment terms when the project type changes', async () => {
+    await expectRejection(
+      { ...PRIVATE_DETAILS, projectTypeId: PRIVATE_TYPE_ID },
+      'Payment terms "milestones_net_60" are not available for this project type; choose one of: installments_10_60_30, prepaid, other',
+    );
+  });
+
+  it('changes the type together with payment terms legal for it', async () => {
+    const updatedAttributes = await getUpdatedAttributes({
+      ...PRIVATE_DETAILS,
+      projectTypeId: PRIVATE_TYPE_ID,
+      paymentTerms: PAYMENT_TERMS.PREPAID,
+    });
+
+    expect(updatedAttributes).toMatchObject({
+      projectTypeId: PRIVATE_TYPE_ID,
+      paymentTerms: PAYMENT_TERMS.PREPAID,
+    });
+  });
+
+  it('requires a city in the current address when switching to a private project', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...STORED_INTAKE_PROJECT,
+      addressCity: null,
+      addressPlaceId: ROAD_PLACE_ID,
+    });
+
+    await expect(
+      service.update(
+        PROJECT_ID,
+        {
+          ...PRIVATE_DETAILS,
+          projectTypeId: PRIVATE_TYPE_ID,
+          paymentTerms: PAYMENT_TERMS.PREPAID,
+        },
+        CREATOR,
+      ),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'This project type needs an address within a city; pick a street address',
+      ),
+    );
+  });
+
+  it('lets a legacy project without payment terms change its type', async () => {
+    const updatedAttributes = await getUpdatedAttributes(
+      { ...PRIVATE_DETAILS, projectTypeId: PRIVATE_TYPE_ID },
+      STORED_COMPANY_PROJECT,
+    );
+
+    expect(updatedAttributes).toMatchObject({ projectTypeId: PRIVATE_TYPE_ID });
+    expect(updatedAttributes).not.toHaveProperty('paymentTerms');
   });
 });
 
