@@ -4,7 +4,7 @@ import { applyDecorators, SetMetadata, UseGuards } from '@nestjs/common';
 
 export const RateLimit = (maxRequests: number) => {
   return applyDecorators(
-    SetMetadata(METADATA_KEYS.MAX_REQUESTS, maxRequests),
+    SetMetadata(METADATA_KEYS.RATE_LIMIT_MAX_REQUESTS, maxRequests),
     UseGuards(RateLimitGuard),
   );
 };
