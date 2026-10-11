@@ -1,6 +1,7 @@
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { PaymentTermsType } from '@Constants/payment-terms.constant';
 import { IProjectType } from '@Modules/project-type/interfaces/project-type.interface';
+import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
 import { IProjectStage } from '@Modules/project-stage/interfaces/project-stage.interface';
 import { IProjectMember } from '@Modules/project-member/interfaces/project-member.interface';
 
@@ -31,8 +32,30 @@ export interface IProjectContact {
   contactPhone: string | null;
 }
 
-export interface IProject
-  extends IProjectCustomerDetails, IProjectAddress, IProjectContact {
+export interface IProjectPaymentTerms {
+  paymentTermsNote: string | null;
+  paymentTerms: PaymentTermsType | null;
+}
+
+export type TProjectIntake = IProjectAddress &
+  IProjectContact &
+  IProjectPaymentTerms;
+
+export type TProjectIntakeInput = Partial<
+  Omit<TProjectIntake, 'address' | 'addressCity'>
+>;
+
+export interface IProjectFieldSetTarget {
+  isTypeChanging: boolean;
+  fieldSet: ProjectDetailFieldSetType | null;
+}
+
+export interface IProjectIntakeChangeRequest extends IProjectFieldSetTarget {
+  project: IProject;
+  changes: TProjectIntakeInput;
+}
+
+export interface IProject extends IProjectCustomerDetails, TProjectIntake {
   id: string;
   code: string;
   name: string;
@@ -49,8 +72,6 @@ export interface IProject
   members?: IProjectMember[];
   erpReference: string | null;
   driveFolderId: string | null;
-  paymentTermsNote: string | null;
-  paymentTerms: PaymentTermsType | null;
 }
 
 export interface IProjectFilter {
@@ -61,10 +82,13 @@ export interface IProjectFilter {
 }
 
 export type TProjectCreationAttributes = IProjectCustomerDetails &
+  TProjectIntake &
   Pick<IProject, 'code' | 'name' | 'projectTypeId' | 'stageId' | 'createdById'>;
 
 export type TProjectUpdateAttributes = Partial<
-  IProjectCustomerDetails & Pick<IProject, 'name' | 'projectTypeId' | 'stageId'>
+  IProjectCustomerDetails &
+    TProjectIntake &
+    Pick<IProject, 'name' | 'projectTypeId' | 'stageId'>
 >;
 
 export interface IProjectStageChangeRequest {

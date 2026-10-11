@@ -2,6 +2,8 @@ import { ProjectService } from './project.service';
 import { Module, forwardRef } from '@nestjs/common';
 import { ProjectController } from './project.controller';
 import { ProjectRepository } from './project.repository';
+import { AddressModule } from '@Modules/address/address.module';
+import { ProjectIntakeService } from './project-intake.service';
 import { DatabaseModule } from '@Providers/database/database.module';
 import { ProjectTypeModule } from '@Modules/project-type/project-type.module';
 import { ProjectStageModule } from '@Modules/project-stage/project-stage.module';
@@ -11,13 +13,14 @@ import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/
 @Module({
   imports: [
     DatabaseModule,
+    AddressModule,
     ProjectTypeModule,
     ProjectMemberModule,
     ProjectStageTransitionModule,
     forwardRef(() => ProjectStageModule),
   ],
   controllers: [ProjectController],
-  providers: [ProjectService, ProjectRepository],
+  providers: [ProjectService, ProjectIntakeService, ProjectRepository],
   exports: [ProjectService],
 })
 export class ProjectModule {}

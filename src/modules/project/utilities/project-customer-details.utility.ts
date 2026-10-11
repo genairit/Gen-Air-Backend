@@ -1,4 +1,5 @@
 import {
+  IProject,
   IProjectCustomerDetails,
   ProjectCustomerDetailFieldType,
 } from '../interfaces/project.interface';
@@ -48,3 +49,10 @@ export const findMissingCustomerDetails = (
   CUSTOMER_DETAIL_FIELDS_BY_SET[fieldSet].filter(
     (field) => details[field] == null,
   );
+
+export const isProjectTypeChanging = (
+  project: IProject,
+  changes: Partial<Pick<IProject, 'projectTypeId'>>,
+): boolean =>
+  changes.projectTypeId != null &&
+  changes.projectTypeId !== project.projectTypeId;
