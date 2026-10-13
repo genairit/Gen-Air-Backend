@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AppService } from './app.service';
 import { AppController } from './app.controller';
+import { TaskModule } from '@Modules/task/task.module';
 import { AuthModule } from '@Modules/auth/auth.module';
 import { UserModule } from '@Modules/user/user.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -29,6 +30,7 @@ import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/
     ProjectStageModule,
     ProjectStageTransitionModule,
     ProjectTypeModule,
+    TaskModule,
     UserModule,
   ],
   controllers: [AppController],
