@@ -81,13 +81,9 @@ export class ProjectService {
   ) {}
 
   async getById(id: string): Promise<IProject> {
-    const project = await this.projectRepository.findById(id);
+    const project = await this.getStoredById(id);
 
-    if (!project) {
-      throw new NotFoundException(`Project ${id} was not found`);
-    }
-
-    return project;
+    return this.projectApartmentService.resolveForRead(project);
   }
 
   async getByFilter(
@@ -162,6 +158,7 @@ export class ProjectService {
         createdById: creator.id,
         stageId: initialStage.id,
         projectTypeId: project.projectTypeId,
+        notes: project.notes ?? null,
         customerId: project.customerId ?? null,
       },
       { members: project.members, creator },
@@ -186,7 +183,7 @@ export class ProjectService {
   ): Promise<IProject> {
     const members = apartment.members ?? [];
     const [building, initialStage] = await Promise.all([
-      this.getById(buildingId),
+      this.getStoredById(buildingId),
       this.projectStageService.getInitialStage(),
       this.projectMemberService.validateAssignments(members),
     ]);
@@ -209,7 +206,7 @@ export class ProjectService {
     buildingId: string,
     filter: GetApartmentsByFilterDto,
   ): Promise<IApartmentPage> {
-    const building = await this.getById(buildingId);
+    const building = await this.getStoredById(buildingId);
 
     return this.projectApartmentService.findByBuilding(building, filter);
   }
@@ -220,7 +217,7 @@ export class ProjectService {
     editor: IUser,
   ): Promise<IProject> {
     const [project] = await Promise.all([
-      this.getById(id),
+      this.getStoredById(id),
       this.validateChanges(changes),
     ]);
     const attributes = await this.resolveUpdateAttributes(project, changes);
@@ -303,6 +300,16 @@ export class ProjectService {
     }
   }
 
+  private async getStoredById(id: string): Promise<IProject> {
+    const project = await this.projectRepository.findById(id);
+
+    if (!project) {
+      throw new NotFoundException(`Project ${id} was not found`);
+    }
+
+    return project;
+  }
+
   private async persistNewProject(
     attributes: TProjectCreationAttributes,
     { members, creator }: INewProjectContext,
@@ -375,6 +382,7 @@ export class ProjectService {
       ...intake,
       ...customerDetails,
       name: changes.name,
+      notes: changes.notes,
       customerId: changes.customerId,
       projectTypeId: changes.projectTypeId,
     };

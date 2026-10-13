@@ -1000,12 +1000,12 @@ describe('ProjectService.update apartment', () => {
         STORED_APARTMENT.id,
         {
           addressPlaceId: TEL_AVIV_PLACE_ID,
-          paymentTerms: PAYMENT_TERMS.PREPAID,
+          projectTypeId: PRIVATE_TYPE_ID,
           customerId: 'customer-1',
         },
         CREATOR,
       ),
-    ).rejects.toThrow('addressPlaceId, paymentTerms, customerId');
+    ).rejects.toThrow('addressPlaceId, projectTypeId, customerId');
     expect(projectRepository.update).not.toHaveBeenCalled();
   });
 
@@ -1115,5 +1115,148 @@ describe('ProjectService building guards', () => {
     await expect(
       service.update(BUILDING_ID, { projectTypeId: PRIVATE_TYPE_ID }, CREATOR),
     ).rejects.toThrow('cannot hold apartments');
+  });
+});
+
+const BUILDING_INHERITANCE = {
+  id: BUILDING_ID,
+  code: 'GA-84811',
+  name: 'מגדלי שלום',
+  notes: 'תמ״א 38: חיזוק קומה 4 לפני התקנת יחידות',
+  address: STORED_COMPANY_INTAKE.address,
+  addressCity: STORED_COMPANY_INTAKE.addressCity,
+  addressPlaceId: STORED_COMPANY_INTAKE.addressPlaceId,
+  paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
+  paymentTermsNote: null,
+};
+
+const APARTMENT_WITH_BUILDING = {
+  ...STORED_APARTMENT,
+  notes: null,
+  parentProject: BUILDING_INHERITANCE,
+  projectType: { detailFieldSet: PROJECT_DETAIL_FIELD_SETS.COMPANY },
+};
+
+describe('ProjectService.getById apartment', () => {
+  it('returns the building address, payment terms and notes, marked as inherited', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);
+
+    await expect(service.getById(STORED_APARTMENT.id)).resolves.toMatchObject({
+      address: BUILDING_INHERITANCE.address,
+      addressPlaceId: TEL_AVIV_PLACE_ID,
+      parentNotes: BUILDING_INHERITANCE.notes,
+      paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
+      inheritedFields: [
+        'address',
+        'addressCity',
+        'addressPlaceId',
+        'paymentTerms',
+        'paymentTermsNote',
+      ],
+    });
+  });
+
+  it('returns a standalone project unchanged', async () => {
+    const { service } = await createService();
+
+    const project = await service.getById(PROJECT_ID);
+
+    expect(project).not.toHaveProperty('inheritedFields');
+  });
+});
+
+describe('ProjectService.getApartments inheritance', () => {
+  it('resolves every listed apartment against its building', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce({
+      ...BUILDING,
+      ...BUILDING_INHERITANCE,
+    });
+    projectRepository.findByFilter.mockResolvedValue({
+      items: [STORED_APARTMENT],
+      nextCursor: null,
+    });
+
+    const page = await service.getApartments(BUILDING_ID, {});
+
+    expect(page.items[0]).toMatchObject({
+      parentNotes: BUILDING_INHERITANCE.notes,
+      paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
+    });
+  });
+});
+
+describe('ProjectService.update apartment payment terms', () => {
+  it('stores an override that is legal for the building type', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);
+
+    await service.update(
+      STORED_APARTMENT.id,
+      { paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS },
+      CREATOR,
+    );
+
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      paymentTermsNote: null,
+      paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS,
+    });
+  });
+
+  it('rejects an override the building type does not offer', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);
+
+    await expect(
+      service.update(
+        STORED_APARTMENT.id,
+        { paymentTerms: PAYMENT_TERMS.PREPAID },
+        CREATOR,
+      ),
+    ).rejects.toThrow('not available for this project type');
+  });
+
+  it('returns to the building terms by clearing the override', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...APARTMENT_WITH_BUILDING,
+      paymentTerms: PAYMENT_TERMS.OTHER,
+      paymentTermsNote: 'תשלום מלא במסירה',
+    });
+
+    await service.update(STORED_APARTMENT.id, { paymentTerms: null }, CREATOR);
+
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      paymentTerms: null,
+      paymentTermsNote: null,
+    });
+  });
+
+  it('saves the apartment own notes', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);
+
+    await service.update(
+      STORED_APARTMENT.id,
+      { notes: 'הדייר זמין אחר הצהריים' },
+      CREATOR,
+    );
+
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      notes: 'הדייר זמין אחר הצהריים',
+    });
+  });
+});
+
+describe('ProjectService.update building notes', () => {
+  it('saves the notes every apartment reads', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.update(PROJECT_ID, { notes: 'תמ״א 38' }, CREATOR);
+
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      notes: 'תמ״א 38',
+    });
   });
 });

@@ -34,6 +34,11 @@ export class UpdateProjectDto extends IntersectionType(
   declare customerId?: string | null;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(FIELD_LENGTHS.PROJECT_NOTES)
+  declare notes?: string | null;
+
+  @IsOptional()
   @IsUUID()
   declare stageId?: string;
 

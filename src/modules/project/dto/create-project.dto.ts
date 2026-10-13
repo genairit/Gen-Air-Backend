@@ -32,6 +32,11 @@ export class CreateProjectDto extends IntersectionType(
   @IsUUID()
   declare customerId?: string | null;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(FIELD_LENGTHS.PROJECT_NOTES)
+  declare notes?: string | null;
+
   @IsNotEmpty()
   @IsArray()
   @ValidateNested({ each: true })

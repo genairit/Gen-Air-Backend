@@ -7,9 +7,16 @@ import {
 import {
   IProject,
   IApartmentPage,
+  TResolvedApartment,
+  IProjectPaymentTerms,
   TProjectUpdateAttributes,
   TProjectCreationAttributes,
 } from './interfaces/project.interface';
+
+import {
+  mergePaymentTerms,
+  hasPaymentTermsChanges,
+} from './utilities/project-intake.utility';
 
 import {
   formatApartmentCode,
@@ -28,6 +35,7 @@ import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { ProjectIntakeService } from './project-intake.service';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { EMPTY_PAYMENT_TERMS } from './constants/project-intake.constant';
+import { resolveApartment } from './utilities/project-inheritance.utility';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
 import { EMPTY_CUSTOMER_DETAILS } from './constants/project-customer-details.constant';
 
@@ -106,7 +114,21 @@ export class ProjectApartmentService {
       this.projectRepository.countByFilter(apartmentFilter),
     ]);
 
-    return { ...page, total };
+    return {
+      ...page,
+      total,
+      items: page.items.map((apartment) =>
+        resolveApartment(apartment, building),
+      ),
+    };
+  }
+
+  resolveForRead(project: IProject): IProject | TResolvedApartment {
+    if (!project.parentProject) {
+      return project;
+    }
+
+    return resolveApartment(project, project.parentProject);
   }
 
   async resolveChanges({
@@ -135,12 +157,42 @@ export class ProjectApartmentService {
 
     return {
       ...contact,
+      ...this.resolvePaymentTermsOverride(apartment, changes),
       name: changes.name,
+      notes: changes.notes,
       customerName: changes.customerName,
       customerPhone: changes.customerPhone,
       customerFloor: changes.customerFloor ?? apartment.customerFloor,
       customerApartment: requestedNumber ?? apartment.customerApartment,
     };
+  }
+
+  private resolvePaymentTermsOverride(
+    apartment: IProject,
+    changes: UpdateProjectDto,
+  ): Partial<IProjectPaymentTerms> {
+    if (!hasPaymentTermsChanges(changes)) {
+      return {};
+    }
+
+    const isReturningToBuilding = changes.paymentTerms === null;
+
+    if (isReturningToBuilding) {
+      return { paymentTerms: null, paymentTermsNote: null };
+    }
+
+    const fieldSet = apartment.projectType?.detailFieldSet ?? null;
+
+    if (!fieldSet) {
+      throw new BadRequestException(
+        'The apartment has no project type to check payment terms against',
+      );
+    }
+
+    return this.projectIntakeService.validatePaymentTerms(
+      mergePaymentTerms(apartment, changes),
+      fieldSet,
+    );
   }
 
   private assertCanHoldApartments(building: IProject): void {

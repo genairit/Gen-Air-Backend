@@ -70,6 +70,7 @@ export interface IProject extends IProjectCustomerDetails, TProjectIntake {
   updatedAt: Date;
   createdBy?: IUser;
   createdById: string;
+  notes: string | null;
   customer?: ICustomer;
   stage?: IProjectStage;
   projectTypeId: string;
@@ -98,12 +99,15 @@ export type TProjectCreationAttributes = IProjectCustomerDetails &
     IProject,
     'code' | 'name' | 'projectTypeId' | 'stageId' | 'createdById'
   > &
-  Partial<Pick<IProject, 'customerId' | 'parentProjectId'>>;
+  Partial<Pick<IProject, 'customerId' | 'parentProjectId' | 'notes'>>;
 
 export type TProjectUpdateAttributes = Partial<
   IProjectCustomerDetails &
     TProjectIntake &
-    Pick<IProject, 'name' | 'projectTypeId' | 'stageId' | 'customerId'>
+    Pick<
+      IProject,
+      'name' | 'projectTypeId' | 'stageId' | 'customerId' | 'notes'
+    >
 >;
 
 export interface INewProjectContext {
@@ -111,7 +115,30 @@ export interface INewProjectContext {
   members: IProjectMemberAssignment[];
 }
 
-export interface IApartmentPage extends ICursorPage<IProject> {
+export type TInheritedProjectField = keyof Pick<
+  IProject,
+  | 'address'
+  | 'addressCity'
+  | 'paymentTerms'
+  | 'addressPlaceId'
+  | 'paymentTermsNote'
+>;
+
+export type TBuildingInheritance = Pick<
+  IProject,
+  TInheritedProjectField | 'notes'
+>;
+
+export interface IApartmentInheritance {
+  parentNotes: string | null;
+  inheritedFields: TInheritedProjectField[];
+}
+
+export type TApartmentInheritanceInput = Pick<IProject, TInheritedProjectField>;
+
+export type TResolvedApartment = IProject & IApartmentInheritance;
+
+export interface IApartmentPage extends ICursorPage<TResolvedApartment> {
   total: number;
 }
 
