@@ -4,6 +4,7 @@ import { TypedLogger } from '@Logger/logger.service';
 import { User } from '@Modules/user/entities/user.entity';
 import { Sequelize, SequelizeOptions } from 'sequelize-typescript';
 import { Project } from '@Modules/project/entities/project.entity';
+import { Customer } from '@Modules/customer/entities/customer.entity';
 import { EnvironmentManager } from '../../utilities/environment-manager.utility';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
@@ -65,6 +66,7 @@ export const DatabaseProvider: Provider = {
     sequelize.addModels([
       User,
       Project,
+      Customer,
       ProjectType,
       ProjectStage,
       ProjectMember,
