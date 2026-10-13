@@ -40,7 +40,7 @@ export class ProjectIntakeService {
     intake: TProjectIntakeInput,
     fieldSet: ProjectDetailFieldSetType,
   ): Promise<TProjectIntake> {
-    const contact = this.requireCompleteContact(mergeContact({}, intake));
+    const contact = this.resolveContact(intake);
     const paymentTerms = this.resolvePaymentTerms(
       mergePaymentTerms({}, intake),
       fieldSet,
@@ -51,6 +51,10 @@ export class ProjectIntakeService {
     );
 
     return { ...address, ...contact, ...paymentTerms };
+  }
+
+  resolveContact(intake: TProjectIntakeInput): IProjectContact {
+    return this.requireCompleteContact(mergeContact({}, intake));
   }
 
   async resolveChanges(

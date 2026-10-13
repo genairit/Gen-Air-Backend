@@ -25,6 +25,7 @@ import {
 
 import { User } from '@Modules/user/entities/user.entity';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
+import { Customer } from '@Modules/customer/entities/customer.entity';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
@@ -42,6 +43,16 @@ import { ProjectMember } from '@Modules/project-member/entities/project-member.e
       fields: ['project_type_id'],
       where: { deleted_at: null },
       name: 'idx_projects_project_type_id',
+    },
+    {
+      fields: ['customer_id'],
+      where: { deleted_at: null },
+      name: 'idx_projects_customer_id',
+    },
+    {
+      fields: ['parent_project_id'],
+      where: { deleted_at: null },
+      name: 'idx_projects_parent_project_id',
     },
   ],
 })
@@ -78,6 +89,14 @@ export class Project
   @ForeignKey(() => User)
   @Column({ allowNull: false, type: DataType.UUID })
   declare createdById: string;
+
+  @ForeignKey(() => Customer)
+  @Column(DataType.UUID)
+  declare customerId: string | null;
+
+  @ForeignKey(() => Project)
+  @Column(DataType.UUID)
+  declare parentProjectId: string | null;
 
   @Column(DataType.STRING(FIELD_LENGTHS.DRIVE_ID))
   declare driveFolderId: string | null;
@@ -159,6 +178,12 @@ export class Project
 
   @BelongsTo(() => User, 'createdById')
   declare createdBy?: User;
+
+  @BelongsTo(() => Customer)
+  declare customer?: Customer;
+
+  @BelongsTo(() => Project, 'parentProjectId')
+  declare parentProject?: Project;
 
   @HasMany(() => ProjectMember)
   declare members?: ProjectMember[];

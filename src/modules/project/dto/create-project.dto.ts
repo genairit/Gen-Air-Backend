@@ -4,6 +4,7 @@ import {
   IsString,
   MaxLength,
   IsNotEmpty,
+  IsOptional,
   ValidateNested,
 } from 'class-validator';
 
@@ -26,6 +27,10 @@ export class CreateProjectDto extends IntersectionType(
   @IsNotEmpty()
   @IsUUID()
   declare projectTypeId: string;
+
+  @IsOptional()
+  @IsUUID()
+  declare customerId?: string | null;
 
   @IsNotEmpty()
   @IsArray()

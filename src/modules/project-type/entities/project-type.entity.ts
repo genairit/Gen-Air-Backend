@@ -52,6 +52,10 @@ export class ProjectType extends Model<IProjectType> implements IProjectType {
   })
   declare detailFieldSet: ProjectDetailFieldSetType;
 
+  @Default(false)
+  @Column({ allowNull: false, type: DataType.BOOLEAN })
+  declare canHaveApartments: boolean;
+
   @CreatedAt
   declare createdAt: Date;
 

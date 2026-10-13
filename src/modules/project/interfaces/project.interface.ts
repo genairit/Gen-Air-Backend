@@ -1,9 +1,15 @@
+import {
+  IProjectMember,
+  IProjectMemberAssignment,
+} from '@Modules/project-member/interfaces/project-member.interface';
+
 import { IUser } from '@Modules/user/interfaces/user.interface';
+import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { PaymentTermsType } from '@Constants/payment-terms.constant';
+import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
 import { IProjectType } from '@Modules/project-type/interfaces/project-type.interface';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
 import { IProjectStage } from '@Modules/project-stage/interfaces/project-stage.interface';
-import { IProjectMember } from '@Modules/project-member/interfaces/project-member.interface';
 
 export interface IProjectCustomerDetails {
   customerName: string | null;
@@ -64,14 +70,18 @@ export interface IProject extends IProjectCustomerDetails, TProjectIntake {
   updatedAt: Date;
   createdBy?: IUser;
   createdById: string;
+  customer?: ICustomer;
   stage?: IProjectStage;
   projectTypeId: string;
   deletedAt: Date | null;
+  parentProject?: IProject;
   erpSyncedAt: Date | null;
+  customerId: string | null;
   projectType?: IProjectType;
   members?: IProjectMember[];
   erpReference: string | null;
   driveFolderId: string | null;
+  parentProjectId: string | null;
 }
 
 export interface IProjectFilter {
@@ -79,17 +89,31 @@ export interface IProjectFilter {
   stageId: string | null;
   projectIds: string[] | null;
   projectTypeId: string | null;
+  parentProjectId: string | null;
 }
 
 export type TProjectCreationAttributes = IProjectCustomerDetails &
   TProjectIntake &
-  Pick<IProject, 'code' | 'name' | 'projectTypeId' | 'stageId' | 'createdById'>;
+  Pick<
+    IProject,
+    'code' | 'name' | 'projectTypeId' | 'stageId' | 'createdById'
+  > &
+  Partial<Pick<IProject, 'customerId' | 'parentProjectId'>>;
 
 export type TProjectUpdateAttributes = Partial<
   IProjectCustomerDetails &
     TProjectIntake &
-    Pick<IProject, 'name' | 'projectTypeId' | 'stageId'>
+    Pick<IProject, 'name' | 'projectTypeId' | 'stageId' | 'customerId'>
 >;
+
+export interface INewProjectContext {
+  creator: IUser;
+  members: IProjectMemberAssignment[];
+}
+
+export interface IApartmentPage extends ICursorPage<IProject> {
+  total: number;
+}
 
 export interface IProjectStageChangeRequest {
   changedBy: IUser;
