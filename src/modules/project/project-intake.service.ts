@@ -41,7 +41,7 @@ export class ProjectIntakeService {
     fieldSet: ProjectDetailFieldSetType,
   ): Promise<TProjectIntake> {
     const contact = this.resolveContact(intake);
-    const paymentTerms = this.resolvePaymentTerms(
+    const paymentTerms = this.validatePaymentTerms(
       mergePaymentTerms({}, intake),
       fieldSet,
     );
@@ -94,7 +94,7 @@ export class ProjectIntakeService {
       return {};
     }
 
-    return this.resolvePaymentTerms(paymentTerms, fieldSet);
+    return this.validatePaymentTerms(paymentTerms, fieldSet);
   }
 
   private async resolveAddressChanges(
@@ -129,7 +129,7 @@ export class ProjectIntakeService {
     return contact;
   }
 
-  private resolvePaymentTerms(
+  validatePaymentTerms(
     { paymentTerms, paymentTermsNote }: IProjectPaymentTerms,
     fieldSet: ProjectDetailFieldSetType,
   ): IProjectPaymentTerms {

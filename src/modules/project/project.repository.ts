@@ -7,6 +7,7 @@ import {
 } from 'sequelize';
 
 import {
+  IProject,
   IProjectFilter,
   IProjectStageCount,
   TProjectUpdateAttributes,
@@ -29,11 +30,12 @@ import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
+import { BUILDING_INHERITANCE_ATTRIBUTES } from './constants/project-inheritance.constant';
 
 @Injectable()
 export class ProjectRepository {
-  findById(id: string): Promise<Project | null> {
-    return Project.findByPk(id, {
+  async findById(id: string): Promise<IProject | null> {
+    const project = await Project.findByPk(id, {
       include: [
         ...this.buildCardIncludes(),
         { model: Customer, paranoid: false },
@@ -41,10 +43,12 @@ export class ProjectRepository {
         {
           model: Project,
           as: 'parentProject',
-          attributes: ['id', 'code', 'name'],
+          attributes: BUILDING_INHERITANCE_ATTRIBUTES,
         },
       ],
     });
+
+    return project?.get({ plain: true }) ?? null;
   }
 
   findLiveApartmentByNumber(
@@ -73,7 +77,7 @@ export class ProjectRepository {
   async findByFilter(
     filter: IProjectFilter,
     batch: ICursorBatch,
-  ): Promise<ICursorPage<Project>> {
+  ): Promise<ICursorPage<IProject>> {
     const rows = await Project.findAll({
       where: {
         [Op.and]: [
@@ -87,7 +91,10 @@ export class ProjectRepository {
       limit: batch.batchSize + 1,
     });
 
-    return toCursorPage(rows, batch.batchSize);
+    return toCursorPage(
+      rows.map((row) => row.get({ plain: true })),
+      batch.batchSize,
+    );
   }
 
   async isCodeTaken(code: string): Promise<boolean> {

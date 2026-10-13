@@ -161,6 +161,9 @@ export class Project
   @Column(DataType.STRING(FIELD_LENGTHS.CONTACT_ROLE))
   declare contactRole: string | null;
 
+  @Column(DataType.STRING(FIELD_LENGTHS.PROJECT_NOTES))
+  declare notes: string | null;
+
   @CreatedAt
   declare createdAt: Date;
 
