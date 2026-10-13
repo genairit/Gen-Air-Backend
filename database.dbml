@@ -50,7 +50,6 @@ Enum priority_sync_status {
 
 Table customers {
   id                     uuid                     [pk, default: `gen_random_uuid()`]
-  customer_number        varchar(16)              [not null, unique, note: 'CU-1001']
   customer_type          project_detail_field_set [not null, note: 'Same three kinds as project types: company, private client, institution']
   name                   varchar(200)             [not null]
   tax_id                 varchar(9)               [not null, note: 'ח.פ / ת.פ / ת.ז / מ״ע, 9 digits; unique among non-deleted customers']

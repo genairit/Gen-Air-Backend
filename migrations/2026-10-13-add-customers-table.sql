@@ -7,11 +7,8 @@
 
 CREATE TYPE priority_sync_status AS ENUM ('pending', 'synced', 'failed');
 
-CREATE SEQUENCE customer_number_seq START 1001;
-
 CREATE TABLE customers (
   id                     UUID                     PRIMARY KEY DEFAULT gen_random_uuid(),
-  customer_number        VARCHAR(16)              NOT NULL UNIQUE DEFAULT ('CU-' || nextval('customer_number_seq')),
   customer_type          project_detail_field_set NOT NULL,
   name                   VARCHAR(200)             NOT NULL,
   tax_id                 VARCHAR(9)               NOT NULL CHECK (tax_id ~ '^[0-9]{9}$'),
