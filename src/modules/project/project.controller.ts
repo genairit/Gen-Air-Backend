@@ -67,6 +67,13 @@ export class ProjectController {
     return this.projectService.create(project, creator);
   }
 
+  @Get(':id/apartments/stage-counts')
+  getApartmentStageCounts(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<IProjectStageCounts> {
+    return this.projectService.getApartmentStageCounts(id);
+  }
+
   @Get(':id/apartments')
   getApartments(
     @Param('id', ParseUUIDPipe) id: string,

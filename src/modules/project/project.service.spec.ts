@@ -1260,3 +1260,48 @@ describe('ProjectService.update building notes', () => {
     });
   });
 });
+
+describe('ProjectService.getApartmentStageCounts', () => {
+  it('counts the building apartments per stage', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+
+    await expect(service.getApartmentStageCounts(BUILDING_ID)).resolves.toEqual(
+      { total: 5, byStage: { [QUOTE_STAGE_ID]: 2, [ORDER_STAGE_ID]: 3 } },
+    );
+    expect(projectRepository.countGroupedByStage).toHaveBeenCalledWith(
+      expect.objectContaining({ parentProjectId: BUILDING_ID }),
+    );
+  });
+
+  it('rejects a project that holds no apartments', async () => {
+    const { service } = await createService();
+
+    await expect(service.getApartmentStageCounts(PROJECT_ID)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+});
+
+describe('ProjectService apartment contact', () => {
+  it('creates an apartment whose contact has no role', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await service.createApartment(
+      BUILDING_ID,
+      { ...NEW_APARTMENT, contactRole: null },
+      CREATOR,
+    );
+
+    expect(projectRepository.create.mock.calls[0][0].contactRole).toBeNull();
+  });
+
+  it('rejects clearing the apartment contact mobile', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+
+    await expect(
+      service.update(STORED_APARTMENT.id, { contactPhone: null }, CREATOR),
+    ).rejects.toThrow('contactPhone');
+  });
+});

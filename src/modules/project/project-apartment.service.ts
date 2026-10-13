@@ -7,15 +7,20 @@ import {
 import {
   IProject,
   IApartmentPage,
+  IProjectContact,
   TResolvedApartment,
+  IProjectStageCounts,
   IProjectPaymentTerms,
   TProjectUpdateAttributes,
   TProjectCreationAttributes,
 } from './interfaces/project.interface';
 
 import {
+  mergeContact,
+  hasContactChanges,
   mergePaymentTerms,
   hasPaymentTermsChanges,
+  findMissingContactFields,
 } from './utilities/project-intake.utility';
 
 import {
@@ -27,6 +32,7 @@ import {
   APARTMENT,
   APARTMENT_REQUIRED_FIELDS,
   APARTMENT_EDITABLE_FIELDS,
+  APARTMENT_REQUIRED_CONTACT_FIELDS,
 } from './constants/project-apartment.constant';
 
 import { ProjectRepository } from './project.repository';
@@ -37,6 +43,7 @@ import { IUser } from '@Modules/user/interfaces/user.interface';
 import { EMPTY_PAYMENT_TERMS } from './constants/project-intake.constant';
 import { resolveApartment } from './utilities/project-inheritance.utility';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
+import { toProjectStageCounts } from './utilities/project-stage-counts.utility';
 import { EMPTY_CUSTOMER_DETAILS } from './constants/project-customer-details.constant';
 
 interface IApartmentChangeRequest {
@@ -67,7 +74,11 @@ export class ProjectApartmentService {
   }: INewApartmentRequest): Promise<TProjectCreationAttributes> {
     this.assertCanHoldApartments(building);
 
-    const contact = this.projectIntakeService.resolveContact(apartment);
+    const contact = {
+      contactName: apartment.contactName,
+      contactPhone: apartment.contactPhone,
+      contactRole: apartment.contactRole ?? null,
+    };
     const [, sequence] = await Promise.all([
       this.assertApartmentNumberFree(building.id, apartment.customerApartment),
       this.projectRepository.countApartmentsEverCreated(building.id),
@@ -123,6 +134,20 @@ export class ProjectApartmentService {
     };
   }
 
+  async countByStage(building: IProject): Promise<IProjectStageCounts> {
+    this.assertCanHoldApartments(building);
+
+    const stageCounts = await this.projectRepository.countGroupedByStage({
+      search: null,
+      stageId: null,
+      projectIds: null,
+      projectTypeId: null,
+      parentProjectId: building.id,
+    });
+
+    return toProjectStageCounts(stageCounts);
+  }
+
   resolveForRead(project: IProject): IProject | TResolvedApartment {
     if (!project.parentProject) {
       return project;
@@ -148,12 +173,7 @@ export class ProjectApartmentService {
       await this.assertApartmentNumberFree(buildingId, requestedNumber);
     }
 
-    const contact = await this.projectIntakeService.resolveChanges({
-      changes,
-      fieldSet: null,
-      project: apartment,
-      isTypeChanging: false,
-    });
+    const contact = this.resolveContactChanges(apartment, changes);
 
     return {
       ...contact,
@@ -165,6 +185,29 @@ export class ProjectApartmentService {
       customerFloor: changes.customerFloor ?? apartment.customerFloor,
       customerApartment: requestedNumber ?? apartment.customerApartment,
     };
+  }
+
+  private resolveContactChanges(
+    apartment: IProject,
+    changes: UpdateProjectDto,
+  ): Partial<IProjectContact> {
+    if (!hasContactChanges(changes)) {
+      return {};
+    }
+
+    const contact = mergeContact(apartment, changes);
+    const missingFields = findMissingContactFields(
+      contact,
+      APARTMENT_REQUIRED_CONTACT_FIELDS,
+    );
+
+    if (missingFields.length > 0) {
+      throw new BadRequestException(
+        `An apartment needs its contact person: ${missingFields.join(', ')}`,
+      );
+    }
+
+    return contact;
   }
 
   private resolvePaymentTermsOverride(

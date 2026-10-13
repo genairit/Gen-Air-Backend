@@ -45,10 +45,11 @@ export class CreateApartmentDto {
   })
   declare contactPhone: string;
 
+  @IsOptional()
   @IsNotEmpty()
   @IsString()
   @MaxLength(FIELD_LENGTHS.CONTACT_ROLE)
-  declare contactRole: string;
+  declare contactRole?: string | null;
 
   @IsOptional()
   @IsNotEmpty()

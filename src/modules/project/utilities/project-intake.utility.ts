@@ -55,5 +55,6 @@ export const mergePaymentTerms = (
 
 export const findMissingContactFields = (
   contact: IProjectContact,
+  requiredFields: readonly (keyof IProjectContact)[] = CONTACT_FIELDS,
 ): (keyof IProjectContact)[] =>
-  CONTACT_FIELDS.filter((field) => contact[field] == null);
+  requiredFields.filter((field) => contact[field] == null);
