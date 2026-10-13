@@ -1,6 +1,7 @@
 import { Provider } from '@nestjs/common';
 import { ProviderNames } from './provider-names';
 import { TypedLogger } from '@Logger/logger.service';
+import { Task } from '@Modules/task/entities/task.entity';
 import { User } from '@Modules/user/entities/user.entity';
 import { Sequelize, SequelizeOptions } from 'sequelize-typescript';
 import { Project } from '@Modules/project/entities/project.entity';
@@ -64,6 +65,7 @@ export const DatabaseProvider: Provider = {
     const sequelize = new Sequelize(buildSequelizeOptions());
 
     sequelize.addModels([
+      Task,
       User,
       Project,
       Customer,

@@ -1,4 +1,6 @@
 export const FIELD_LENGTHS = {
+  TASK_TITLE: 200,
+  TASK_DESCRIPTION: 10000,
   ICON: 40,
   PHONE: 20,
   EMAIL: 254,
