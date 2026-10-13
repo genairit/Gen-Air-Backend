@@ -177,3 +177,37 @@ Table drive_template_folders {
   created_at timestamptz(3)  [not null, default: `now()`]
   updated_at timestamptz(3)  [not null, default: `now()`]
 }
+
+Enum task_status {
+  waiting_for_response [note: 'מחכה לתשובה']
+  not_started          [note: 'טרם בעבודה']
+  in_progress          [note: 'בעבודה']
+  in_review            [note: 'בבדיקה']
+  proposal_sent        [note: 'נשלחה הצעה']
+}
+
+Table tasks {
+  id            uuid           [pk, default: `gen_random_uuid()`]
+  project_id    uuid           [not null]
+  customer_id   uuid           [not null]
+  assignee_id   uuid           [note: 'Nullable until a manager assigns the task']
+  created_by_id uuid           [not null]
+  title         varchar(200)   [not null, note: 'Must contain non-whitespace text']
+  description   text
+  status        task_status    [not null, default: 'not_started']
+  is_urgent     boolean        [not null, default: false, note: 'false → true is the became-urgent transition; notification dispatch belongs to the task module']
+  due_date      timestamptz(3)
+  created_at    timestamptz(3)  [not null, default: `now()`]
+  updated_at    timestamptz(3)  [not null, default: `now()`]
+  deleted_at    timestamptz(3)
+
+  indexes {
+    (assignee_id, status) [name: 'idx_tasks_assignee_id_status', note: 'Partial index: WHERE deleted_at IS NULL']
+    project_id [name: 'idx_tasks_project_id', note: 'Partial index: WHERE deleted_at IS NULL']
+  }
+}
+
+Ref: tasks.project_id > projects.id [delete: restrict]
+Ref: tasks.customer_id > customers.id [delete: restrict]
+Ref: tasks.assignee_id > users.id [delete: restrict]
+Ref: tasks.created_by_id > users.id [delete: restrict]
