@@ -10,5 +10,6 @@ export interface IProjectType {
   icon: string | null;
   subtitle: string | null;
   description: string | null;
+  canHaveApartments: boolean;
   detailFieldSet: ProjectDetailFieldSetType;
 }

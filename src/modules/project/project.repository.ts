@@ -1,4 +1,12 @@
 import {
+  Op,
+  Sequelize,
+  Includeable,
+  Transaction,
+  WhereOptions,
+} from 'sequelize';
+
+import {
   IProjectFilter,
   IProjectStageCount,
   TProjectUpdateAttributes,
@@ -12,9 +20,10 @@ import {
 } from '@Utilities/cursor-pagination.utility';
 
 import { Injectable } from '@nestjs/common';
+import { Literal } from 'sequelize/types/utils';
 import { Project } from './entities/project.entity';
 import { User } from '@Modules/user/entities/user.entity';
-import { Op, Includeable, Transaction, WhereOptions } from 'sequelize';
+import { Customer } from '@Modules/customer/entities/customer.entity';
 import { ICursorPage, ICursorBatch } from '@Interfaces/cursor-page.interface';
 import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
@@ -27,8 +36,37 @@ export class ProjectRepository {
     return Project.findByPk(id, {
       include: [
         ...this.buildCardIncludes(),
+        { model: Customer, paranoid: false },
         { model: User, as: 'createdBy', paranoid: false },
+        {
+          model: Project,
+          as: 'parentProject',
+          attributes: ['id', 'code', 'name'],
+        },
       ],
+    });
+  }
+
+  findLiveApartmentByNumber(
+    buildingId: string,
+    apartmentNumber: string,
+  ): Promise<Project | null> {
+    return Project.findOne({
+      where: {
+        parentProjectId: buildingId,
+        customerApartment: apartmentNumber,
+      },
+    });
+  }
+
+  countLiveApartments(buildingId: string): Promise<number> {
+    return Project.count({ where: { parentProjectId: buildingId } });
+  }
+
+  countApartmentsEverCreated(buildingId: string): Promise<number> {
+    return Project.count({
+      where: { parentProjectId: buildingId },
+      paranoid: false,
     });
   }
 
@@ -44,6 +82,7 @@ export class ProjectRepository {
         ],
       },
       include: this.buildCardIncludes(),
+      attributes: { include: [this.buildApartmentCountAttribute()] },
       order: CURSOR_ORDER,
       limit: batch.batchSize + 1,
     });
@@ -71,6 +110,12 @@ export class ProjectRepository {
     return groupedCounts.flatMap(({ stageId, count }) =>
       typeof stageId === 'string' ? [{ stageId, count }] : [],
     );
+  }
+
+  countByFilter(filter: IProjectFilter): Promise<number> {
+    return Project.count({
+      where: { [Op.and]: this.buildFilterWhere(filter) },
+    });
   }
 
   countByStage(stageId: string): Promise<number> {
@@ -128,8 +173,18 @@ export class ProjectRepository {
     ];
   }
 
+  private buildApartmentCountAttribute(): [Literal, string] {
+    return [
+      Sequelize.literal(
+        '(SELECT COUNT(*)::int FROM projects AS apartments WHERE apartments.parent_project_id = "Project"."id" AND apartments.deleted_at IS NULL)',
+      ),
+      'apartmentCount',
+    ];
+  }
+
   private buildFilterWhere(filter: IProjectFilter): WhereOptions<Project>[] {
     return [
+      { parentProjectId: filter.parentProjectId },
       ...whereWhenPresent(filter.stageId, (stageId) => ({ stageId })),
       ...whereWhenPresent(filter.projectTypeId, (projectTypeId) => ({
         projectTypeId,
@@ -150,6 +205,8 @@ export class ProjectRepository {
       [Op.or]: [
         { name: { [Op.iLike]: pattern } },
         { code: { [Op.iLike]: pattern } },
+        { customerName: { [Op.iLike]: pattern } },
+        { customerApartment: { [Op.iLike]: pattern } },
       ],
     };
   }

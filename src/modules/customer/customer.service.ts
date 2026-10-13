@@ -30,6 +30,10 @@ export class CustomerService {
     return customer;
   }
 
+  findById(id: string): Promise<ICustomer | null> {
+    return this.customerRepository.findById(id);
+  }
+
   getByFilter(
     filter: GetCustomersByFilterDto,
   ): Promise<ICursorPage<ICustomer>> {

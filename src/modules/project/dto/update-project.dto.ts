@@ -31,6 +31,10 @@ export class UpdateProjectDto extends IntersectionType(
 
   @IsOptional()
   @IsUUID()
+  declare customerId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
   declare stageId?: string;
 
   @IsOptional()

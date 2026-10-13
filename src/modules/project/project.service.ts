@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   forwardRef,
+  ConflictException,
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
@@ -9,9 +10,13 @@ import {
 
 import {
   IProject,
+  IApartmentPage,
+  INewProjectContext,
   IProjectStageCounts,
   IProjectFieldSetTarget,
   IProjectCustomerDetails,
+  TProjectUpdateAttributes,
+  TProjectCreationAttributes,
   IProjectStageChangeRequest,
 } from './interfaces/project.interface';
 
@@ -36,6 +41,7 @@ import { ProjectRepository } from './project.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { ProjectIntakeService } from './project-intake.service';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toCursorBatch } from '@Utilities/cursor-batch.utility';
@@ -43,14 +49,18 @@ import { IUser } from '@Modules/user/interfaces/user.interface';
 import { GetProjectsByFilterDto } from './dto/get-by-filter.dto';
 import { PROJECT_CODE } from './constants/project-code.constant';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
+import { CustomerService } from '@Modules/customer/customer.service';
+import { ProjectApartmentService } from './project-apartment.service';
 import { generateProjectCode } from './utilities/project-code.utility';
 import { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { GetProjectCountsByFilterDto } from './dto/get-counts-by-filter.dto';
+import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-sync-status.constant';
 import { IProjectMemberAssignment } from '@Modules/project-member/interfaces/project-member.interface';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 
@@ -60,6 +70,8 @@ export class ProjectService {
     private readonly eventEmitter: EventEmitter2,
     private readonly projectRepository: ProjectRepository,
     private readonly projectIntakeService: ProjectIntakeService,
+    private readonly projectApartmentService: ProjectApartmentService,
+    private readonly customerService: CustomerService,
     private readonly projectTypeService: ProjectTypeService,
     private readonly projectMemberService: ProjectMemberService,
     private readonly databaseTransactionService: DatabaseTransactionService,
@@ -88,6 +100,7 @@ export class ProjectService {
     return this.projectRepository.findByFilter(
       {
         projectIds,
+        parentProjectId: null,
         search: filter.search ?? null,
         stageId: filter.stageId ?? null,
         projectTypeId: filter.projectTypeId ?? null,
@@ -105,6 +118,7 @@ export class ProjectService {
     const stageCounts = await this.projectRepository.countGroupedByStage({
       projectIds,
       stageId: null,
+      parentProjectId: null,
       search: filter.search ?? null,
       projectTypeId: filter.projectTypeId ?? null,
     });
@@ -126,6 +140,7 @@ export class ProjectService {
       this.projectStageService.getInitialStage(),
       this.projectTypeService.getById(project.projectTypeId),
       this.projectMemberService.validateAssignments(project.members),
+      this.assertLinkableCustomer(project.customerId ?? null),
     ]);
 
     const customerDetails = this.resolveCustomerDetails(
@@ -138,44 +153,22 @@ export class ProjectService {
     );
     const code = await this.generateAvailableCode(creator);
 
-    const createdProject = await this.databaseTransactionService.run(
-      async (transaction) => {
-        const created = await this.projectRepository.create(
-          {
-            code,
-            ...intake,
-            ...customerDetails,
-            name: project.name,
-            createdById: creator.id,
-            stageId: initialStage.id,
-            projectTypeId: project.projectTypeId,
-          },
-          transaction,
-        );
-
-        await this.projectMemberService.replaceForProject(
-          created.id,
-          project.members,
-          transaction,
-        );
-
-        await this.projectStageTransitionService.record(
-          {
-            note: null,
-            fromStageId: null,
-            changedBy: creator,
-            projectId: created.id,
-            toStageId: initialStage.id,
-          },
-          transaction,
-        );
-
-        return created;
+    const createdProjectId = await this.persistNewProject(
+      {
+        code,
+        ...intake,
+        ...customerDetails,
+        name: project.name,
+        createdById: creator.id,
+        stageId: initialStage.id,
+        projectTypeId: project.projectTypeId,
+        customerId: project.customerId ?? null,
       },
+      { members: project.members, creator },
     );
 
     const projectCreated: IProjectCreatedEvent = {
-      projectId: createdProject.id,
+      projectId: createdProjectId,
     };
 
     await this.eventEmitter.emitAsync(
@@ -183,7 +176,42 @@ export class ProjectService {
       projectCreated,
     );
 
-    return this.getById(createdProject.id);
+    return this.getById(createdProjectId);
+  }
+
+  async createApartment(
+    buildingId: string,
+    apartment: CreateApartmentDto,
+    creator: IUser,
+  ): Promise<IProject> {
+    const members = apartment.members ?? [];
+    const [building, initialStage] = await Promise.all([
+      this.getById(buildingId),
+      this.projectStageService.getInitialStage(),
+      this.projectMemberService.validateAssignments(members),
+    ]);
+
+    const attributes = await this.projectApartmentService.resolveNewApartment({
+      creator,
+      building,
+      apartment,
+      stageId: initialStage.id,
+    });
+    const apartmentId = await this.persistNewProject(attributes, {
+      members,
+      creator,
+    });
+
+    return this.getById(apartmentId);
+  }
+
+  async getApartments(
+    buildingId: string,
+    filter: GetApartmentsByFilterDto,
+  ): Promise<IApartmentPage> {
+    const building = await this.getById(buildingId);
+
+    return this.projectApartmentService.findByBuilding(building, filter);
   }
 
   async update(
@@ -195,31 +223,10 @@ export class ProjectService {
       this.getById(id),
       this.validateChanges(changes),
     ]);
-    const isTypeChanging = isProjectTypeChanging(project, changes);
-    const fieldSet = await this.findTargetFieldSet(project, changes);
-    const customerDetails = this.resolveCustomerDetailChanges(
-      project,
-      changes,
-      { isTypeChanging, fieldSet },
-    );
-    const intake = await this.projectIntakeService.resolveChanges({
-      project,
-      changes,
-      fieldSet,
-      isTypeChanging,
-    });
+    const attributes = await this.resolveUpdateAttributes(project, changes);
 
     await this.databaseTransactionService.run(async (transaction) => {
-      await this.projectRepository.update(
-        id,
-        {
-          ...intake,
-          ...customerDetails,
-          name: changes.name,
-          projectTypeId: changes.projectTypeId,
-        },
-        transaction,
-      );
+      await this.projectRepository.update(id, attributes, transaction);
 
       await this.replaceMembersWhenProvided(
         id,
@@ -281,10 +288,142 @@ export class ProjectService {
   }
 
   async delete(id: string): Promise<void> {
+    const apartmentCount = await this.projectRepository.countLiveApartments(id);
+
+    if (apartmentCount > 0) {
+      throw new ConflictException(
+        `This building still has ${apartmentCount} apartments; delete them first`,
+      );
+    }
+
     const isDeleted = await this.projectRepository.softDelete(id);
 
     if (!isDeleted) {
       throw new NotFoundException(`Project ${id} was not found`);
+    }
+  }
+
+  private async persistNewProject(
+    attributes: TProjectCreationAttributes,
+    { members, creator }: INewProjectContext,
+  ): Promise<string> {
+    return this.databaseTransactionService.run(async (transaction) => {
+      const created = await this.projectRepository.create(
+        attributes,
+        transaction,
+      );
+
+      await this.projectMemberService.replaceForProject(
+        created.id,
+        members,
+        transaction,
+      );
+
+      await this.projectStageTransitionService.record(
+        {
+          note: null,
+          fromStageId: null,
+          changedBy: creator,
+          projectId: created.id,
+          toStageId: attributes.stageId,
+        },
+        transaction,
+      );
+
+      return created.id;
+    });
+  }
+
+  private resolveUpdateAttributes(
+    project: IProject,
+    changes: UpdateProjectDto,
+  ): Promise<TProjectUpdateAttributes> {
+    if (project.parentProjectId) {
+      return this.projectApartmentService.resolveChanges({
+        changes,
+        apartment: project,
+        buildingId: project.parentProjectId,
+      });
+    }
+
+    return this.resolveProjectChanges(project, changes);
+  }
+
+  private async resolveProjectChanges(
+    project: IProject,
+    changes: UpdateProjectDto,
+  ): Promise<TProjectUpdateAttributes> {
+    const isTypeChanging = isProjectTypeChanging(project, changes);
+    const [fieldSet] = await Promise.all([
+      this.findTargetFieldSet(project, changes),
+      this.assertLinkableCustomer(changes.customerId ?? null),
+      this.assertTypeKeepsApartments(project, changes),
+    ]);
+    const customerDetails = this.resolveCustomerDetailChanges(
+      project,
+      changes,
+      { isTypeChanging, fieldSet },
+    );
+    const intake = await this.projectIntakeService.resolveChanges({
+      project,
+      changes,
+      fieldSet,
+      isTypeChanging,
+    });
+
+    return {
+      ...intake,
+      ...customerDetails,
+      name: changes.name,
+      customerId: changes.customerId,
+      projectTypeId: changes.projectTypeId,
+    };
+  }
+
+  private async assertLinkableCustomer(
+    customerId: string | null,
+  ): Promise<void> {
+    if (!customerId) {
+      return;
+    }
+
+    const customer = await this.customerService.findById(customerId);
+
+    if (!customer) {
+      throw new BadRequestException(`Customer ${customerId} was not found`);
+    }
+
+    if (customer.prioritySyncStatus === PRIORITY_SYNC_STATUSES.FAILED) {
+      throw new BadRequestException(
+        `Customer ${customer.name} has not reached Priority yet; retry its sync before linking it to a project`,
+      );
+    }
+  }
+
+  private async assertTypeKeepsApartments(
+    project: IProject,
+    changes: UpdateProjectDto,
+  ): Promise<void> {
+    if (!isProjectTypeChanging(project, changes)) {
+      return;
+    }
+
+    const apartmentCount = await this.projectRepository.countLiveApartments(
+      project.id,
+    );
+
+    if (apartmentCount === 0) {
+      return;
+    }
+
+    const projectType = await this.projectTypeService.getById(
+      changes.projectTypeId ?? project.projectTypeId,
+    );
+
+    if (!projectType.canHaveApartments) {
+      throw new BadRequestException(
+        `This building has ${apartmentCount} apartments, and a ${projectType.name} project cannot hold apartments`,
+      );
     }
   }
 
