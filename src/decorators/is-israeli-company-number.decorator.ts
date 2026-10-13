@@ -7,7 +7,7 @@ export const IsIsraeliCompanyNumber = () =>
     validator: {
       validate: (value: unknown) =>
         typeof value === 'string' && isValidIsraeliCompanyNumber(value),
-      defaultMessage: () =>
-        'customerCompanyNumber must be a 9-digit ח.פ / ת.פ with a valid check digit',
+      defaultMessage: (validationArguments) =>
+        `${validationArguments?.property ?? 'value'} must be a 9-digit Israeli registration number with a valid check digit`,
     },
   });
