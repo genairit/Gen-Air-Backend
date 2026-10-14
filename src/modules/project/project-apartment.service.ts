@@ -40,6 +40,7 @@ import { UpdateProjectDto } from './dto/update-project.dto';
 import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { ProjectIntakeService } from './project-intake.service';
 import { IUser } from '@Modules/user/interfaces/user.interface';
+import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { EMPTY_PAYMENT_TERMS } from './constants/project-intake.constant';
 import { resolveApartment } from './utilities/project-inheritance.utility';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
@@ -121,6 +122,7 @@ export class ProjectApartmentService {
       this.projectRepository.findByFilter(apartmentFilter, {
         batchCursor: filter.batchCursor ?? null,
         batchSize: filter.batchSize ?? APARTMENT.PAGE_SIZE,
+        direction: CURSOR_DIRECTIONS.OLDEST_FIRST,
       }),
       this.projectRepository.countByFilter(apartmentFilter),
     ]);

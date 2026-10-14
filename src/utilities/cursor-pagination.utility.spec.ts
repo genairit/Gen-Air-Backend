@@ -6,6 +6,7 @@ import {
 } from './cursor-pagination.utility';
 
 import { Op } from 'sequelize';
+import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 
 const POSITION = {
   id: '6f1c2b8e-3d4a-4b5c-9e7f-0a1b2c3d4e5f',
@@ -52,6 +53,21 @@ describe('buildCursorWhere', () => {
         [Op.or]: [
           { createdAt: { [Op.lt]: POSITION.createdAt } },
           { createdAt: POSITION.createdAt, id: { [Op.lt]: POSITION.id } },
+        ],
+      },
+    ]);
+  });
+});
+
+describe('buildCursorWhere oldest first', () => {
+  it('pages strictly after the cursor position in ascending order', () => {
+    expect(
+      buildCursorWhere(encodeCursor(POSITION), CURSOR_DIRECTIONS.OLDEST_FIRST),
+    ).toEqual([
+      {
+        [Op.or]: [
+          { createdAt: { [Op.gt]: POSITION.createdAt } },
+          { createdAt: POSITION.createdAt, id: { [Op.gt]: POSITION.id } },
         ],
       },
     ]);

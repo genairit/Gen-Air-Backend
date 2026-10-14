@@ -15,15 +15,16 @@ import {
 } from './interfaces/project.interface';
 
 import {
-  CURSOR_ORDER,
   toCursorPage,
   buildCursorWhere,
+  CURSOR_ORDER_BY_DIRECTION,
 } from '@Utilities/cursor-pagination.utility';
 
 import { Injectable } from '@nestjs/common';
 import { Literal } from 'sequelize/types/utils';
 import { Project } from './entities/project.entity';
 import { User } from '@Modules/user/entities/user.entity';
+import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { Customer } from '@Modules/customer/entities/customer.entity';
 import { ICursorPage, ICursorBatch } from '@Interfaces/cursor-page.interface';
 import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
@@ -78,16 +79,17 @@ export class ProjectRepository {
     filter: IProjectFilter,
     batch: ICursorBatch,
   ): Promise<ICursorPage<IProject>> {
+    const direction = batch.direction ?? CURSOR_DIRECTIONS.NEWEST_FIRST;
     const rows = await Project.findAll({
       where: {
         [Op.and]: [
           ...this.buildFilterWhere(filter),
-          ...buildCursorWhere(batch.batchCursor),
+          ...buildCursorWhere(batch.batchCursor, direction),
         ],
       },
       include: this.buildCardIncludes(),
       attributes: { include: [this.buildApartmentCountAttribute()] },
-      order: CURSOR_ORDER,
+      order: CURSOR_ORDER_BY_DIRECTION[direction],
       limit: batch.batchSize + 1,
     });
 

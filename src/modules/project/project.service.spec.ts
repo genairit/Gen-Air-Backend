@@ -20,6 +20,7 @@ import { IUser } from '@Modules/user/interfaces/user.interface';
 import { AddressService } from '@Modules/address/address.service';
 import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
+import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
@@ -962,7 +963,7 @@ describe('ProjectService.createApartment', () => {
 });
 
 describe('ProjectService.getApartments', () => {
-  it('pages the building apartments 25 at a time with the total', async () => {
+  it('pages the building apartments 25 at a time, oldest first, with the total', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.findById.mockResolvedValueOnce(BUILDING);
     projectRepository.countByFilter.mockResolvedValue(73);
@@ -972,7 +973,11 @@ describe('ProjectService.getApartments', () => {
     expect(page.total).toBe(73);
     expect(projectRepository.findByFilter).toHaveBeenCalledWith(
       expect.objectContaining({ parentProjectId: BUILDING_ID, search: '12' }),
-      { batchCursor: null, batchSize: 25 },
+      {
+        batchCursor: null,
+        batchSize: 25,
+        direction: CURSOR_DIRECTIONS.OLDEST_FIRST,
+      },
     );
   });
 });
