@@ -6,7 +6,7 @@ import {
 
 import {
   EMPTY_CUSTOMER_DETAILS,
-  CUSTOMER_DETAIL_FIELDS_BY_SET,
+  SITE_DETAIL_FIELDS_BY_SET,
   PROJECT_CUSTOMER_DETAIL_FIELDS,
 } from '../constants/project-customer-details.constant';
 
@@ -33,22 +33,20 @@ export const pickCustomerDetails = (
 ): IProjectCustomerDetails =>
   mergeCustomerDetails(EMPTY_CUSTOMER_DETAILS, source);
 
-export const scopeCustomerDetailsToFieldSet = (
+export const scopeSiteDetailsToFieldSet = (
   details: IProjectCustomerDetails,
   fieldSet: ProjectDetailFieldSetType,
 ): IProjectCustomerDetails =>
-  CUSTOMER_DETAIL_FIELDS_BY_SET[fieldSet].reduce<IProjectCustomerDetails>(
+  SITE_DETAIL_FIELDS_BY_SET[fieldSet].reduce<IProjectCustomerDetails>(
     (scoped, field) => ({ ...scoped, [field]: details[field] }),
     EMPTY_CUSTOMER_DETAILS,
   );
 
-export const findMissingCustomerDetails = (
+export const findMissingSiteDetails = (
   details: IProjectCustomerDetails,
   fieldSet: ProjectDetailFieldSetType,
 ): ProjectCustomerDetailFieldType[] =>
-  CUSTOMER_DETAIL_FIELDS_BY_SET[fieldSet].filter(
-    (field) => details[field] == null,
-  );
+  SITE_DETAIL_FIELDS_BY_SET[fieldSet].filter((field) => details[field] == null);
 
 export const isProjectTypeChanging = (
   project: IProject,

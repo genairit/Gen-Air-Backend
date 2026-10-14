@@ -29,9 +29,9 @@ import {
   pickCustomerDetails,
   mergeCustomerDetails,
   isProjectTypeChanging,
+  findMissingSiteDetails,
   hasCustomerDetailChanges,
-  findMissingCustomerDetails,
-  scopeCustomerDetailsToFieldSet,
+  scopeSiteDetailsToFieldSet,
 } from './utilities/project-customer-details.utility';
 
 import { Transaction } from 'sequelize';
@@ -140,7 +140,7 @@ export class ProjectService {
       this.projectStageService.getInitialStage(),
       this.projectTypeService.getById(project.projectTypeId),
       this.projectMemberService.validateAssignments(project.members),
-      this.assertLinkableCustomer(project.customerId ?? null),
+      this.assertLinkableCustomer(project.customerId),
     ]);
 
     const customerDetails = this.resolveCustomerDetails(
@@ -163,7 +163,7 @@ export class ProjectService {
         stageId: initialStage.id,
         projectTypeId: project.projectTypeId,
         notes: project.notes ?? null,
-        customerId: project.customerId ?? null,
+        customerId: project.customerId,
       },
       { members: project.members, creator },
     );
@@ -508,12 +508,12 @@ export class ProjectService {
     details: IProjectCustomerDetails,
     fieldSet: ProjectDetailFieldSetType,
   ): IProjectCustomerDetails {
-    const scopedDetails = scopeCustomerDetailsToFieldSet(details, fieldSet);
-    const missingFields = findMissingCustomerDetails(scopedDetails, fieldSet);
+    const scopedDetails = scopeSiteDetailsToFieldSet(details, fieldSet);
+    const missingFields = findMissingSiteDetails(scopedDetails, fieldSet);
 
     if (missingFields.length > 0) {
       throw new BadRequestException(
-        `Missing customer details for this project type: ${missingFields.join(', ')}`,
+        `Missing site details for this project type: ${missingFields.join(', ')}`,
       );
     }
 

@@ -36,6 +36,12 @@ const QUOTE_STAGE_ID = 'stage-quote';
 const ORDER_STAGE_ID = 'stage-order';
 const COMPANY_TYPE_ID = 'type-company';
 const PRIVATE_TYPE_ID = 'type-private';
+const CUSTOMER_ID = 'customer-1';
+
+const LINKED_CUSTOMER = {
+  name: 'בבלי נדל״ן',
+  prioritySyncStatus: 'synced',
+};
 
 const PROJECT_TYPES = {
   [COMPANY_TYPE_ID]: {
@@ -198,7 +204,9 @@ const createService = async () => {
     countApartmentsEverCreated: jest.fn().mockResolvedValue(0),
     findByFilter: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
   };
-  const customerService = { findById: jest.fn().mockResolvedValue(null) };
+  const customerService = {
+    findById: jest.fn().mockResolvedValue(LINKED_CUSTOMER),
+  };
   const projectStageService = {
     getById: jest.fn().mockResolvedValue({ id: ORDER_STAGE_ID }),
     getInitialStage: jest.fn().mockResolvedValue({ id: QUOTE_STAGE_ID }),
@@ -262,6 +270,7 @@ describe('ProjectService.create', () => {
   const PROJECT = {
     ...COMPANY_DETAILS,
     ...COMPANY_INTAKE,
+    customerId: CUSTOMER_ID,
     name: 'מגדל פארק בבלי C',
     projectTypeId: COMPANY_TYPE_ID,
     members: [{ userId: 'user-2', role: USER_ROLES.SECRETARY }],
@@ -330,16 +339,17 @@ describe('ProjectService.create', () => {
   });
 });
 
-describe('ProjectService.create customer details', () => {
+describe('ProjectService.create site details', () => {
   const PROJECT = {
     ...COMPANY_DETAILS,
     ...COMPANY_INTAKE,
     members: [],
+    customerId: CUSTOMER_ID,
     name: 'מגדל פארק בבלי C',
     projectTypeId: COMPANY_TYPE_ID,
   };
 
-  it('stores the field set of the project type and clears fields that belong to other types', async () => {
+  it('stores no typed customer identity, since the linked customer holds it', async () => {
     const { service, projectRepository } = await createService();
 
     await service.create(
@@ -350,21 +360,23 @@ describe('ProjectService.create customer details', () => {
     const [createdAttributes] = projectRepository.create.mock.calls[0];
 
     expect(createdAttributes).toMatchObject({
-      ...COMPANY_DETAILS,
+      customerId: CUSTOMER_ID,
+      customerName: null,
       customerCity: null,
       customerFloor: null,
-      customerAssociationNumber: null,
+      customerPhone: null,
+      customerCompanyNumber: null,
     });
   });
 
-  it('rejects a project missing a field its type requires, naming the field', async () => {
+  it('rejects a private project missing its floor and apartment, naming them', async () => {
     const { service, projectRepository } = await createService();
 
     await expect(
-      service.create({ ...PROJECT, customerCompanyNumber: null }, CREATOR),
+      service.create({ ...PROJECT, projectTypeId: PRIVATE_TYPE_ID }, CREATOR),
     ).rejects.toThrow(
       new BadRequestException(
-        'Missing customer details for this project type: customerCompanyNumber',
+        'Missing site details for this project type: customerFloor, customerApartment',
       ),
     );
     expect(projectRepository.create).not.toHaveBeenCalled();
@@ -418,11 +430,13 @@ describe('ProjectService.update', () => {
   });
 });
 
-describe('ProjectService.update customer details', () => {
-  const PRIVATE_ONLY_DETAILS = {
-    customerFloor: 7,
-    customerApartment: '24',
-    customerCity: 'תל אביב-יפו',
+describe('ProjectService.update site details', () => {
+  const SITE_DETAILS = { customerFloor: 7, customerApartment: '24' };
+
+  const STORED_PRIVATE_PROJECT = {
+    ...STORED_COMPANY_PROJECT,
+    ...SITE_DETAILS,
+    projectTypeId: PRIVATE_TYPE_ID,
   };
 
   it('keeps legacy projects editable when neither the type nor the details change', async () => {
@@ -439,61 +453,50 @@ describe('ProjectService.update customer details', () => {
     expect(updatedAttributes).not.toHaveProperty('customerName');
   });
 
-  it('requires the complete field set once a legacy project edits its details', async () => {
-    const { service, projectRepository } = await createService();
-    projectRepository.findById.mockResolvedValue(LEGACY_PROJECT);
-
-    await expect(
-      service.update(PROJECT_ID, { customerName: 'בבלי' }, CREATOR),
-    ).rejects.toThrow(BadRequestException);
-    expect(projectRepository.update).not.toHaveBeenCalled();
-  });
-
-  it('carries shared fields over a type switch and asks only for the new ones', async () => {
+  it('asks for the site details of the new type on a type switch', async () => {
     const { service, projectRepository } = await createService();
 
     await expect(
       service.update(PROJECT_ID, { projectTypeId: PRIVATE_TYPE_ID }, CREATOR),
     ).rejects.toThrow(
       new BadRequestException(
-        'Missing customer details for this project type: customerCity, customerFloor, customerApartment',
+        'Missing site details for this project type: customerFloor, customerApartment',
       ),
     );
     expect(projectRepository.update).not.toHaveBeenCalled();
   });
 
-  it('switches type with the new fields, keeping shared values and clearing the company number', async () => {
+  it('switches type with the new site details and clears the typed customer identity', async () => {
     const { service, projectRepository } = await createService();
 
     await service.update(
       PROJECT_ID,
-      { ...PRIVATE_ONLY_DETAILS, projectTypeId: PRIVATE_TYPE_ID },
+      { ...SITE_DETAILS, projectTypeId: PRIVATE_TYPE_ID },
       CREATOR,
     );
 
     expect(projectRepository.update).toHaveBeenCalledWith(
       PROJECT_ID,
       expect.objectContaining({
-        ...PRIVATE_ONLY_DETAILS,
+        ...SITE_DETAILS,
+        customerName: null,
+        customerPhone: null,
         customerCompanyNumber: null,
         projectTypeId: PRIVATE_TYPE_ID,
-        customerName: COMPANY_DETAILS.customerName,
-        customerPhone: COMPANY_DETAILS.customerPhone,
-        customerEmail: COMPANY_DETAILS.customerEmail,
-        customerAddress: COMPANY_DETAILS.customerAddress,
       }),
       TRANSACTION,
     );
   });
 
-  it('rejects clearing a required field', async () => {
-    const { service } = await createService();
+  it('rejects clearing a required site field', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_PRIVATE_PROJECT);
 
     await expect(
-      service.update(PROJECT_ID, { customerPhone: null }, CREATOR),
+      service.update(PROJECT_ID, { customerFloor: null }, CREATOR),
     ).rejects.toThrow(
       new BadRequestException(
-        'Missing customer details for this project type: customerPhone',
+        'Missing site details for this project type: customerFloor',
       ),
     );
   });
@@ -504,6 +507,7 @@ describe('ProjectService.create intake fields', () => {
     ...COMPANY_DETAILS,
     ...COMPANY_INTAKE,
     members: [],
+    customerId: CUSTOMER_ID,
     name: 'מגדל פארק בבלי C',
     projectTypeId: COMPANY_TYPE_ID,
   };
@@ -512,6 +516,7 @@ describe('ProjectService.create intake fields', () => {
     ...PRIVATE_DETAILS,
     ...CONTACT,
     members: [],
+    customerId: CUSTOMER_ID,
     name: 'דירת משפחת לוי',
     projectTypeId: PRIVATE_TYPE_ID,
     addressPlaceId: TEL_AVIV_PLACE_ID,
@@ -1060,13 +1065,14 @@ describe('ProjectService customer link', () => {
     ...COMPANY_DETAILS,
     ...COMPANY_INTAKE,
     members: [],
-    customerId: 'customer-1',
+    customerId: CUSTOMER_ID,
     name: 'מגדל פארק בבלי C',
     projectTypeId: COMPANY_TYPE_ID,
   };
 
   it('rejects a customer that does not exist', async () => {
-    const { service } = await createService();
+    const { service, customerService } = await createService();
+    customerService.findById.mockResolvedValue(null);
 
     await expect(service.create(PROJECT, CREATOR)).rejects.toThrow(
       'Customer customer-1 was not found',
@@ -1096,7 +1102,7 @@ describe('ProjectService customer link', () => {
     await service.create(PROJECT, CREATOR);
 
     expect(projectRepository.create.mock.calls[0][0].customerId).toBe(
-      'customer-1',
+      CUSTOMER_ID,
     );
   });
 });
