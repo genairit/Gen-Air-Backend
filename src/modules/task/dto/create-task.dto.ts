@@ -25,11 +25,12 @@ export class CreateTaskDto {
   @IsOptional()
   @IsUUID()
   declare assigneeId?: string | null;
-  @IsOptional()
+  @IsNotEmpty()
   @IsString()
+  @Matches(/\S/)
   @MaxLength(FIELD_LENGTHS.TASK_DESCRIPTION)
-  declare description?: string | null;
-  @IsOptional()
-  @IsDateString()
-  declare dueDate?: string | null;
+  declare description: string;
+  @IsNotEmpty()
+  @IsDateString({ strict: true })
+  declare dueDate: string;
 }

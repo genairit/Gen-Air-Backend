@@ -3,12 +3,37 @@ import {
   type TaskStatusType,
 } from '../constants/task-status.constant';
 
+import { Type } from 'class-transformer';
 import { Transform } from 'class-transformer';
-import { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
+import { PAGINATION } from '@Constants/pagination.constant';
+import { decodeTaskCursor } from '../utilities/task-cursor.utility';
 import { toTaskUrgencyFilter } from '../utilities/task-query.utility';
 import { IsOptional, IsUUID, IsIn, IsBoolean } from 'class-validator';
+import { IsInt, Min, Max, IsString, ValidateBy } from 'class-validator';
 
-export class GetTasksByFilterDto extends CursorPaginationDto {
+export class GetTasksByFilterDto {
+  @IsOptional()
+  @IsString()
+  @ValidateBy({
+    name: 'taskCursor',
+    validator: {
+      validate: (value: unknown) =>
+        typeof value === 'string' && decodeTaskCursor(value) !== null,
+      defaultMessage: () =>
+        'batchCursor must be a task cursor returned by a previous page',
+    },
+  })
+  declare batchCursor?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(PAGINATION.MAX_BATCH_SIZE)
+  declare batchSize?: number;
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => toTaskUrgencyFilter(value))
+  @IsBoolean()
+  declare unassigned?: boolean;
   @IsOptional() @IsUUID() declare assigneeId?: string;
   @IsOptional() @IsUUID() declare projectId?: string;
   @IsOptional() @IsUUID() declare customerId?: string;

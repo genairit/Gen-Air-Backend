@@ -1,12 +1,14 @@
 import {
   Injectable,
   NotFoundException,
+  ConflictException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 
 import {
   ITask,
+  ITaskCounts,
   ITaskFilter,
   ITaskUrgentEvent,
   TTaskUpdateAttributes,
@@ -19,6 +21,7 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { UserService } from '@Modules/user/user.service';
 import { GetTasksByFilterDto } from './dto/get-by-filter.dto';
+import { isDueDateBeforeToday } from '@Utilities/date.utility';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toCursorBatch } from '@Utilities/cursor-batch.utility';
 import { ProjectService } from '@Modules/project/project.service';
@@ -27,7 +30,7 @@ import { TaskStatusType } from './constants/task-status.constant';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
-import { TASK_ASSIGNEE_SCOPE } from './constants/task-access.constant';
+import { EMPTY_TASK_STATUS_COUNTS } from './constants/task-status.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
 @Injectable()
@@ -41,25 +44,20 @@ export class TaskService {
     private readonly events: EventEmitter2,
   ) {}
 
-  async getById(id: string, user: IUser): Promise<ITask> {
+  async getById(id: string): Promise<ITask> {
     const task = await this.requireTask(id);
-    this.assertVisible(task, user);
+
     return task;
   }
 
-  getByFilter(
-    filter: GetTasksByFilterDto,
-    user: IUser,
-  ): Promise<ICursorPage<ITask>> {
+  getByFilter(filter: GetTasksByFilterDto): Promise<ICursorPage<ITask>> {
     const scopedFilter: ITaskFilter = {
       projectId: filter.projectId ?? null,
       customerId: filter.customerId ?? null,
       status: filter.status ?? null,
       isUrgent: filter.isUrgent ?? null,
-      assigneeId: TASK_ASSIGNEE_SCOPE[user.role](
-        user.id,
-        filter.assigneeId ?? null,
-      ),
+      assigneeId: filter.assigneeId ?? null,
+      unassigned: filter.unassigned ?? null,
     };
     return this.taskRepository.findByFilter(
       scopedFilter,
@@ -71,11 +69,51 @@ export class TaskService {
     filter: GetTasksByFilterDto,
     user: IUser,
   ): Promise<ICursorPage<ITask>> {
-    return this.getByFilter({ ...filter, assigneeId: user.id }, user);
+    return this.getByFilter({ ...filter, assigneeId: user.id });
+  }
+
+  async claim(id: string, user: IUser): Promise<ITask> {
+    return this.transactions.run(async (transaction) => {
+      const task = await this.requireTask(id, transaction);
+      if (task.assigneeId !== null) {
+        throw new ConflictException('This task has already been assigned');
+      }
+      await this.taskRepository.update(
+        id,
+        { assigneeId: user.id },
+        transaction,
+      );
+      return this.requireTask(id, transaction);
+    });
+  }
+
+  async getCounts(filter: GetTasksByFilterDto): Promise<ITaskCounts> {
+    const rows = await this.taskRepository.countByFilter({
+      projectId: filter.projectId ?? null,
+      customerId: filter.customerId ?? null,
+      assigneeId: filter.assigneeId ?? null,
+      unassigned: filter.unassigned ?? null,
+      status: null,
+      isUrgent: null,
+    });
+    return rows.reduce<ITaskCounts>(
+      (counts, row) => ({
+        total: counts.total + row.count,
+        urgent: counts.urgent + (row.isUrgent ? row.count : 0),
+        byStatus: {
+          ...counts.byStatus,
+          [row.status]: counts.byStatus[row.status] + row.count,
+        },
+      }),
+      { total: 0, urgent: 0, byStatus: { ...EMPTY_TASK_STATUS_COUNTS } },
+    );
   }
 
   async create(input: CreateTaskDto, creator: IUser): Promise<ITask> {
     this.assertManager(creator);
+    if (isDueDateBeforeToday(input.dueDate)) {
+      throw new BadRequestException('Task due date cannot be in the past');
+    }
     await this.validateRelations(
       input.projectId,
       input.customerId,
@@ -87,8 +125,8 @@ export class TaskService {
       customerId: input.customerId,
       createdById: creator.id,
       assigneeId: input.assigneeId ?? null,
-      description: input.description ?? null,
-      dueDate: input.dueDate ? new Date(input.dueDate) : null,
+      description: input.description.trim(),
+      dueDate: new Date(input.dueDate),
     });
   }
 
@@ -118,18 +156,9 @@ export class TaskService {
     });
   }
 
-  async updateStatus(
-    id: string,
-    status: TaskStatusType,
-    user: IUser,
-  ): Promise<ITask> {
+  async updateStatus(id: string, status: TaskStatusType): Promise<ITask> {
     return this.transactions.run(async (transaction) => {
-      const task = await this.requireTask(id, transaction);
-      if (task.assigneeId !== user.id) {
-        throw new ForbiddenException(
-          'Only the task assignee can update its status',
-        );
-      }
+      await this.requireTask(id, transaction);
       await this.taskRepository.update(id, { status }, transaction);
       return this.requireTask(id, transaction);
     });
@@ -144,7 +173,17 @@ export class TaskService {
     const result = await this.transactions.run(async (transaction) => {
       const previous = await this.requireTask(id, transaction);
       const becameUrgent = !previous.isUrgent && isUrgent;
-      await this.taskRepository.update(id, { isUrgent }, transaction);
+      const audit = becameUrgent
+        ? { urgencyMarkedById: user.id, urgencyMarkedAt: new Date() }
+        : {};
+      const clearedAudit = !isUrgent
+        ? { urgencyMarkedById: null, urgencyMarkedAt: null }
+        : {};
+      await this.taskRepository.update(
+        id,
+        { isUrgent, ...audit, ...clearedAudit },
+        transaction,
+      );
       return { task: await this.requireTask(id, transaction), becameUrgent };
     });
     if (result.becameUrgent) {
@@ -186,12 +225,6 @@ export class TaskService {
   private assertManager(user: IUser): void {
     if (!this.canManage(user)) {
       throw new ForbiddenException('Only managers can manage tasks');
-    }
-  }
-
-  private assertVisible(task: ITask, user: IUser): void {
-    if (!this.canManage(user) && task.assigneeId !== user.id) {
-      throw new ForbiddenException('You can only read your assigned tasks');
     }
   }
 

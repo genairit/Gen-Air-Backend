@@ -13,13 +13,13 @@ import {
 } from '@nestjs/common';
 
 import { TaskService } from './task.service';
-import { ITask } from './interfaces/task.interface';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UserRoles } from '@Decorators/user-roles.decorator';
 import { GetTasksByFilterDto } from './dto/get-by-filter.dto';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
+import { ITask, ITaskCounts } from './interfaces/task.interface';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
 import { UpdateTaskUrgencyDto } from './dto/update-task-urgency.dto';
@@ -34,9 +34,8 @@ export class TaskController {
   @Get()
   getByFilter(
     @Query() filter: GetTasksByFilterDto,
-    @AuthenticatedUser() user: IUser,
   ): Promise<ICursorPage<ITask>> {
-    return this.taskService.getByFilter(filter, user);
+    return this.taskService.getByFilter(filter);
   }
   @Get('my-tasks')
   getMyTasks(
@@ -45,12 +44,28 @@ export class TaskController {
   ): Promise<ICursorPage<ITask>> {
     return this.taskService.getMyTasks(filter, user);
   }
-  @Get(':id')
-  getById(
+  @Get('counts')
+  getCounts(@Query() filter: GetTasksByFilterDto): Promise<ITaskCounts> {
+    return this.taskService.getCounts(filter);
+  }
+  @Get('my-tasks/counts')
+  getMyCounts(
+    @Query() filter: GetTasksByFilterDto,
+    @AuthenticatedUser() user: IUser,
+  ): Promise<ITaskCounts> {
+    return this.taskService.getCounts({ ...filter, assigneeId: user.id });
+  }
+  @Patch(':id/claim')
+  @UserRoles(ROLE_PERMISSIONS.UPDATE_TASK_STATUS)
+  claim(
     @Param('id', ParseUUIDPipe) id: string,
     @AuthenticatedUser() user: IUser,
   ): Promise<ITask> {
-    return this.taskService.getById(id, user);
+    return this.taskService.claim(id, user);
+  }
+  @Get(':id')
+  getById(@Param('id', ParseUUIDPipe) id: string): Promise<ITask> {
+    return this.taskService.getById(id);
   }
   @Post()
   @UserRoles(ROLE_PERMISSIONS.MANAGE_TASKS)
@@ -65,9 +80,8 @@ export class TaskController {
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() input: UpdateTaskStatusDto,
-    @AuthenticatedUser() user: IUser,
   ): Promise<ITask> {
-    return this.taskService.updateStatus(id, input.status, user);
+    return this.taskService.updateStatus(id, input.status);
   }
   @Patch(':id/urgency')
   @UserRoles(ROLE_PERMISSIONS.MANAGE_TASKS)

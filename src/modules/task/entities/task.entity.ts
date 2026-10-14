@@ -29,6 +29,15 @@ import { ITask, TTaskCreationAttributes } from '../interfaces/task.interface';
   paranoid: true,
   indexes: [
     {
+      name: 'idx_tasks_urgency_due_date',
+      fields: [
+        { name: 'is_urgent', order: 'DESC' },
+        { name: 'due_date', order: 'ASC' },
+        'id',
+      ],
+      where: { deleted_at: null },
+    },
+    {
       name: 'idx_tasks_assignee_id_status',
       fields: ['assignee_id', 'status'],
       where: { deleted_at: null },
@@ -70,6 +79,11 @@ export class Task
   @Default(false)
   @Column({ allowNull: false, type: DataType.BOOLEAN })
   declare isUrgent: boolean;
+  @ForeignKey(() => User)
+  @Column(DataType.UUID)
+  declare urgencyMarkedById: string | null;
+  @Column(DataType.DATE(3))
+  declare urgencyMarkedAt: Date | null;
   @Column(DataType.DATE(3))
   declare dueDate: Date | null;
   @CreatedAt declare createdAt: Date;

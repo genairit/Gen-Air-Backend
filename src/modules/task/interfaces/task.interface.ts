@@ -14,12 +14,15 @@ export interface ITask {
   deletedAt: Date | null;
   assigneeId: string | null;
   description: string | null;
+  urgencyMarkedAt: Date | null;
+  urgencyMarkedById: string | null;
 }
 export interface ITaskFilter {
   projectId: string | null;
   isUrgent: boolean | null;
   assigneeId: string | null;
   customerId: string | null;
+  unassigned: boolean | null;
   status: TaskStatusType | null;
 }
 export type TTaskEditableAttributes = Pick<
@@ -33,8 +36,12 @@ export type TTaskEditableAttributes = Pick<
 >;
 export type TTaskCreationAttributes = TTaskEditableAttributes &
   Pick<ITask, 'createdById'>;
+export type TTaskStateAttributes = Pick<
+  ITask,
+  'status' | 'isUrgent' | 'urgencyMarkedById' | 'urgencyMarkedAt'
+>;
 export type TTaskUpdateAttributes = Partial<
-  TTaskEditableAttributes & Pick<ITask, 'status' | 'isUrgent'>
+  TTaskEditableAttributes & TTaskStateAttributes
 >;
 export interface ITaskUrgentEvent {
   taskId: string;
@@ -42,4 +49,22 @@ export interface ITaskUrgentEvent {
   customerId: string;
   changedById: string;
   assigneeId: string | null;
+}
+
+export type TTaskStatusCounts = Record<TaskStatusType, number>;
+
+export interface ITaskCounts {
+  total: number;
+  urgent: number;
+  byStatus: TTaskStatusCounts;
+}
+export interface ITaskCountRow {
+  count: number;
+  isUrgent: boolean;
+  status: TaskStatusType;
+}
+export interface ITaskCursor {
+  id: string;
+  isUrgent: boolean;
+  dueDate: Date | null;
 }
