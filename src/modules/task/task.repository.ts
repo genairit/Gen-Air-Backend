@@ -1,19 +1,21 @@
 import {
   ITaskFilter,
+  ITaskCountRow,
   TTaskUpdateAttributes,
   TTaskCreationAttributes,
 } from './interfaces/task.interface';
 
 import {
-  CURSOR_ORDER,
-  toCursorPage,
-  buildCursorWhere,
-} from '@Utilities/cursor-pagination.utility';
+  toTaskCursorPage,
+  buildTaskCursorWhere,
+} from './utilities/task-cursor.utility';
 
 import { Injectable } from '@nestjs/common';
 import { Task } from './entities/task.entity';
 import { Op, Transaction, WhereOptions } from 'sequelize';
 import { whereWhenPresent } from '@Utilities/query.utility';
+import { TASK_ORDER } from './constants/task-order.constant';
+import { isTaskStatus } from './utilities/task-status.utility';
 import { ICursorBatch, ICursorPage } from '@Interfaces/cursor-page.interface';
 
 @Injectable()
@@ -32,13 +34,27 @@ export class TaskRepository {
       where: {
         [Op.and]: [
           ...this.buildFilterWhere(filter),
-          ...buildCursorWhere(batch.batchCursor),
+          ...buildTaskCursorWhere(batch.batchCursor),
         ],
       },
-      order: CURSOR_ORDER,
+      order: TASK_ORDER,
       limit: batch.batchSize + 1,
     });
-    return toCursorPage(rows, batch.batchSize);
+    return toTaskCursorPage(rows, batch.batchSize);
+  }
+  async countByFilter(filter: ITaskFilter): Promise<ITaskCountRow[]> {
+    const rows = await Task.count({
+      where: { [Op.and]: this.buildFilterWhere(filter) },
+      group: ['status', 'isUrgent'],
+    });
+    return rows.flatMap((row) => {
+      const status: unknown = row.status;
+      const isUrgent: unknown = row.isUrgent;
+      if (!isTaskStatus(status) || typeof isUrgent !== 'boolean') {
+        return [];
+      }
+      return [{ status, isUrgent, count: Number(row.count) }];
+    });
   }
   create(
     attributes: TTaskCreationAttributes,
@@ -58,6 +74,9 @@ export class TaskRepository {
   }
   private buildFilterWhere(filter: ITaskFilter): WhereOptions<Task>[] {
     return [
+      ...whereWhenPresent(filter.unassigned, (unassigned) => ({
+        assigneeId: unassigned ? { [Op.is]: null } : { [Op.ne]: null },
+      })),
       ...whereWhenPresent(filter.assigneeId, (assigneeId) => ({ assigneeId })),
       ...whereWhenPresent(filter.projectId, (projectId) => ({ projectId })),
       ...whereWhenPresent(filter.customerId, (customerId) => ({ customerId })),

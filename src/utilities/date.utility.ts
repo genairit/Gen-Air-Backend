@@ -47,3 +47,6 @@ export const formatDate = (
 
   return moment(date).tz(TIME_ZONE).format(format);
 };
+
+export const isDueDateBeforeToday = (value: string): boolean =>
+  moment(value).tz(TIME_ZONE).isBefore(moment().tz(TIME_ZONE).startOf('day'));
