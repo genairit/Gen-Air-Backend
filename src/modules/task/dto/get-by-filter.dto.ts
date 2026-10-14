@@ -1,4 +1,13 @@
 import {
+  Min,
+  Max,
+  IsInt,
+  IsString,
+  MaxLength,
+  ValidateBy,
+} from 'class-validator';
+
+import {
   TASK_STATUS_VALUES,
   type TaskStatusType,
 } from '../constants/task-status.constant';
@@ -6,10 +15,10 @@ import {
 import { Type } from 'class-transformer';
 import { Transform } from 'class-transformer';
 import { PAGINATION } from '@Constants/pagination.constant';
+import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { decodeTaskCursor } from '../utilities/task-cursor.utility';
 import { toTaskUrgencyFilter } from '../utilities/task-query.utility';
 import { IsOptional, IsUUID, IsIn, IsBoolean } from 'class-validator';
-import { IsInt, Min, Max, IsString, ValidateBy } from 'class-validator';
 
 export class GetTasksByFilterDto {
   @IsOptional()
@@ -34,6 +43,10 @@ export class GetTasksByFilterDto {
   @Transform(({ value }: { value: unknown }) => toTaskUrgencyFilter(value))
   @IsBoolean()
   declare unassigned?: boolean;
+  @IsOptional()
+  @IsString()
+  @MaxLength(FIELD_LENGTHS.SEARCH_QUERY)
+  declare search?: string;
   @IsOptional() @IsUUID() declare assigneeId?: string;
   @IsOptional() @IsUUID() declare projectId?: string;
   @IsOptional() @IsUUID() declare customerId?: string;

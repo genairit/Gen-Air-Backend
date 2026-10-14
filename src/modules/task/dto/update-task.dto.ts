@@ -25,11 +25,13 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsUUID()
   declare assigneeId?: string | null;
-  @IsOptional()
+  @ValidateIf((object) => 'description' in object)
   @IsString()
+  @Matches(/\S/)
   @MaxLength(FIELD_LENGTHS.TASK_DESCRIPTION)
-  declare description?: string | null;
-  @IsOptional()
-  @IsDateString()
-  declare dueDate?: string | null;
+  declare description?: string;
+
+  @ValidateIf((object) => 'dueDate' in object)
+  @IsDateString({ strict: true })
+  declare dueDate?: string;
 }

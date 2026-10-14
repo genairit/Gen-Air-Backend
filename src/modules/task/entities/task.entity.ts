@@ -93,4 +93,5 @@ export class Task
   @BelongsTo(() => Customer) declare customer?: Customer;
   @BelongsTo(() => User, 'assigneeId') declare assignee?: User;
   @BelongsTo(() => User, 'createdById') declare createdBy?: User;
+  @BelongsTo(() => User, 'urgencyMarkedById') declare urgencyMarkedBy?: User;
 }

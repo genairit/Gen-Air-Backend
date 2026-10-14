@@ -69,6 +69,9 @@ describe('Task HTTP permission boundaries', () => {
   const state = { task: task(), projectCustomerId: CUSTOMER_ID };
   const repository = {
     findById: jest.fn((): Promise<ITask | null> => Promise.resolve(state.task)),
+    findDetailedById: jest.fn((): Promise<ITask | null> =>
+      Promise.resolve(state.task),
+    ),
     findByFilter: jest.fn(() =>
       Promise.resolve({ items: [state.task], nextCursor: null }),
     ),
@@ -278,7 +281,7 @@ describe('Task HTTP permission boundaries', () => {
     await request(server())
       .patch(`/task/${TASK_ID}`)
       .auth('manager', { type: 'bearer' })
-      .send({ title: ' Updated ', dueDate: null, assigneeId: null })
+      .send({ title: ' Updated ', assigneeId: null })
       .expect(200);
     expect(state.task.title).toBe('Updated');
     expect(state.task.assigneeId).toBeNull();
@@ -287,6 +290,54 @@ describe('Task HTTP permission boundaries', () => {
       .auth('manager', { type: 'bearer' })
       .expect(204);
   });
+  it('keeps the due date and description required on edit', async () => {
+    const reject = (changes: object) =>
+      request(server())
+        .patch(`/task/${TASK_ID}`)
+        .auth('manager', { type: 'bearer' })
+        .send(changes)
+        .expect(400);
+
+    await reject({ dueDate: null });
+    await reject({ description: null });
+    await reject({ description: '   ' });
+    await reject({ dueDate: '2000-01-01' });
+    expect(repository.update).not.toHaveBeenCalledWith(
+      TASK_ID,
+      expect.objectContaining({ dueDate: null }),
+      expect.anything(),
+    );
+  });
+
+  it('passes the search through to the task list but not to the counts', async () => {
+    await request(server())
+      .get('/task?search=מדידה')
+      .auth('employee', { type: 'bearer' })
+      .expect(200);
+    expect(repository.findByFilter).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: 'מדידה' }),
+      expect.anything(),
+    );
+    await request(server())
+      .get('/task/counts?search=מדידה')
+      .auth('employee', { type: 'bearer' })
+      .expect(200);
+    expect(repository.countByFilter).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: null }),
+    );
+  });
+
+  it('returns the task with its related records', async () => {
+    await request(server())
+      .get(`/task/${TASK_ID}`)
+      .auth('employee', { type: 'bearer' })
+      .expect(200);
+    expect(repository.findDetailedById).toHaveBeenCalledWith(
+      TASK_ID,
+      undefined,
+    );
+  });
+
   it('rejects malformed UUIDs, booleans, and blank titles', async () => {
     await request(server())
       .get('/task/invalid')
@@ -303,7 +354,7 @@ describe('Task HTTP permission boundaries', () => {
       .expect(400);
   });
   it('returns 404 for a missing task', async () => {
-    repository.findById.mockResolvedValueOnce(null);
+    repository.findDetailedById.mockResolvedValueOnce(null);
     await request(server())
       .get(`/task/${TASK_ID}`)
       .auth('manager', { type: 'bearer' })
