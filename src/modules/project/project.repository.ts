@@ -27,6 +27,7 @@ import { User } from '@Modules/user/entities/user.entity';
 import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { Customer } from '@Modules/customer/entities/customer.entity';
 import { ICursorPage, ICursorBatch } from '@Interfaces/cursor-page.interface';
+import { CUSTOMER_SEARCH_INCLUDE } from './constants/project-include.constant';
 import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
@@ -39,7 +40,6 @@ export class ProjectRepository {
     const project = await Project.findByPk(id, {
       include: [
         ...this.buildCardIncludes(),
-        { model: Customer, paranoid: false },
         { model: User, as: 'createdBy', paranoid: false },
         {
           model: Project,
@@ -112,6 +112,7 @@ export class ProjectRepository {
     filter: IProjectFilter,
   ): Promise<IProjectStageCount[]> {
     const groupedCounts = await Project.count({
+      include: [CUSTOMER_SEARCH_INCLUDE],
       where: { [Op.and]: this.buildFilterWhere(filter) },
       group: ['stageId'],
     });
@@ -123,6 +124,7 @@ export class ProjectRepository {
 
   countByFilter(filter: IProjectFilter): Promise<number> {
     return Project.count({
+      include: [CUSTOMER_SEARCH_INCLUDE],
       where: { [Op.and]: this.buildFilterWhere(filter) },
     });
   }
@@ -173,6 +175,7 @@ export class ProjectRepository {
   private buildCardIncludes(): Includeable[] {
     return [
       { model: ProjectType },
+      { model: Customer, paranoid: false },
       { model: ProjectStage, paranoid: false },
       {
         model: ProjectMember,
@@ -215,6 +218,7 @@ export class ProjectRepository {
         { name: { [Op.iLike]: pattern } },
         { code: { [Op.iLike]: pattern } },
         { customerName: { [Op.iLike]: pattern } },
+        { '$customer.name$': { [Op.iLike]: pattern } },
         { customerApartment: { [Op.iLike]: pattern } },
       ],
     };
