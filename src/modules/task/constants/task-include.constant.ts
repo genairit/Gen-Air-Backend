@@ -10,3 +10,12 @@ export const TASK_DETAIL_INCLUDES: Includeable[] = [
   { model: Project, paranoid: false, attributes: ['id', 'code', 'name'] },
   { model: Customer, paranoid: false, attributes: ['id', 'name'] },
 ];
+
+export const TASK_SEARCH_COLUMNS = [
+  'title',
+  '$project.name$',
+  '$project.code$',
+  '$customer.name$',
+  '$assignee.first_name$',
+  '$assignee.last_name$',
+] as const;

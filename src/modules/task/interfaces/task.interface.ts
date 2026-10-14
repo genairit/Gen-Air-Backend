@@ -31,6 +31,7 @@ export interface ITask {
 }
 
 export interface ITaskFilter {
+  search: string | null;
   projectId: string | null;
   isUrgent: boolean | null;
   assigneeId: string | null;

@@ -50,6 +50,7 @@ export class TaskService {
 
   getByFilter(filter: GetTasksByFilterDto): Promise<ICursorPage<ITask>> {
     const scopedFilter: ITaskFilter = {
+      search: filter.search ?? null,
       projectId: filter.projectId ?? null,
       customerId: filter.customerId ?? null,
       status: filter.status ?? null,
@@ -88,6 +89,7 @@ export class TaskService {
 
   async getCounts(filter: GetTasksByFilterDto): Promise<ITaskCounts> {
     const rows = await this.taskRepository.countByFilter({
+      search: null,
       projectId: filter.projectId ?? null,
       customerId: filter.customerId ?? null,
       assigneeId: filter.assigneeId ?? null,

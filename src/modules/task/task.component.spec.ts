@@ -309,6 +309,24 @@ describe('Task HTTP permission boundaries', () => {
     );
   });
 
+  it('passes the search through to the task list but not to the counts', async () => {
+    await request(server())
+      .get('/task?search=מדידה')
+      .auth('employee', { type: 'bearer' })
+      .expect(200);
+    expect(repository.findByFilter).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: 'מדידה' }),
+      expect.anything(),
+    );
+    await request(server())
+      .get('/task/counts?search=מדידה')
+      .auth('employee', { type: 'bearer' })
+      .expect(200);
+    expect(repository.countByFilter).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: null }),
+    );
+  });
+
   it('returns the task with its related records', async () => {
     await request(server())
       .get(`/task/${TASK_ID}`)
