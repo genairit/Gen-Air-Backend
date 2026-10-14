@@ -40,6 +40,7 @@ export class ProjectRepository {
     const project = await Project.findByPk(id, {
       include: [
         ...this.buildCardIncludes(),
+        { model: Customer, paranoid: false },
         { model: User, as: 'createdBy', paranoid: false },
         {
           model: Project,
@@ -87,7 +88,7 @@ export class ProjectRepository {
           ...buildCursorWhere(batch.batchCursor, direction),
         ],
       },
-      include: this.buildCardIncludes(),
+      include: [...this.buildCardIncludes(), CUSTOMER_SEARCH_INCLUDE],
       attributes: { include: [this.buildApartmentCountAttribute()] },
       order: CURSOR_ORDER_BY_DIRECTION[direction],
       limit: batch.batchSize + 1,
@@ -175,7 +176,6 @@ export class ProjectRepository {
   private buildCardIncludes(): Includeable[] {
     return [
       { model: ProjectType },
-      { model: Customer, paranoid: false },
       { model: ProjectStage, paranoid: false },
       {
         model: ProjectMember,
