@@ -21,6 +21,7 @@ import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ITask, TTaskUpdateAttributes } from './interfaces/task.interface';
+import { TaskStatusTransitionRepository } from './task-status-transition.repository';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
 const TASK_ID = '00000000-0000-4000-8000-000000000001';
@@ -69,9 +70,9 @@ describe('Task HTTP permission boundaries', () => {
   const state = { task: task(), projectCustomerId: CUSTOMER_ID };
   const repository = {
     findById: jest.fn((): Promise<ITask | null> => Promise.resolve(state.task)),
-    findDetailedById: jest.fn((): Promise<ITask | null> =>
-      Promise.resolve(state.task),
-    ),
+    findDetailedById: jest
+      .fn<Promise<ITask | null>, [string, object?]>()
+      .mockImplementation(() => Promise.resolve(state.task)),
     findByFilter: jest.fn(() =>
       Promise.resolve({ items: [state.task], nextCursor: null }),
     ),
@@ -84,6 +85,10 @@ describe('Task HTTP permission boundaries', () => {
       Promise.resolve([{ status: 'not_started', isUrgent: false, count: 1 }]),
     ),
     softDelete: jest.fn(() => Promise.resolve()),
+  };
+  const transitions = {
+    create: jest.fn<Promise<void>, [object, object?]>().mockResolvedValue(),
+    findByTask: jest.fn(() => Promise.resolve([] as object[])),
   };
   const events = { emitAsync: jest.fn(() => Promise.resolve([])) };
   const application: { app: INestApplication<Server> | null } = { app: null };
@@ -102,6 +107,7 @@ describe('Task HTTP permission boundaries', () => {
       providers: [
         TaskService,
         { provide: TaskRepository, useValue: repository },
+        { provide: TaskStatusTransitionRepository, useValue: transitions },
         {
           provide: ProjectService,
           useValue: {
@@ -205,6 +211,63 @@ describe('Task HTTP permission boundaries', () => {
       .send({ status: 'in_review' })
       .expect(200);
   });
+  it('records who changed the status, from and to, and nothing for a repeat', async () => {
+    state.task = { ...state.task, status: 'not_started' };
+    transitions.create.mockClear();
+    const changeTo = (status: string) =>
+      request(server())
+        .patch(`/task/${TASK_ID}/status`)
+        .auth('employee', { type: 'bearer' })
+        .send({ status })
+        .expect(200);
+
+    await changeTo('in_progress');
+    await changeTo('in_progress');
+
+    expect(transitions.create).toHaveBeenCalledTimes(1);
+    expect(transitions.create.mock.calls[0][0]).toEqual({
+      taskId: TASK_ID,
+      toStatus: 'in_progress',
+      changedById: EMPLOYEE_ID,
+      fromStatus: 'not_started',
+    });
+  });
+
+  it('records the initial status when a task is created', async () => {
+    transitions.create.mockClear();
+
+    await request(server())
+      .post('/task')
+      .auth('manager', { type: 'bearer' })
+      .send(payload)
+      .expect(201);
+
+    expect(transitions.create.mock.calls[0][0]).toMatchObject({
+      taskId: TASK_ID,
+      fromStatus: null,
+      changedById: MANAGER_ID,
+    });
+  });
+
+  it('returns the status history from the repository and 404s for a missing task', async () => {
+    const history = [{ id: 'newest' }, { id: 'oldest' }];
+    transitions.findByTask.mockResolvedValueOnce(history);
+
+    const response = await request(server())
+      .get(`/task/${TASK_ID}/transitions`)
+      .auth('employee', { type: 'bearer' })
+      .expect(200);
+
+    expect(response.body).toEqual(history);
+    expect(transitions.findByTask).toHaveBeenCalledWith(TASK_ID);
+
+    repository.findById.mockResolvedValueOnce(null);
+    await request(server())
+      .get(`/task/${TASK_ID}/transitions`)
+      .auth('employee', { type: 'bearer' })
+      .expect(404);
+  });
+
   it('blocks status/urgency mass assignment and invalid status', async () => {
     await request(server())
       .patch(`/task/${TASK_ID}`)
@@ -332,10 +395,7 @@ describe('Task HTTP permission boundaries', () => {
       .get(`/task/${TASK_ID}`)
       .auth('employee', { type: 'bearer' })
       .expect(200);
-    expect(repository.findDetailedById).toHaveBeenCalledWith(
-      TASK_ID,
-      undefined,
-    );
+    expect(repository.findDetailedById.mock.calls.at(-1)?.[0]).toBe(TASK_ID);
   });
 
   it('rejects malformed UUIDs, booleans, and blank titles', async () => {

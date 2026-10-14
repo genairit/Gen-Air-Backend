@@ -10,6 +10,7 @@ import { EnvironmentManager } from '../../utilities/environment-manager.utility'
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
+import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
 
@@ -66,6 +67,7 @@ export const DatabaseProvider: Provider = {
 
     sequelize.addModels([
       Task,
+      TaskStatusTransition,
       User,
       Project,
       Customer,
