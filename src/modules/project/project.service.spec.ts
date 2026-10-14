@@ -20,6 +20,7 @@ import { IUser } from '@Modules/user/interfaces/user.interface';
 import { AddressService } from '@Modules/address/address.service';
 import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
+import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
@@ -962,7 +963,7 @@ describe('ProjectService.createApartment', () => {
 });
 
 describe('ProjectService.getApartments', () => {
-  it('pages the building apartments 25 at a time with the total', async () => {
+  it('pages the building apartments 25 at a time, oldest first, with the total', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.findById.mockResolvedValueOnce(BUILDING);
     projectRepository.countByFilter.mockResolvedValue(73);
@@ -972,7 +973,11 @@ describe('ProjectService.getApartments', () => {
     expect(page.total).toBe(73);
     expect(projectRepository.findByFilter).toHaveBeenCalledWith(
       expect.objectContaining({ parentProjectId: BUILDING_ID, search: '12' }),
-      { batchCursor: null, batchSize: 25 },
+      {
+        batchCursor: null,
+        batchSize: 25,
+        direction: CURSOR_DIRECTIONS.OLDEST_FIRST,
+      },
     );
   });
 });
@@ -1258,5 +1263,50 @@ describe('ProjectService.update building notes', () => {
     expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
       notes: 'תמ״א 38',
     });
+  });
+});
+
+describe('ProjectService.getApartmentStageCounts', () => {
+  it('counts the building apartments per stage', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+
+    await expect(service.getApartmentStageCounts(BUILDING_ID)).resolves.toEqual(
+      { total: 5, byStage: { [QUOTE_STAGE_ID]: 2, [ORDER_STAGE_ID]: 3 } },
+    );
+    expect(projectRepository.countGroupedByStage).toHaveBeenCalledWith(
+      expect.objectContaining({ parentProjectId: BUILDING_ID }),
+    );
+  });
+
+  it('rejects a project that holds no apartments', async () => {
+    const { service } = await createService();
+
+    await expect(service.getApartmentStageCounts(PROJECT_ID)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+});
+
+describe('ProjectService apartment contact', () => {
+  it('creates an apartment whose contact has no role', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await service.createApartment(
+      BUILDING_ID,
+      { ...NEW_APARTMENT, contactRole: null },
+      CREATOR,
+    );
+
+    expect(projectRepository.create.mock.calls[0][0].contactRole).toBeNull();
+  });
+
+  it('rejects clearing the apartment contact mobile', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+
+    await expect(
+      service.update(STORED_APARTMENT.id, { contactPhone: null }, CREATOR),
+    ).rejects.toThrow('contactPhone');
   });
 });

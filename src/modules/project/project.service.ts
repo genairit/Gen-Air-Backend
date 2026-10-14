@@ -55,6 +55,7 @@ import { generateProjectCode } from './utilities/project-code.utility';
 import { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { GetProjectCountsByFilterDto } from './dto/get-counts-by-filter.dto';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
+import { toProjectStageCounts } from './utilities/project-stage-counts.utility';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
@@ -119,12 +120,15 @@ export class ProjectService {
       projectTypeId: filter.projectTypeId ?? null,
     });
 
-    return {
-      total: stageCounts.reduce((total, { count }) => total + count, 0),
-      byStage: Object.fromEntries(
-        stageCounts.map(({ stageId, count }) => [stageId, count]),
-      ),
-    };
+    return toProjectStageCounts(stageCounts);
+  }
+
+  async getApartmentStageCounts(
+    buildingId: string,
+  ): Promise<IProjectStageCounts> {
+    const building = await this.getStoredById(buildingId);
+
+    return this.projectApartmentService.countByStage(building);
   }
 
   countByStage(stageId: string): Promise<number> {

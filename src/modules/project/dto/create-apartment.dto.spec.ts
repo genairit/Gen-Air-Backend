@@ -32,13 +32,12 @@ describe('CreateApartmentDto', () => {
     ).resolves.toEqual([]);
   });
 
-  it('requires the floor, the apartment number and the whole contact person', async () => {
+  it('requires the floor, the apartment number and the contact name and mobile', async () => {
     await expect(findInvalidFields({})).resolves.toEqual([
       'customerFloor',
       'customerApartment',
       'contactName',
       'contactPhone',
-      'contactRole',
     ]);
   });
 
@@ -50,5 +49,13 @@ describe('CreateApartmentDto', () => {
         contactPhone: '03-5551234',
       }),
     ).resolves.toEqual(['customerFloor', 'contactPhone']);
+  });
+});
+
+describe('CreateApartmentDto contact role', () => {
+  it('accepts an apartment contact without a role, as the design asks only for name and mobile', async () => {
+    await expect(
+      findInvalidFields({ ...APARTMENT, contactRole: null }),
+    ).resolves.toEqual([]);
   });
 });
