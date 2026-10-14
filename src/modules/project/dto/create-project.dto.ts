@@ -28,9 +28,8 @@ export class CreateProjectDto extends IntersectionType(
   @IsUUID()
   declare projectTypeId: string;
 
-  @IsOptional()
   @IsUUID()
-  declare customerId?: string | null;
+  declare customerId: string;
 
   @IsOptional()
   @IsString()

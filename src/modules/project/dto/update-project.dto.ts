@@ -5,6 +5,7 @@ import {
   MaxLength,
   IsNotEmpty,
   IsOptional,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -29,9 +30,9 @@ export class UpdateProjectDto extends IntersectionType(
   @IsUUID()
   declare projectTypeId?: string;
 
-  @IsOptional()
+  @ValidateIf((changes: object) => 'customerId' in changes)
   @IsUUID()
-  declare customerId?: string | null;
+  declare customerId?: string;
 
   @IsOptional()
   @IsString()
