@@ -44,10 +44,8 @@ export class TaskService {
     private readonly events: EventEmitter2,
   ) {}
 
-  async getById(id: string): Promise<ITask> {
-    const task = await this.requireTask(id);
-
-    return task;
+  getById(id: string): Promise<ITask> {
+    return this.requireDetailedTask(id);
   }
 
   getByFilter(filter: GetTasksByFilterDto): Promise<ICursorPage<ITask>> {
@@ -78,12 +76,13 @@ export class TaskService {
       if (task.assigneeId !== null) {
         throw new ConflictException('This task has already been assigned');
       }
+
       await this.taskRepository.update(
         id,
         { assigneeId: user.id },
         transaction,
       );
-      return this.requireTask(id, transaction);
+      return this.requireDetailedTask(id, transaction);
     });
   }
 
@@ -111,15 +110,15 @@ export class TaskService {
 
   async create(input: CreateTaskDto, creator: IUser): Promise<ITask> {
     this.assertManager(creator);
-    if (isDueDateBeforeToday(input.dueDate)) {
-      throw new BadRequestException('Task due date cannot be in the past');
-    }
+    this.assertDueDateNotPast(input.dueDate);
+
     await this.validateRelations(
       input.projectId,
       input.customerId,
       input.assigneeId ?? null,
     );
-    return this.taskRepository.create({
+
+    const created = await this.taskRepository.create({
       title: input.title.trim(),
       projectId: input.projectId,
       customerId: input.customerId,
@@ -128,10 +127,14 @@ export class TaskService {
       description: input.description.trim(),
       dueDate: new Date(input.dueDate),
     });
+
+    return this.requireDetailedTask(created.id);
   }
 
   async update(id: string, input: UpdateTaskDto, user: IUser): Promise<ITask> {
     this.assertManager(user);
+    this.assertDueDateNotPast(input.dueDate ?? null);
+
     return this.transactions.run(async (transaction) => {
       const task = await this.requireTask(id, transaction);
       await this.validateRelations(
@@ -144,15 +147,12 @@ export class TaskService {
         ...('projectId' in input && { projectId: input.projectId }),
         ...('customerId' in input && { customerId: input.customerId }),
         ...('assigneeId' in input && { assigneeId: input.assigneeId ?? null }),
-        ...('description' in input && {
-          description: input.description ?? null,
-        }),
-        ...('dueDate' in input && {
-          dueDate: input.dueDate ? new Date(input.dueDate) : null,
-        }),
+        ...(input.description && { description: input.description.trim() }),
+        ...(input.dueDate && { dueDate: new Date(input.dueDate) }),
       };
       await this.taskRepository.update(id, attributes, transaction);
-      return this.requireTask(id, transaction);
+
+      return this.requireDetailedTask(id, transaction);
     });
   }
 
@@ -160,7 +160,8 @@ export class TaskService {
     return this.transactions.run(async (transaction) => {
       await this.requireTask(id, transaction);
       await this.taskRepository.update(id, { status }, transaction);
-      return this.requireTask(id, transaction);
+
+      return this.requireDetailedTask(id, transaction);
     });
   }
 
@@ -184,7 +185,9 @@ export class TaskService {
         { isUrgent, ...audit, ...clearedAudit },
         transaction,
       );
-      return { task: await this.requireTask(id, transaction), becameUrgent };
+      const task = await this.requireDetailedTask(id, transaction);
+
+      return { task, becameUrgent };
     });
     if (result.becameUrgent) {
       const event: ITaskUrgentEvent = {
@@ -212,10 +215,35 @@ export class TaskService {
     transaction?: Transaction,
   ): Promise<ITask> {
     const task = await this.taskRepository.findById(id, transaction);
+
     if (!task) {
       throw new NotFoundException(`Task ${id} was not found`);
     }
+
     return task;
+  }
+
+  private async requireDetailedTask(
+    id: string,
+    transaction?: Transaction,
+  ): Promise<ITask> {
+    const task = await this.taskRepository.findDetailedById(id, transaction);
+
+    if (!task) {
+      throw new NotFoundException(`Task ${id} was not found`);
+    }
+
+    return task;
+  }
+
+  private assertDueDateNotPast(dueDate: string | null): void {
+    if (!dueDate) {
+      return;
+    }
+
+    if (isDueDateBeforeToday(dueDate)) {
+      throw new BadRequestException('Task due date cannot be in the past');
+    }
   }
 
   private canManage(user: IUser): boolean {

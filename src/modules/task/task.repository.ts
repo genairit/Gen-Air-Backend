@@ -16,6 +16,7 @@ import { Op, Transaction, WhereOptions } from 'sequelize';
 import { whereWhenPresent } from '@Utilities/query.utility';
 import { TASK_ORDER } from './constants/task-order.constant';
 import { isTaskStatus } from './utilities/task-status.utility';
+import { TASK_DETAIL_INCLUDES } from './constants/task-include.constant';
 import { ICursorBatch, ICursorPage } from '@Interfaces/cursor-page.interface';
 
 @Injectable()
@@ -26,6 +27,14 @@ export class TaskRepository {
       ...(transaction && { lock: transaction.LOCK.UPDATE }),
     });
   }
+
+  findDetailedById(
+    id: string,
+    transaction?: Transaction,
+  ): Promise<Task | null> {
+    return Task.findByPk(id, { transaction, include: TASK_DETAIL_INCLUDES });
+  }
+
   async findByFilter(
     filter: ITaskFilter,
     batch: ICursorBatch,
@@ -38,10 +47,12 @@ export class TaskRepository {
         ],
       },
       order: TASK_ORDER,
+      include: TASK_DETAIL_INCLUDES,
       limit: batch.batchSize + 1,
     });
     return toTaskCursorPage(rows, batch.batchSize);
   }
+
   async countByFilter(filter: ITaskFilter): Promise<ITaskCountRow[]> {
     const rows = await Task.count({
       where: { [Op.and]: this.buildFilterWhere(filter) },
@@ -56,12 +67,14 @@ export class TaskRepository {
       return [{ status, isUrgent, count: Number(row.count) }];
     });
   }
+
   create(
     attributes: TTaskCreationAttributes,
     transaction?: Transaction,
   ): Promise<Task> {
     return Task.create(attributes, { transaction });
   }
+
   async update(
     id: string,
     attributes: TTaskUpdateAttributes,
@@ -69,9 +82,11 @@ export class TaskRepository {
   ): Promise<void> {
     await Task.update(attributes, { where: { id }, transaction });
   }
+
   async softDelete(id: string, transaction?: Transaction): Promise<void> {
     await Task.destroy({ where: { id }, transaction });
   }
+
   private buildFilterWhere(filter: ITaskFilter): WhereOptions<Task>[] {
     return [
       ...whereWhenPresent(filter.unassigned, (unassigned) => ({

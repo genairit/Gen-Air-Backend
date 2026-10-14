@@ -1,4 +1,11 @@
+import { IUser } from '@Modules/user/interfaces/user.interface';
 import { TaskStatusType } from '../constants/task-status.constant';
+import { IProject } from '@Modules/project/interfaces/project.interface';
+import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
+
+export type TTaskProject = Pick<IProject, 'id' | 'code' | 'name'>;
+
+export type TTaskCustomer = Pick<ICustomer, 'id' | 'name'>;
 
 export interface ITask {
   id: string;
@@ -12,11 +19,17 @@ export interface ITask {
   dueDate: Date | null;
   status: TaskStatusType;
   deletedAt: Date | null;
+  assignee?: IUser | null;
+  createdBy?: IUser | null;
   assigneeId: string | null;
   description: string | null;
   urgencyMarkedAt: Date | null;
+  project?: TTaskProject | null;
+  urgencyMarkedBy?: IUser | null;
+  customer?: TTaskCustomer | null;
   urgencyMarkedById: string | null;
 }
+
 export interface ITaskFilter {
   projectId: string | null;
   isUrgent: boolean | null;
