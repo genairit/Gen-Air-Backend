@@ -29,6 +29,7 @@ import { IProject } from '@Modules/project/interfaces/project.interface';
 import { renderDriveFolderName } from './utilities/drive-folder-name.utility';
 import type { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
+import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
 import { DriveTemplateFolderService } from '@Modules/drive-template-folder/drive-template-folder.service';
 import { IDriveTemplateFolderNode } from '@Modules/drive-template-folder/interfaces/drive-template-folder.interface';
 
@@ -41,6 +42,10 @@ export class ProjectDriveService {
     private readonly googleDriveService: GoogleDriveService,
     private readonly driveTemplateFolderService: DriveTemplateFolderService,
   ) {}
+
+  checkConnection(): Promise<IDriveConnectionResult> {
+    return this.googleDriveService.checkConnection();
+  }
 
   @OnEvent(DOMAIN_EVENTS.PROJECT_CREATED)
   async handleProjectCreated(event: IProjectCreatedEvent): Promise<void> {

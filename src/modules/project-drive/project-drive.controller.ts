@@ -23,12 +23,19 @@ import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
 import { ApiTags, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
 import { IProjectDriveContents } from './interfaces/project-drive.interface';
 import type { IProject } from '@Modules/project/interfaces/project.interface';
+import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
 
 @ApiTags('project-drive')
 @ApiBearerAuth()
 @Controller('project-drive')
 export class ProjectDriveController {
   constructor(private readonly projectDriveService: ProjectDriveService) {}
+
+  @Get('connection')
+  @UserRoles(ROLE_PERMISSIONS.MANAGE_SETTINGS)
+  checkConnection(): Promise<IDriveConnectionResult> {
+    return this.projectDriveService.checkConnection();
+  }
 
   @Get(':projectId/contents')
   getContents(
