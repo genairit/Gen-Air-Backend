@@ -28,6 +28,7 @@ import { decodeUploadedFileName } from '@Utilities/upload.utility';
 import { IProject } from '@Modules/project/interfaces/project.interface';
 import { renderDriveFolderName } from './utilities/drive-folder-name.utility';
 import type { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
+import { validateDriveUploads } from '@Utilities/validate-drive-upload.utility';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
 import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
 import { DriveTemplateFolderService } from '@Modules/drive-template-folder/drive-template-folder.service';
@@ -122,15 +123,16 @@ export class ProjectDriveService {
         throw new BadRequestException('Attach at least one file');
       }
 
+      const mimeTypes = await validateDriveUploads(files);
       const folderId = await this.resolveProjectFolder(projectId, folder);
 
       return await this.callDrive(() =>
         Promise.all(
-          files.map((file) =>
+          files.map((file, index) =>
             this.googleDriveService.uploadFile({
               parentId: folderId,
               localPath: file.path,
-              mimeType: file.mimetype,
+              mimeType: mimeTypes[index],
               name: decodeUploadedFileName(file.originalname),
             }),
           ),
