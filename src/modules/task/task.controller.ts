@@ -25,6 +25,7 @@ import type { IUser } from '@Modules/user/interfaces/user.interface';
 import { UpdateTaskUrgencyDto } from './dto/update-task-urgency.dto';
 import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
+import { ITaskStatusTransition } from './interfaces/task-status-transition.interface';
 
 @ApiTags('task')
 @ApiBearerAuth()
@@ -80,8 +81,16 @@ export class TaskController {
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() input: UpdateTaskStatusDto,
+    @AuthenticatedUser() user: IUser,
   ): Promise<ITask> {
-    return this.taskService.updateStatus(id, input.status);
+    return this.taskService.updateStatus(id, input.status, user);
+  }
+
+  @Get(':id/transitions')
+  getStatusTransitions(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ITaskStatusTransition[]> {
+    return this.taskService.getStatusTransitions(id);
   }
   @Patch(':id/urgency')
   @UserRoles(ROLE_PERMISSIONS.MANAGE_TASKS)

@@ -31,12 +31,15 @@ import type { IUser } from '@Modules/user/interfaces/user.interface';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
 import { EMPTY_TASK_STATUS_COUNTS } from './constants/task-status.constant';
+import { TaskStatusTransitionRepository } from './task-status-transition.repository';
+import { ITaskStatusTransition } from './interfaces/task-status-transition.interface';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
 @Injectable()
 export class TaskService {
   constructor(
     private readonly taskRepository: TaskRepository,
+    private readonly taskStatusTransitionRepository: TaskStatusTransitionRepository,
     private readonly projectService: ProjectService,
     private readonly customerService: CustomerService,
     private readonly userService: UserService,
@@ -120,17 +123,34 @@ export class TaskService {
       input.assigneeId ?? null,
     );
 
-    const created = await this.taskRepository.create({
-      title: input.title.trim(),
-      projectId: input.projectId,
-      customerId: input.customerId,
-      createdById: creator.id,
-      assigneeId: input.assigneeId ?? null,
-      description: input.description.trim(),
-      dueDate: new Date(input.dueDate),
+    const createdId = await this.transactions.run(async (transaction) => {
+      const created = await this.taskRepository.create(
+        {
+          title: input.title.trim(),
+          projectId: input.projectId,
+          customerId: input.customerId,
+          createdById: creator.id,
+          assigneeId: input.assigneeId ?? null,
+          description: input.description.trim(),
+          dueDate: new Date(input.dueDate),
+        },
+        transaction,
+      );
+
+      await this.taskStatusTransitionRepository.create(
+        {
+          taskId: created.id,
+          fromStatus: null,
+          toStatus: created.status,
+          changedById: creator.id,
+        },
+        transaction,
+      );
+
+      return created.id;
     });
 
-    return this.requireDetailedTask(created.id);
+    return this.requireDetailedTask(createdId);
   }
 
   async update(id: string, input: UpdateTaskDto, user: IUser): Promise<ITask> {
@@ -158,13 +178,37 @@ export class TaskService {
     });
   }
 
-  async updateStatus(id: string, status: TaskStatusType): Promise<ITask> {
+  async updateStatus(
+    id: string,
+    status: TaskStatusType,
+    user: IUser,
+  ): Promise<ITask> {
     return this.transactions.run(async (transaction) => {
-      await this.requireTask(id, transaction);
+      const task = await this.requireTask(id, transaction);
+
+      if (task.status === status) {
+        return this.requireDetailedTask(id, transaction);
+      }
+
       await this.taskRepository.update(id, { status }, transaction);
+      await this.taskStatusTransitionRepository.create(
+        {
+          taskId: id,
+          toStatus: status,
+          changedById: user.id,
+          fromStatus: task.status,
+        },
+        transaction,
+      );
 
       return this.requireDetailedTask(id, transaction);
     });
+  }
+
+  async getStatusTransitions(id: string): Promise<ITaskStatusTransition[]> {
+    await this.requireTask(id);
+
+    return this.taskStatusTransitionRepository.findByTask(id);
   }
 
   async updateUrgency(
