@@ -1,13 +1,13 @@
 ---
 name: code-review
-description: Review a task branch's changes against dev, the Trello card's requirements, and the repository rules before proof and the pull request; report NO NOTES or a numbered list of required fixes without editing code.
+description: "Run the Smartbase code review agent - enforce the elegance standards through its Definition of Done; Mode A posts an inline review on a GitHub PR URL, Mode B reviews local changes and annotates them with // CR: comments."
 ---
 
-# Review a task branch
+# Smartbase code review
 
-Read the canonical [code reviewer](../../../agents/code-reviewer.md) before
-reviewing. It defines the inputs, the review flow, the checks against the card and
-`rules/`, and the exact output format. Also follow the repository's
+Read the canonical [code review agent](../../../agents/code-reviewer.md) in full
+before reviewing. It defines the modes, the hygiene rules, the Definition of Done,
+the review checklist, and the exact output templates. Also follow the repository's
 [Codex guidance](../../../AGENTS.md).
 
 ## Codex execution
@@ -15,11 +15,11 @@ reviewing. It defines the inputs, the review flow, the checks against the card a
 - Run the review in a fresh subagent or session when one is available, so it is
   not biased by the reasoning that produced the code. Otherwise, re-read the full
   branch diff from scratch before judging it.
-- Review against the latest `origin/dev`, including uncommitted and untracked
-  files.
-- The reviewer only reports. It never edits, stages, commits, or pushes.
-- Report `NO NOTES` or `NOTES` with numbered `file:line` required fixes, exactly
-  as the canonical output format defines.
-- The developer fixes every note, re-verifies, and runs `$code-review` again on
-  the full diff. Only a `NO NOTES` result continues to proof, the pull request,
-  and board updates.
+- Read the elegance rule live from `rules/coding-standards.md` on every review.
+- In the development workflow, use Mode B against the latest `origin/dev`,
+  including uncommitted and untracked files.
+- Never commit or push. Use the platform's temp directory for any file a CLI call
+  requires, never the repository workspace.
+- The developer fixes every finding, deletes every `// CR:` annotation, re-verifies,
+  and runs `$code-review` again on the full diff. Only a review with no findings
+  continues to proof, the pull request, and board updates.

@@ -7,7 +7,7 @@ each step, and the task itself must carry the evidence that the work was finishe
 **Board:** [Team's Goals](https://trello.com/b/0YGKf1tR/teams-goals)
 
 **Golden rule:** never touch code before the task is understood and moved to the active list and a
-branch exists for it, and never open a merge request before the code review agent reports no notes
+branch exists for it, and never open a merge request before the code review agent reports no findings
 and the proof of completion is attached to the task.
 
 ---
@@ -21,8 +21,8 @@ The steps below are ordered and mandatory. Do not skip a step, and do not reorde
 3. **Move it to the active list** on the board, so the board shows who is working on what.
 4. **Branch from `dev`** using the task's name.
 5. **Implement the task** on that branch.
-6. **Review the changes with the code review agent** — fix every note it reports and review again
-   until it reports none.
+6. **Review the changes with the code review agent** — fix every finding it reports, delete its
+   `// CR:` annotations, and review again until it reports none.
 7. **Attach proof of completion** to the task — evidence plus a summary of what was implemented.
 8. **Open a merge request** from the branch into `dev`.
 9. **Attach the merge request link** to the task.
@@ -83,20 +83,21 @@ feedback loops that prove the change actually works.
 
 ## 6. Review the Changes With the Code Review Agent
 
-When the implementation is finished and verified, hand the branch to the
-[code review agent](../agents/code-reviewer.md) before anything leaves your hands. Run it in a fresh context
-whenever the toolchain allows, and give it the card link so it can judge the diff against the
-requirements as well as the standards.
+When the implementation is finished and verified, run the [code review agent](../agents/code-reviewer.md) on
+the branch in **Mode B** (local changes against `dev`) before anything leaves your hands. Run it in a
+fresh context whenever the toolchain allows, and give it the card link so it can judge the diff
+against the requirements as well as the standards.
 
-- **It reports notes** — every note is a required fix. Fix them on the same branch, re-run the
+- **It reports findings** — any PR Hygiene alert, Critical violation, or Refactoring suggestion is a
+  required fix. Fix them on the same branch, delete every `// CR:` annotation it inserted, re-run the
   feedback loop that proves the change still works, and run the review again on the full diff.
   Repeat until the review comes back clean.
-- **It reports no notes** — continue with the flow: attach the proof, open the merge request, and
+- **It reports no findings** — continue with the flow: attach the proof, open the merge request, and
   update the board as the following steps describe.
 
-Do not skip the review because a change looks small, and do not dismiss a note without either
-fixing it or resolving it with the user. A merge request opened while notes are still open breaks
-the flow.
+Do not skip the review because a change looks small, and do not dismiss a finding without either
+fixing it or resolving it with the user. A merge request opened while findings or `// CR:`
+annotations remain breaks the flow.
 
 ## 7. Attach Proof of Completion to the Task
 

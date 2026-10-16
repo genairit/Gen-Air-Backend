@@ -190,8 +190,9 @@ If — and only if — the user says to implement (before or after seeing the pl
 - Follow the plan's proposed changes and the repository's coding standards.
 - Reuse existing patterns and shared packages instead of reinventing them.
 - Verify the change with a real feedback loop before declaring it done.
-- Run the [code review agent](../agents/code-reviewer.md) on the branch. Fix every note it reports,
-  re-verify, and review again until it reports no notes.
+- Run the [code review agent](../agents/code-reviewer.md) on the branch in Mode B. Fix every
+  finding it reports, delete its `// CR:` annotations, re-verify, and review again until it reports
+  no findings.
 - Attach the proof of completion and the merge request link back to the card.
 - Never commit or push on your own — leave the changes for the user to review and commit.
 
