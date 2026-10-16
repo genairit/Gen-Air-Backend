@@ -7,12 +7,26 @@ import {
   buildChildFolderByNameQuery,
 } from '@Utilities/google-drive.utility';
 
+import {
+  driveConnectionResult,
+  toDriveConnectionResult,
+  getDriveConnectionFailure,
+} from './utilities/drive-connection.utility';
+
+import {
+  DRIVE_CONNECTION_STATUS,
+  DRIVE_CONNECTION_METADATA_FIELDS,
+} from './constants/drive-connection.constant';
+
 import { createReadStream } from 'node:fs';
 import { Injectable } from '@nestjs/common';
-import { auth, drive, drive_v3 } from '@googleapis/drive';
+import { drive, drive_v3 } from '@googleapis/drive';
+import { Meta, TypedLogger } from '@Logger/logger.service';
 import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
+import { createDriveAuth } from './utilities/drive-auth.utility';
 import { EnvironmentManager } from '@Utilities/environment-manager.utility';
 import { IDriveItem, IDriveUpload } from '@Interfaces/google-drive.interface';
+import { IDriveConnectionResult } from './interfaces/drive-connection.interface';
 
 const SHARED_DRIVE_OPTIONS = { supportsAllDrives: true } as const;
 
@@ -25,9 +39,10 @@ const LIST_OPTIONS = {
 
 @Injectable()
 export class GoogleDriveService {
+  private readonly logger = new TypedLogger<Meta>(GoogleDriveService.name);
   private readonly drive = drive({
     version: 'v3',
-    auth: new auth.GoogleAuth({ scopes: [GOOGLE_DRIVE.SCOPE] }),
+    auth: createDriveAuth(),
   });
 
   getProjectsRootFolderId(): string | null {
@@ -36,6 +51,28 @@ export class GoogleDriveService {
 
   isConfigured(): boolean {
     return this.getProjectsRootFolderId() !== null;
+  }
+
+  async checkConnection(): Promise<IDriveConnectionResult> {
+    const rootId = this.getProjectsRootFolderId();
+    if (!rootId) {
+      return driveConnectionResult(DRIVE_CONNECTION_STATUS.NOT_CONFIGURED);
+    }
+    try {
+      const { data } = await this.drive.files.get({
+        ...SHARED_DRIVE_OPTIONS,
+        fileId: rootId,
+        fields: DRIVE_CONNECTION_METADATA_FIELDS,
+      });
+      return toDriveConnectionResult(data);
+    } catch (error) {
+      const status = getDriveConnectionFailure(error);
+      this.logger.warn({
+        status,
+        message: 'Google Drive connection check failed',
+      });
+      return driveConnectionResult(status);
+    }
   }
 
   async listChildren(folderId: string): Promise<IDriveItem[]> {

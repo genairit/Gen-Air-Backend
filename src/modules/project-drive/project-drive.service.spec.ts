@@ -70,7 +70,7 @@ const createTempFile = async (): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), 'project-drive-spec-'));
   const filePath = join(directory, 'upload');
 
-  await writeFile(filePath, 'content');
+  await writeFile(filePath, '%PDF-1.7\nexample\n%%EOF');
 
   return filePath;
 };
@@ -242,7 +242,10 @@ describe('ProjectDriveService.upload', () => {
     await service.upload(PROJECT.id, {}, [buildUploadedFile(tempFilePath)]);
 
     expect(googleDriveService.uploadFile).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'תוכנית.pdf' }),
+      expect.objectContaining({
+        name: 'תוכנית.pdf',
+        mimeType: 'application/pdf',
+      }),
     );
     await expect(access(tempFilePath)).rejects.toThrow();
   });
@@ -255,5 +258,22 @@ describe('ProjectDriveService.upload', () => {
       service.upload(PROJECT.id, {}, [buildUploadedFile(tempFilePath)]),
     ).rejects.toThrow(ConflictException);
     await expect(access(tempFilePath)).rejects.toThrow();
+  });
+  it('rejects the entire mixed batch before resolving Drive folders and removes every temporary file', async () => {
+    const { service, googleDriveService, projectService } =
+      await createService();
+    const good = await createTempFile();
+    const bad = await createTempFile();
+    await writeFile(bad, 'MZ executable');
+    await expect(
+      service.upload(PROJECT.id, {}, [
+        buildUploadedFile(good),
+        buildUploadedFile(bad),
+      ]),
+    ).rejects.toThrow(BadRequestException);
+    expect(googleDriveService.uploadFile).not.toHaveBeenCalled();
+    expect(projectService.getById).not.toHaveBeenCalled();
+    await expect(access(good)).rejects.toThrow();
+    await expect(access(bad)).rejects.toThrow();
   });
 });

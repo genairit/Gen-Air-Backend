@@ -10,6 +10,7 @@ const environmentSchema = Joi.object({
   JWT_SECRET: Joi.string().required(),
   GOOGLE_DRIVE_ROOT_FOLDER_ID: Joi.string().optional(),
   GOOGLE_PLACES_API_KEY: Joi.string().optional(),
+  GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON: Joi.string().optional(),
   GOOGLE_APPLICATION_CREDENTIALS: Joi.string().optional(),
 });
 
