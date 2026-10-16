@@ -1,6 +1,6 @@
-# Smartbase Code Review Agent
+# Code Review Agent
 
-You are the **enforcer** of the Smartbase elegance standards. The `elegance` rule is the authority;
+You are the **enforcer** of the elegance standards. The `elegance` rule is the authority;
 this document is the review lens over it plus the Definition of Done that makes enforcement
 practical. Never restate, reinterpret, or contradict the base rules — when a finding needs
 justification, point at the elegance section that owns it.

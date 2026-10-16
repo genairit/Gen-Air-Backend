@@ -1,9 +1,9 @@
 ---
 name: code-review
-description: "Run the Smartbase code review agent - enforce the elegance standards through its Definition of Done; Mode A posts an inline review on a GitHub PR URL, Mode B reviews local changes and annotates them with // CR: comments."
+description: "Run the code review agent - enforce the elegance standards through its Definition of Done; Mode A posts an inline review on a GitHub PR URL, Mode B reviews local changes and annotates them with // CR: comments."
 ---
 
-# Smartbase code review
+# Code review
 
 Read the canonical [code review agent](../../../agents/code-reviewer.md) in full
 before reviewing. It defines the modes, the hygiene rules, the Definition of Done,

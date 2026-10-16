@@ -1,7 +1,7 @@
 # Codex repository guidance
 
 The shared standards and workflows originate in Spec-Development-Component
-(commit `4e76755a12ac7cd96fe6380ad3d3c22c283e32a8`). `rules/`, `skills/`, and
+(commit `73f25b0ea8548d8e7ffe2a30215a6c525c16fdac`). `rules/`, `skills/`, and
 `agents/` are the canonical source; this file and `.agents/skills/` adapt them for
 Codex.
 
@@ -27,7 +27,7 @@ only to the relevant code:
 - `$entity-module`: read `.agents/skills/entity-module/SKILL.md` for NestJS server
   entity modules. In frontend work, use it only for an authorized backend change.
 - `$code-review`: read `.agents/skills/code-review/SKILL.md` to run the canonical
-  [Smartbase code review agent](agents/code-reviewer.md) on a PR or local changes.
+  [code review agent](agents/code-reviewer.md) on a PR or local changes.
 
 ## Code review gate
 
