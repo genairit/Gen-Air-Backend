@@ -77,6 +77,7 @@ Table customers {
 }
 
 Table project_stages {
+  Note: 'Fixed active catalog: ממתין, בעבודה, להמתין, הסתיים, positions 1–4. Definition writes blocked by project_stages_readonly trigger. Retired rows retained for historical transitions.'
   id          uuid         [pk, default: `gen_random_uuid()`]
   name        varchar(80)  [not null]
   description varchar(255)
@@ -107,7 +108,7 @@ Table projects {
   code            varchar(12)  [not null, unique, note: 'Generated on save: creator first_name + last_name initials, then a 5-digit random number (e.g. אכ-48213). An apartment adds its sequence in the building: אכ-48213-01']
   name            varchar(200) [not null]
   project_type_id uuid         [not null, ref: > project_types.id]
-  stage_id        uuid         [not null, ref: > project_stages.id]
+  stage_id        uuid         [not null, ref: > project_stages.id, default: '6502a045-2a7d-4bc8-8ba1-36eaedc49a01', note: 'Insert/assignment trigger rejects archived status IDs']
   customer_id     uuid         [ref: > customers.id, note: 'Customer of a building or a standalone project; always null on an apartment']
   parent_project_id uuid       [ref: > projects.id, note: 'The building an apartment belongs to; one level only (trigger trg_projects_single_level_nesting)']
   created_by_id   uuid         [not null, ref: > users.id]
@@ -239,3 +240,11 @@ Table task_status_transitions {
 
 Ref: task_status_transitions.task_id > tasks.id [delete: restrict]
 Ref: task_status_transitions.changed_by_id > users.id [delete: restrict]
+
+Table project_stage_reset_snapshots {
+  project_id uuid [pk, ref: > projects.id]
+  previous_stage_id uuid [not null, ref: > project_stages.id]
+  previous_updated_at timestamptz(3) [not null]
+  migrated_at timestamptz(3) [not null, default: `now()`]
+  Note: 'One-time recovery snapshot for the 2026-10-16 fixed-status migration. Includes all pre-existing projects, including apartments and soft-deleted records; not a user-generated transition.'
+}
