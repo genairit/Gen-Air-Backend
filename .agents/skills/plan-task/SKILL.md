@@ -26,9 +26,11 @@ Also follow the repository's [Codex guidance](../../../AGENTS.md).
   directory outside version control; use the current platform's temp location
   instead of assuming `/tmp` exists.
 - A card reference alone requests a plan. If implementation is requested, proceed
-  within that authorization and the shared development workflow. Commit, push,
-  and create a pull request when the user requests them; otherwise leave the
-  changes for review. Update the card only when authorized by the user or the
+  within that authorization and the shared development workflow. When the
+  implementation is verified, run `$code-review`; fix every note and review again
+  until it reports `NO NOTES` before proof, the pull request, or card updates.
+  Commit, push, and create a pull request when the user requests them; otherwise
+  leave the changes for review. Update the card only when authorized by the user or the
   explicitly invoked workflow.
 - Use available equivalents for tool names in the canonical workflow. Explain
   incomplete verification or missing card context instead of implying success.

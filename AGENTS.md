@@ -1,8 +1,9 @@
 # Codex repository guidance
 
 The shared standards and workflows originate in Spec-Development-Component
-(commit `274c220b9c73c361469630bbc596bec2811fc5be`). `rules/` and `skills/`
-are the canonical source; this file and `.agents/skills/` adapt them for Codex.
+(commit `526beaf9a651809a948cd5751bc9f12ac8da1376`). `rules/`, `skills/`, and
+`agents/` are the canonical source; this file and `.agents/skills/` adapt them for
+Codex.
 
 ## Shared rules
 
@@ -12,7 +13,8 @@ only to the relevant code:
 - [Coding standards](rules/coding-standards.md): pyramid ordering, naming, layer
   boundaries, declarative code, and formatting.
 - [Development workflow](rules/development-workflow-standards.md): understand the
-  task, branch from the latest `dev`, verify, and open a pull request into `dev`.
+  task, branch from the latest `dev`, verify, pass the code review, and open a pull
+  request into `dev`.
 - [Feedback loops](rules/feedback-loops.md): prove behavior with the appropriate
   endpoint, unit, component, or browser checks and keep secrets out of artifacts.
 - [Migrations](rules/migrations-standards.md): document schema and environment
@@ -24,6 +26,16 @@ only to the relevant code:
   and implementation when requested.
 - `$entity-module`: read `.agents/skills/entity-module/SKILL.md` for NestJS server
   entity modules. In frontend work, use it only for an authorized backend change.
+- `$code-review`: read `.agents/skills/code-review/SKILL.md` to review a task
+  branch with the canonical [code reviewer](agents/code-reviewer.md).
+
+## Code review gate
+
+When a task's implementation is finished and verified, run `$code-review` on the
+branch before attaching proof or opening a pull request. Fix every note it reports,
+re-verify, and run it again until it reports `NO NOTES`. Only then continue with
+the development workflow: attach the proof, open the pull request into `dev`, and
+update the board.
 
 ## Codex adaptations
 
