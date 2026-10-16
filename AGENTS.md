@@ -1,8 +1,9 @@
 # Codex repository guidance
 
 The shared standards and workflows originate in Spec-Development-Component
-(commit `274c220b9c73c361469630bbc596bec2811fc5be`). `rules/` and `skills/`
-are the canonical source; this file and `.agents/skills/` adapt them for Codex.
+(commit `73f25b0ea8548d8e7ffe2a30215a6c525c16fdac`). `rules/`, `skills/`, and
+`agents/` are the canonical source; this file and `.agents/skills/` adapt them for
+Codex.
 
 ## Shared rules
 
@@ -12,7 +13,8 @@ only to the relevant code:
 - [Coding standards](rules/coding-standards.md): pyramid ordering, naming, layer
   boundaries, declarative code, and formatting.
 - [Development workflow](rules/development-workflow-standards.md): understand the
-  task, branch from the latest `dev`, verify, and open a pull request into `dev`.
+  task, branch from the latest `dev`, verify, pass the code review, and open a pull
+  request into `dev`.
 - [Feedback loops](rules/feedback-loops.md): prove behavior with the appropriate
   endpoint, unit, component, or browser checks and keep secrets out of artifacts.
 - [Migrations](rules/migrations-standards.md): document schema and environment
@@ -24,6 +26,16 @@ only to the relevant code:
   and implementation when requested.
 - `$entity-module`: read `.agents/skills/entity-module/SKILL.md` for NestJS server
   entity modules. In frontend work, use it only for an authorized backend change.
+- `$code-review`: read `.agents/skills/code-review/SKILL.md` to run the canonical
+  [code review agent](agents/code-reviewer.md) on a PR or local changes.
+
+## Code review gate
+
+When a task's implementation is finished and verified, run `$code-review` in
+Mode B on the branch before attaching proof or opening a pull request. Fix every
+finding it reports, delete its `// CR:` annotations, re-verify, and run it again
+until it reports no findings. Only then continue with the development workflow:
+attach the proof, open the pull request into `dev`, and update the board.
 
 ## Codex adaptations
 
@@ -39,5 +51,5 @@ only to the relevant code:
   Use an available equivalent; report any verification that remains blocked.
 - Keep downloaded references and draft plans in a platform-appropriate temporary
   directory outside version control. Never commit `.env` files or credentials.
-- Update these entry points when their canonical rules or skills change. Preserve
-  existing Claude and Copilot integrations.
+- Update these entry points when their canonical rules, skills, or agents change.
+  Preserve existing Claude and Copilot integrations.
