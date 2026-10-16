@@ -12,8 +12,13 @@ const escapeDriveQueryValue = (value: string): string =>
 export const buildChildrenQuery = (parentId: string): string =>
   `'${escapeDriveQueryValue(parentId)}' in parents and trashed = false`;
 
-export const buildChildFilesQuery = (parentId: string): string =>
-  `${buildChildrenQuery(parentId)} and mimeType != '${GOOGLE_DRIVE.FOLDER_MIME_TYPE}'`;
+export const buildChildrenOfAnyQuery = (parentIds: string[]): string => {
+  const parentClauses = parentIds.map(
+    (parentId) => `'${escapeDriveQueryValue(parentId)}' in parents`,
+  );
+
+  return `(${parentClauses.join(' or ')}) and trashed = false`;
+};
 
 export const buildChildFolderByNameQuery = (
   name: string,

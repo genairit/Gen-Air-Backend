@@ -1,6 +1,8 @@
 export const GOOGLE_DRIVE = {
   PAGE_SIZE: 1000,
+  PARENTS_PER_QUERY: 40,
   ORDER_BY: 'folder,name',
+  TREE_FIELDS: 'id, mimeType, parents',
   SCOPE: 'https://www.googleapis.com/auth/drive',
   FOLDER_MIME_TYPE: 'application/vnd.google-apps.folder',
   ITEM_FIELDS: 'id, name, mimeType, size, modifiedTime, webViewLink',
