@@ -2,6 +2,7 @@ import {
   ICustomerFilter,
   ICustomerSyncStatusCount,
   TCustomerUpdateAttributes,
+  TCustomerCreationAttributes,
 } from './interfaces/customer.interface';
 
 import {
@@ -58,6 +59,13 @@ export class CustomerRepository {
         ? [{ prioritySyncStatus, count }]
         : [],
     );
+  }
+
+  create(
+    attributes: TCustomerCreationAttributes,
+    transaction?: Transaction,
+  ): Promise<Customer> {
+    return Customer.create(attributes, { transaction });
   }
 
   async update(

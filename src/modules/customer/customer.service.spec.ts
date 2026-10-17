@@ -4,6 +4,7 @@ import {
 } from './constants/priority-sync-status.constant';
 
 import { Test } from '@nestjs/testing';
+import { UniqueConstraintError } from 'sequelize';
 import { CustomerService } from './customer.service';
 import { CustomerRepository } from './customer.repository';
 import { ICustomer } from './interfaces/customer.interface';
@@ -32,6 +33,7 @@ const CUSTOMER: ICustomer = {
 
 const createService = async () => {
   const customerRepository = {
+    create: jest.fn().mockResolvedValue(CUSTOMER),
     update: jest.fn().mockResolvedValue(true),
     findByTaxId: jest.fn().mockResolvedValue(null),
     findById: jest.fn().mockResolvedValue(CUSTOMER),
@@ -126,4 +128,69 @@ describe('CustomerService.delete', () => {
 
     await expect(service.delete('missing')).rejects.toThrow(NotFoundException);
   });
+});
+
+describe('CustomerService.create', () => {
+  const input = {
+    name: CUSTOMER.name,
+    taxId: '514287937',
+    phone: CUSTOMER.phone,
+    email: CUSTOMER.email,
+    address: CUSTOMER.address,
+    contactName: CUSTOMER.contactName,
+    customerType: CUSTOMER.customerType,
+  };
+
+  it('persists only creation fields with the authenticated creator and returns the stored customer', async () => {
+    const { service, customerRepository } = await createService();
+
+    await expect(service.create(input, 'trusted-user')).resolves.toEqual(
+      CUSTOMER,
+    );
+    expect(customerRepository.create).toHaveBeenCalledWith({
+      ...input,
+      createdById: 'trusted-user',
+    });
+    expect(customerRepository.findById).toHaveBeenCalledWith(CUSTOMER.id);
+  });
+
+  it('rejects an existing registration number before writing', async () => {
+    const { service, customerRepository } = await createService();
+    customerRepository.findByTaxId.mockResolvedValue(CUSTOMER);
+
+    await expect(service.create(input, 'trusted-user')).rejects.toThrow(
+      ConflictException,
+    );
+    expect(customerRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('translates the database registration constraint race into a conflict', async () => {
+    const { service, customerRepository } = await createService();
+    const parent = Object.assign(new Error('duplicate registration'), {
+      sql: '',
+      constraint: 'uq_customers_tax_id',
+    });
+    customerRepository.create.mockRejectedValue(
+      new UniqueConstraintError({ parent }),
+    );
+
+    await expect(service.create(input, 'trusted-user')).rejects.toThrow(
+      ConflictException,
+    );
+  });
+
+  it.each(['uq_unrelated_constraint', null])(
+    'preserves an unrelated database error (%s)',
+    async (constraint) => {
+      const { service, customerRepository } = await createService();
+      const parent = Object.assign(new Error('database failure'), {
+        sql: '',
+        constraint,
+      });
+      const error = constraint ? new UniqueConstraintError({ parent }) : parent;
+      customerRepository.create.mockRejectedValue(error);
+
+      await expect(service.create(input, 'trusted-user')).rejects.toBe(error);
+    },
+  );
 });
