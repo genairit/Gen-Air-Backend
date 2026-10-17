@@ -21,7 +21,9 @@ import { EnvironmentManager } from '@Utilities/environment-manager.utility';
 @Injectable()
 export class GooglePlacesService {
   private readonly client = axios.create({
-    baseURL: GOOGLE_PLACES.BASE_URL,
+    baseURL: EnvironmentManager.get('GOOGLE_PLACES_BASE_URL', {
+      defaultValue: GOOGLE_PLACES.BASE_URL,
+    }),
     timeout: GOOGLE_PLACES.REQUEST_TIMEOUT_MS,
   });
 
