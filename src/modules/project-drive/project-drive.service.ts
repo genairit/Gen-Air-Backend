@@ -13,20 +13,21 @@ import {
 } from './constants/project-drive.constant';
 
 import {
-  IProjectDriveFolder,
-  IProjectDriveContents,
-} from './interfaces/project-drive.interface';
+  IDriveItem,
+  TFileCountByFolderId,
+} from '@Interfaces/google-drive.interface';
 
 import { rm } from 'node:fs/promises';
 import { OnEvent } from '@nestjs/event-emitter';
 import { DriveFolderDto } from './dto/drive-folder.dto';
 import { Meta, TypedLogger } from '@Logger/logger.service';
-import { IDriveItem } from '@Interfaces/google-drive.interface';
 import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { decodeUploadedFileName } from '@Utilities/upload.utility';
 import { IProject } from '@Modules/project/interfaces/project.interface';
+import { IProjectDriveContents } from './interfaces/project-drive.interface';
 import { renderDriveFolderName } from './utilities/drive-folder-name.utility';
+import { toProjectDriveFolder } from './utilities/drive-folder-status.utility';
 import type { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { validateDriveUploads } from '@Utilities/validate-drive-upload.utility';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
@@ -98,18 +99,15 @@ export class ProjectDriveService {
       this.googleDriveService.listChildren(folderId),
     );
 
-    const folders = await this.callDrive(() =>
-      Promise.all(
-        items
-          .filter((item) => item.isFolder)
-          .map((item) => this.toProjectDriveFolder(item)),
-      ),
-    );
+    const folders = items.filter((item) => item.isFolder);
+    const fileCounts = await this.countFolderFiles(folders);
 
     return {
       folderId,
-      folders,
       files: items.filter((item) => !item.isFolder),
+      folders: folders.map((folder) =>
+        toProjectDriveFolder(folder, fileCounts),
+      ),
     };
   }
 
@@ -241,12 +239,22 @@ export class ProjectDriveService {
     return parentResults.some(Boolean);
   }
 
-  private async toProjectDriveFolder(
-    item: IDriveItem,
-  ): Promise<IProjectDriveFolder> {
-    const fileCount = await this.googleDriveService.countFiles(item.id);
+  private async countFolderFiles(
+    folders: IDriveItem[],
+  ): Promise<TFileCountByFolderId | null> {
+    try {
+      return await this.googleDriveService.countDescendantFiles(
+        folders.map((folder) => folder.id),
+        MAX_FOLDER_DEPTH,
+      );
+    } catch (error) {
+      this.logger.error({
+        error,
+        message: 'Failed to resolve Drive folder contents; reporting unknown',
+      });
 
-    return { id: item.id, name: item.name, fileCount };
+      return null;
+    }
   }
 
   private assertDriveConfigured(): void {

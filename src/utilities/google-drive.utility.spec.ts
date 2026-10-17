@@ -2,6 +2,7 @@ import {
   toDriveItem,
   buildChildrenQuery,
   isDriveNotFoundError,
+  buildChildrenOfAnyQuery,
   buildChildFolderByNameQuery,
 } from './google-drive.utility';
 
@@ -11,6 +12,12 @@ describe('Drive queries', () => {
   it('lists the non-trashed children of a folder', () => {
     expect(buildChildrenQuery('abc123')).toBe(
       "'abc123' in parents and trashed = false",
+    );
+  });
+
+  it('lists the non-trashed children of several folders in one query', () => {
+    expect(buildChildrenOfAnyQuery(['a1', "b'2"])).toBe(
+      "('a1' in parents or 'b\\'2' in parents) and trashed = false",
     );
   });
 

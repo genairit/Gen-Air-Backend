@@ -17,3 +17,12 @@ export const UPLOAD_OPTIONS: MulterOptions = {
   dest: tmpdir(),
   limits: { fileSize: UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES },
 };
+
+export const FOLDER_CONTENT_STATUS = {
+  EMPTY: 'empty',
+  UNKNOWN: 'unknown',
+  HAS_CONTENT: 'has_content',
+} as const;
+
+export type FolderContentStatusType =
+  (typeof FOLDER_CONTENT_STATUS)[keyof typeof FOLDER_CONTENT_STATUS];
