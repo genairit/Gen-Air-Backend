@@ -1,5 +1,6 @@
 import {
   Get,
+  Post,
   Body,
   Param,
   Patch,
@@ -19,10 +20,13 @@ import {
 import { CustomerService } from './customer.service';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UserRoles } from '@Decorators/user-roles.decorator';
+import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { GetCustomersByFilterDto } from './dto/get-by-filter.dto';
+import type { IUser } from '@Modules/user/interfaces/user.interface';
 import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
+import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 
 @ApiTags('customer')
 @ApiBearerAuth()
@@ -45,6 +49,15 @@ export class CustomerController {
   @Get(':id')
   getById(@Param('id', ParseUUIDPipe) id: string): Promise<ICustomer> {
     return this.customerService.getById(id);
+  }
+
+  @Post()
+  @UserRoles(ROLE_PERMISSIONS.MANAGE_CUSTOMERS)
+  create(
+    @Body() customer: CreateCustomerDto,
+    @AuthenticatedUser() user: IUser,
+  ): Promise<ICustomer> {
+    return this.customerService.create(customer, user.id);
   }
 
   @Patch(':id')
