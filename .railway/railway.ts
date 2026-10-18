@@ -22,7 +22,7 @@ const isEnvironmentName = (name?: string | null): name is EnvironmentNameType =>
     (environmentName) => environmentName === name,
   );
 
-const resolveBranch = (environmentName?: string | null): string => {
+export const resolveBranch = (environmentName?: string | null): string => {
   if (!isEnvironmentName(environmentName)) {
     throw new Error(
       `No branch mapped for Railway environment "${environmentName}"`,

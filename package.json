@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "check:drive": "ts-node -r tsconfig-paths/register src/scripts/check-google-drive.ts",
     "create-admin": "node dist/scripts/create-admin.js",
-    "typecheck:iac": "tsc --noEmit --strict --skipLibCheck --module nodenext --moduleResolution nodenext .railway/railway.ts"
+    "typecheck:iac": "tsc --noEmit --strict --skipLibCheck --module nodenext --moduleResolution nodenext --types jest .railway/railway.ts .railway/railway.spec.ts",
+    "test:iac": "jest --rootDir .railway"
   },
   "dependencies": {
     "@googleapis/drive": "^26.0.2",
