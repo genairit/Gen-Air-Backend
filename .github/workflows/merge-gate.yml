@@ -7,7 +7,7 @@ on:
 jobs:
   e2e:
     name: End-to-end
-    uses: kfirmr/Gen-Air-Automation/.github/workflows/e2e.yml@main
+    uses: genairit/Gen-Air-Automation/.github/workflows/e2e.yml@main
     with:
       repository-under-test: Gen-Air-Backend
       ref-under-test: ${{ github.event.pull_request.head.sha }}
