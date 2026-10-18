@@ -29,7 +29,8 @@ Also follow the repository's [Codex guidance](../../../AGENTS.md).
   within that authorization and the shared development workflow. When the
   implementation is verified, run `$code-review` in Mode B; fix every finding,
   delete its `// CR:` annotations, and review again until it reports no findings
-  before proof, the pull request, or card updates.
+  before invoking `$qa`. Require PASSED against the final feature refs, then attach the QA
+  report and Automation PR with proof before the feature PR or review-status board updates.
   Commit, push, and create a pull request when the user requests them; otherwise
   leave the changes for review. Update the card only when authorized by the user or the
   explicitly invoked workflow.

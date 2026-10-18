@@ -1,7 +1,7 @@
 # Codex repository guidance
 
 The shared standards and workflows originate in Spec-Development-Component
-(commit `73f25b0ea8548d8e7ffe2a30215a6c525c16fdac`). `rules/`, `skills/`, and
+(commit `895b8ba14239de6d96ef3365ec5d73605ad4c7ce`). `rules/`, `skills/`, and
 `agents/` are the canonical source; this file and `.agents/skills/` adapt them for
 Codex.
 
@@ -13,7 +13,7 @@ only to the relevant code:
 - [Coding standards](rules/coding-standards.md): pyramid ordering, naming, layer
   boundaries, declarative code, and formatting.
 - [Development workflow](rules/development-workflow-standards.md): understand the
-  task, branch from the latest `dev`, verify, pass the code review, and open a pull
+  task, branch from the latest `dev`, verify, pass code review and QA, and open a pull
   request into `dev`.
 - [Feedback loops](rules/feedback-loops.md): prove behavior with the appropriate
   endpoint, unit, component, or browser checks and keep secrets out of artifacts.
@@ -29,13 +29,22 @@ only to the relevant code:
 - `$code-review`: read `.agents/skills/code-review/SKILL.md` to run the canonical
   [code review agent](agents/code-reviewer.md) on a PR or local changes.
 
-## Code review gate
+- `$qa`: read `.agents/skills/qa/SKILL.md` for the feature QA agent and its structured
+  handoff from Gen-Air-Automation.
+
+## Code review and QA gates
 
 When a task's implementation is finished and verified, run `$code-review` in
 Mode B on the branch before attaching proof or opening a pull request. Fix every
 finding it reports, delete its `// CR:` annotations, re-verify, and run it again
 until it reports no findings. Only then continue with the development workflow:
-attach the proof, open the pull request into `dev`, and update the board.
+run `$qa` in a fresh context against the exact feature refs. The QA agent writes only to
+Gen-Air-Automation, opens its test PR, and returns PASSED/FAILED with coverage, commands,
+revisions and artifacts. On an application failure, the developer fixes it and repeats
+code review before QA; on a test failure, QA fixes Automation and reruns. A failed,
+blocked, missing or stale QA result blocks the feature PR. Only PASSED continues to
+attach the QA report and Automation PR with proof, open the feature PR into `dev`,
+backfill that PR link in the Automation PR, and update the board.
 
 ## Codex adaptations
 
