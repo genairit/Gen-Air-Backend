@@ -9,6 +9,11 @@ import {
   PrimaryKey,
 } from 'sequelize-typescript';
 
+import {
+  type ProjectDetailFieldSetType,
+  PROJECT_DETAIL_FIELD_SET_VALUES,
+} from '@Constants/project-detail-field-set.constant';
+
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { IProjectType } from '../interfaces/project-type.interface';
 
@@ -40,6 +45,16 @@ export class ProjectType extends Model<IProjectType> implements IProjectType {
 
   @Column({ allowNull: false, type: DataType.INTEGER })
   declare position: number;
+
+  @Column({
+    allowNull: false,
+    type: DataType.ENUM(...PROJECT_DETAIL_FIELD_SET_VALUES),
+  })
+  declare detailFieldSet: ProjectDetailFieldSetType;
+
+  @Default(false)
+  @Column({ allowNull: false, type: DataType.BOOLEAN })
+  declare canHaveApartments: boolean;
 
   @CreatedAt
   declare createdAt: Date;

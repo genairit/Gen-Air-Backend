@@ -1,92 +1,87 @@
+import {
+  PROJECT_STATUS_IDS,
+  FIXED_PROJECT_STATUSES,
+} from '@Constants/project-status.constant';
+
 import { Test } from '@nestjs/testing';
 import { ProjectStageService } from './project-stage.service';
-import { ProjectService } from '@Modules/project/project.service';
 import { ProjectStageRepository } from './project-stage.repository';
-import { ConflictException, BadRequestException } from '@nestjs/common';
-import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { IProjectStage } from './interfaces/project-stage.interface';
+import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 
-const STAGES = [
-  { id: 'stage-1', position: 1 },
-  { id: 'stage-2', position: 2 },
-];
-
+const STAGES: IProjectStage[] = FIXED_PROJECT_STATUSES.map((stage) => ({
+  ...stage,
+  tag: null,
+  color: null,
+  description: null,
+  deletedAt: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+}));
 const createService = async () => {
-  const projectStageRepository = {
-    reorder: jest.fn().mockResolvedValue(null),
+  const repository = {
     findAll: jest.fn().mockResolvedValue(STAGES),
-    count: jest.fn().mockResolvedValue(STAGES.length),
-    softDelete: jest.fn().mockResolvedValue(true),
     findById: jest.fn().mockResolvedValue(STAGES[0]),
   };
-  const projectService = { countByStage: jest.fn().mockResolvedValue(0) };
-
-  const moduleRef = await Test.createTestingModule({
+  const module = await Test.createTestingModule({
     providers: [
       ProjectStageService,
-      { provide: ProjectService, useValue: projectService },
-      { provide: ProjectStageRepository, useValue: projectStageRepository },
-      {
-        provide: DatabaseTransactionService,
-        useValue: {
-          run: jest.fn((work: (transaction: object) => unknown) => work({})),
-        },
-      },
+      { provide: ProjectStageRepository, useValue: repository },
     ],
   }).compile();
-
-  return {
-    service: moduleRef.get(ProjectStageService),
-    projectService,
-    projectStageRepository,
-  };
+  return { service: module.get(ProjectStageService), repository };
 };
-
-describe('ProjectStageService.delete', () => {
-  it('soft deletes an empty stage', async () => {
-    const { service, projectStageRepository } = await createService();
-
-    await service.delete('stage-1');
-
-    expect(projectStageRepository.softDelete).toHaveBeenCalledWith('stage-1');
+describe('Fixed project status catalog', () => {
+  it('reads exactly the four persisted statuses in the required order', async () => {
+    const { service } = await createService();
+    expect((await service.getAll()).map((stage) => stage.name)).toEqual([
+      'ממתין',
+      'בעבודה',
+      'להמתין',
+      'הסתיים',
+    ]);
   });
-
-  it('refuses to delete a stage that still holds projects', async () => {
-    const { service, projectService, projectStageRepository } =
-      await createService();
-    projectService.countByStage.mockResolvedValue(3);
-
-    await expect(service.delete('stage-1')).rejects.toThrow(ConflictException);
-    expect(projectStageRepository.softDelete).not.toHaveBeenCalled();
+  it.each([
+    STAGES.slice(0, 3),
+    [...STAGES, { ...STAGES[0], id: 'custom' }],
+    [...STAGES].reverse(),
+    STAGES.map((stage) => ({ ...stage, name: 'changed' })),
+  ])('fails closed for an incomplete or modified catalog', async (stages) => {
+    const { service, repository } = await createService();
+    repository.findAll.mockResolvedValue(stages);
+    await expect(service.getAll()).rejects.toThrow(ServiceUnavailableException);
   });
-
-  it('refuses to delete the last remaining stage', async () => {
-    const { service, projectStageRepository } = await createService();
-    projectStageRepository.count.mockResolvedValue(1);
-
-    await expect(service.delete('stage-1')).rejects.toThrow(ConflictException);
-  });
-});
-
-describe('ProjectStageService.reorder', () => {
-  it('reorders when every stage is listed once', async () => {
-    const { service, projectStageRepository } = await createService();
-
-    await service.reorder({ stageIds: ['stage-2', 'stage-1'] });
-
-    expect(projectStageRepository.reorder).toHaveBeenCalledWith(
-      ['stage-2', 'stage-1'],
-      {},
+  it('defaults new projects to waiting by its stable database ID', async () => {
+    const { service, repository } = await createService();
+    expect((await service.getInitialStage()).id).toBe(
+      PROJECT_STATUS_IDS.WAITING,
+    );
+    expect(repository.findById).toHaveBeenCalledWith(
+      PROJECT_STATUS_IDS.WAITING,
     );
   });
-
-  it.each([
-    ['a missing stage', ['stage-1']],
-    ['an unknown stage', ['stage-1', 'stage-9']],
-  ])('rejects an order with %s', async (_label, stageIds) => {
+  it('accepts canonical UUIDs regardless of letter case', async () => {
     const { service } = await createService();
-
-    await expect(service.reorder({ stageIds })).rejects.toThrow(
-      BadRequestException,
+    expect(
+      (await service.getById(PROJECT_STATUS_IDS.WAITING.toUpperCase())).id,
+    ).toBe(PROJECT_STATUS_IDS.WAITING);
+  });
+  it('rejects retired/custom status targets without reading them', async () => {
+    const { service, repository } = await createService();
+    await expect(service.getById('old-sales-stage')).rejects.toThrow(
+      NotFoundException,
+    );
+    expect(repository.findById).not.toHaveBeenCalled();
+  });
+  it('requires the migration when a canonical status is missing or changed', async () => {
+    const { service, repository } = await createService();
+    repository.findById.mockResolvedValue(null);
+    await expect(service.getById(PROJECT_STATUS_IDS.WAITING)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    repository.findById.mockResolvedValue({ ...STAGES[0], name: 'edited' });
+    await expect(service.getById(PROJECT_STATUS_IDS.WAITING)).rejects.toThrow(
+      ServiceUnavailableException,
     );
   });
 });

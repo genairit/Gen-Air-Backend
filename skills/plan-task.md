@@ -190,7 +190,13 @@ If — and only if — the user says to implement (before or after seeing the pl
 - Follow the plan's proposed changes and the repository's coding standards.
 - Reuse existing patterns and shared packages instead of reinventing them.
 - Verify the change with a real feedback loop before declaring it done.
-- Attach the proof of completion and the merge request link back to the card.
+- Run the [code review agent](../agents/code-reviewer.md) on the branch in Mode B. Fix every
+  finding it reports, delete its `// CR:` annotations, re-verify, and review again until it reports
+  no findings.
+- Run the [QA agent](../agents/qa-agent.md) after clean code review. Route application failures
+  back through development and code review; route test failures to QA. Repeat until PASSED.
+- Attach the QA report, Automation PR link, proof of completion, and feature merge request link
+  back to the card. Never open the feature PR while QA is failed, blocked, missing, or stale.
 - Never commit or push on your own — leave the changes for the user to review and commit.
 
 Card updates use the write scope of the token:

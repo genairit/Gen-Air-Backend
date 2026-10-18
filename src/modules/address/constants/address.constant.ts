@@ -1,0 +1,4 @@
+export const ADDRESS_RATE_LIMITS = {
+  PLACE_REQUESTS: 30,
+  SUGGESTION_REQUESTS: 60,
+} as const;

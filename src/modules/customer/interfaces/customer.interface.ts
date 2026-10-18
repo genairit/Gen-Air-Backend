@@ -1,0 +1,54 @@
+import { IUser } from '@Modules/user/interfaces/user.interface';
+import { PrioritySyncStatusType } from '../constants/priority-sync-status.constant';
+import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
+
+export interface ICustomer {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  taxId: string;
+  address: string;
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy?: IUser;
+  contactName: string;
+  createdById: string;
+  deletedAt: Date | null;
+  priorityId: string | null;
+  prioritySyncAttempts: number;
+  prioritySyncedAt: Date | null;
+  prioritySyncError: string | null;
+  customerType: ProjectDetailFieldSetType;
+  prioritySyncStatus: PrioritySyncStatusType;
+}
+
+export interface ICustomerFilter {
+  search: string | null;
+  prioritySyncStatus: PrioritySyncStatusType | null;
+}
+
+export interface ICustomerSyncStatusCount {
+  count: number;
+  prioritySyncStatus: PrioritySyncStatusType;
+}
+
+export type TCustomerSyncStatusCounts = Record<PrioritySyncStatusType, number>;
+
+type TCustomerEditableField =
+  | 'name'
+  | 'phone'
+  | 'email'
+  | 'taxId'
+  | 'address'
+  | 'contactName'
+  | 'customerType';
+
+export type TCustomerCreationAttributes = Pick<
+  ICustomer,
+  TCustomerEditableField | 'createdById'
+>;
+
+export type TCustomerUpdateAttributes = Partial<
+  Pick<ICustomer, TCustomerEditableField>
+>;

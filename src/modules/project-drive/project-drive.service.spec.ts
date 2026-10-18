@@ -5,6 +5,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 
+import {
+  MAX_FOLDER_DEPTH,
+  FOLDER_CONTENT_STATUS,
+} from './constants/project-drive.constant';
+
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
@@ -43,7 +48,7 @@ const createService = async () => {
     ensureFolder: jest.fn((name: string) => Promise.resolve(`id:${name}`)),
     findParentIds: jest.fn().mockResolvedValue([]),
     listChildren: jest.fn().mockResolvedValue([]),
-    countFiles: jest.fn().mockResolvedValue(0),
+    countDescendantFiles: jest.fn().mockResolvedValue(new Map()),
     uploadFile: jest.fn().mockResolvedValue({ id: 'uploaded' }),
   };
 
@@ -70,7 +75,7 @@ const createTempFile = async (): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), 'project-drive-spec-'));
   const filePath = join(directory, 'upload');
 
-  await writeFile(filePath, 'content');
+  await writeFile(filePath, '%PDF-1.7\nexample\n%%EOF');
 
   return filePath;
 };
@@ -170,7 +175,7 @@ describe('ProjectDriveService.handleProjectCreated', () => {
 });
 
 describe('ProjectDriveService.getContents', () => {
-  it('splits folders with file counts from files', async () => {
+  it('splits folders with their content status from files', async () => {
     const { service, projectService, googleDriveService } =
       await createService();
     projectService.getById.mockResolvedValue({
@@ -179,15 +184,77 @@ describe('ProjectDriveService.getContents', () => {
     });
     googleDriveService.listChildren.mockResolvedValue([
       { id: 'd1', name: 'תוכניות', isFolder: true },
+      { id: 'd2', name: 'חשבוניות', isFolder: true },
       { id: 'f1', name: 'plan.pdf', isFolder: false },
     ]);
-    googleDriveService.countFiles.mockResolvedValue(3);
+    googleDriveService.countDescendantFiles.mockResolvedValue(
+      new Map([
+        ['d1', 3],
+        ['d2', 0],
+      ]),
+    );
 
     await expect(service.getContents(PROJECT.id, {})).resolves.toEqual({
       folderId: PROJECT_FOLDER_ID,
-      folders: [{ id: 'd1', name: 'תוכניות', fileCount: 3 }],
+      folders: [
+        {
+          id: 'd1',
+          fileCount: 3,
+          name: 'תוכניות',
+          contentStatus: FOLDER_CONTENT_STATUS.HAS_CONTENT,
+        },
+        {
+          id: 'd2',
+          fileCount: 0,
+          name: 'חשבוניות',
+          contentStatus: FOLDER_CONTENT_STATUS.EMPTY,
+        },
+      ],
       files: [{ id: 'f1', name: 'plan.pdf', isFolder: false }],
     });
+    expect(googleDriveService.countDescendantFiles).toHaveBeenCalledWith(
+      ['d1', 'd2'],
+      MAX_FOLDER_DEPTH,
+    );
+  });
+
+  it('still lists the folder but reports unknown when the content check fails', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    projectService.getById.mockResolvedValue({
+      ...PROJECT,
+      driveFolderId: PROJECT_FOLDER_ID,
+    });
+    googleDriveService.listChildren.mockResolvedValue([
+      { id: 'd1', name: 'תוכניות', isFolder: true },
+    ]);
+    googleDriveService.countDescendantFiles.mockRejectedValue(
+      new Error('quota exceeded'),
+    );
+
+    await expect(service.getContents(PROJECT.id, {})).resolves.toMatchObject({
+      folders: [
+        {
+          id: 'd1',
+          fileCount: null,
+          contentStatus: FOLDER_CONTENT_STATUS.UNKNOWN,
+        },
+      ],
+    });
+  });
+
+  it('reports a bad gateway when Drive cannot list the folder at all', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    projectService.getById.mockResolvedValue({
+      ...PROJECT,
+      driveFolderId: PROJECT_FOLDER_ID,
+    });
+    googleDriveService.listChildren.mockRejectedValue(new Error('offline'));
+
+    await expect(service.getContents(PROJECT.id, {})).rejects.toThrow(
+      BadGatewayException,
+    );
   });
 
   it('rejects a folder outside the project', async () => {
@@ -242,7 +309,10 @@ describe('ProjectDriveService.upload', () => {
     await service.upload(PROJECT.id, {}, [buildUploadedFile(tempFilePath)]);
 
     expect(googleDriveService.uploadFile).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'תוכנית.pdf' }),
+      expect.objectContaining({
+        name: 'תוכנית.pdf',
+        mimeType: 'application/pdf',
+      }),
     );
     await expect(access(tempFilePath)).rejects.toThrow();
   });
@@ -255,5 +325,22 @@ describe('ProjectDriveService.upload', () => {
       service.upload(PROJECT.id, {}, [buildUploadedFile(tempFilePath)]),
     ).rejects.toThrow(ConflictException);
     await expect(access(tempFilePath)).rejects.toThrow();
+  });
+  it('rejects the entire mixed batch before resolving Drive folders and removes every temporary file', async () => {
+    const { service, googleDriveService, projectService } =
+      await createService();
+    const good = await createTempFile();
+    const bad = await createTempFile();
+    await writeFile(bad, 'MZ executable');
+    await expect(
+      service.upload(PROJECT.id, {}, [
+        buildUploadedFile(good),
+        buildUploadedFile(bad),
+      ]),
+    ).rejects.toThrow(BadRequestException);
+    expect(googleDriveService.uploadFile).not.toHaveBeenCalled();
+    expect(projectService.getById).not.toHaveBeenCalled();
+    await expect(access(good)).rejects.toThrow();
+    await expect(access(bad)).rejects.toThrow();
   });
 });

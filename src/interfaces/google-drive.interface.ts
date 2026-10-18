@@ -14,3 +14,16 @@ export interface IDriveUpload {
   parentId: string;
   localPath: string;
 }
+
+export type TFileCountByFolderId = Map<string, number>;
+
+export type TRootIdByFolderId = Map<string, string>;
+
+export interface IDriveTreeLevel {
+  fileCounts: TFileCountByFolderId;
+  rootIdByFolderId: TRootIdByFolderId;
+}
+
+export interface IDriveTreeWalk extends IDriveTreeLevel {
+  depthLeft: number;
+}

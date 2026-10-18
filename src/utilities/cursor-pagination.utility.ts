@@ -1,4 +1,9 @@
 import {
+  CURSOR_DIRECTIONS,
+  CursorDirectionType,
+} from '@Constants/pagination.constant';
+
+import {
   ICursorPage,
   ICursorPosition,
 } from '@Interfaces/cursor-page.interface';
@@ -14,6 +19,19 @@ export const CURSOR_ORDER: Order = [
   ['createdAt', 'DESC'],
   ['id', 'DESC'],
 ];
+
+export const CURSOR_ORDER_BY_DIRECTION: Record<CursorDirectionType, Order> = {
+  [CURSOR_DIRECTIONS.NEWEST_FIRST]: CURSOR_ORDER,
+  [CURSOR_DIRECTIONS.OLDEST_FIRST]: [
+    ['createdAt', 'ASC'],
+    ['id', 'ASC'],
+  ],
+};
+
+const AFTER_CURSOR_OPERATOR_BY_DIRECTION = {
+  [CURSOR_DIRECTIONS.NEWEST_FIRST]: Op.lt,
+  [CURSOR_DIRECTIONS.OLDEST_FIRST]: Op.gt,
+} as const satisfies Record<CursorDirectionType, symbol>;
 
 const parseCursorJson = (cursor: string): unknown => {
   try {
@@ -56,18 +74,23 @@ export const decodeCursor = (
   return { id, createdAt: new Date(createdAt) };
 };
 
-export const buildCursorWhere = (cursor?: string | null): WhereOptions[] => {
+export const buildCursorWhere = (
+  cursor?: string | null,
+  direction: CursorDirectionType = CURSOR_DIRECTIONS.NEWEST_FIRST,
+): WhereOptions[] => {
   const position = decodeCursor(cursor);
 
   if (!position) {
     return [];
   }
 
+  const after = AFTER_CURSOR_OPERATOR_BY_DIRECTION[direction];
+
   return [
     {
       [Op.or]: [
-        { createdAt: { [Op.lt]: position.createdAt } },
-        { createdAt: position.createdAt, id: { [Op.lt]: position.id } },
+        { createdAt: { [after]: position.createdAt } },
+        { createdAt: position.createdAt, id: { [after]: position.id } },
       ],
     },
   ];

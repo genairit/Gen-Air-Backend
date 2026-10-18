@@ -1,3 +1,5 @@
+import { CursorDirectionType } from '@Constants/pagination.constant';
+
 export interface ICursorPosition {
   id: string;
   createdAt: Date;
@@ -11,4 +13,5 @@ export interface ICursorPage<T> {
 export interface ICursorBatch {
   batchSize: number;
   batchCursor: string | null;
+  direction?: CursorDirectionType;
 }

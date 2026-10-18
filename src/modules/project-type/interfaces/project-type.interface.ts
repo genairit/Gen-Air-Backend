@@ -1,3 +1,5 @@
+import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
+
 export interface IProjectType {
   id: string;
   name: string;
@@ -8,4 +10,6 @@ export interface IProjectType {
   icon: string | null;
   subtitle: string | null;
   description: string | null;
+  canHaveApartments: boolean;
+  detailFieldSet: ProjectDetailFieldSetType;
 }
