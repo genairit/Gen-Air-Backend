@@ -37,7 +37,7 @@ export default defineRailway((context) => {
     start: 'npm run start:prod',
     regions: { 'europe-west4-drams3a': 1 },
     build: { builder: 'RAILPACK', buildCommand: 'npm run build' },
-    source: github('kfirmr/Gen-Air-Backend', {
+    source: github('genairit/Gen-Air-Backend', {
       branch: resolveBranch(context.environmentName),
     }),
     env: {
