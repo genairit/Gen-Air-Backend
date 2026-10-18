@@ -19,7 +19,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "check:drive": "ts-node -r tsconfig-paths/register src/scripts/check-google-drive.ts",
-    "create-admin": "node dist/scripts/create-admin.js"
+    "create-admin": "node dist/scripts/create-admin.js",
+    "typecheck:iac": "tsc --noEmit --strict --skipLibCheck --module nodenext --moduleResolution nodenext --types jest .railway/railway.ts .railway/railway.spec.ts",
+    "test:iac": "jest --rootDir .railway"
   },
   "dependencies": {
     "@googleapis/drive": "^26.0.2",
@@ -69,6 +71,7 @@
     "prettier": "^3.4.2",
     "prettier-plugin-pyramid-imports": "^1.0.1",
     "prettier-plugin-pyramid-interface-keys": "^1.0.1",
+    "railway": "^3.16.0",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
