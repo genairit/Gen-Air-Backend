@@ -2,19 +2,43 @@ import { github, project, service, preserve, defineRailway } from 'railway/iac';
 
 export const partial = 'Gen-Air-Backend';
 
-const BRANCH_BY_ENVIRONMENT: Record<string, string> = {
-  test: 'test',
-  production: 'main',
-  development: 'dev',
+const ENVIRONMENT_NAMES = {
+  TEST: 'test',
+  PRODUCTION: 'production',
+  DEVELOPMENT: 'development',
+} as const;
+
+type EnvironmentNameType =
+  (typeof ENVIRONMENT_NAMES)[keyof typeof ENVIRONMENT_NAMES];
+
+const BRANCH_BY_ENVIRONMENT: Record<EnvironmentNameType, string> = {
+  [ENVIRONMENT_NAMES.TEST]: 'test',
+  [ENVIRONMENT_NAMES.PRODUCTION]: 'main',
+  [ENVIRONMENT_NAMES.DEVELOPMENT]: 'dev',
+};
+
+const isEnvironmentName = (name?: string | null): name is EnvironmentNameType =>
+  Object.values(ENVIRONMENT_NAMES).some(
+    (environmentName) => environmentName === name,
+  );
+
+const resolveBranch = (environmentName?: string | null): string => {
+  if (!isEnvironmentName(environmentName)) {
+    throw new Error(
+      `No branch mapped for Railway environment "${environmentName}"`,
+    );
+  }
+
+  return BRANCH_BY_ENVIRONMENT[environmentName];
 };
 
 export default defineRailway((context) => {
-  const backend = service('Gen-Air-Backend', {
+  const backend = service(partial, {
     start: 'npm run start:prod',
     regions: { 'europe-west4-drams3a': 1 },
     build: { builder: 'RAILPACK', buildCommand: 'npm run build' },
     source: github('kfirmr/Gen-Air-Backend', {
-      branch: BRANCH_BY_ENVIRONMENT[context.environmentName ?? 'development'],
+      branch: resolveBranch(context.environmentName),
     }),
     env: {
       PORT: '3000',
