@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
 import { AppService } from './app.service';
 import { AppController } from './app.controller';
+import { TaskModule } from '@Modules/task/task.module';
 import { AuthModule } from '@Modules/auth/auth.module';
 import { UserModule } from '@Modules/user/user.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { AddressModule } from '@Modules/address/address.module';
 import { ProjectModule } from '@Modules/project/project.module';
+import { CustomerModule } from '@Modules/customer/customer.module';
 import { DatabaseModule } from './providers/database/database.module';
 import { ProjectTypeModule } from '@Modules/project-type/project-type.module';
 import { ProjectDriveModule } from '@Modules/project-drive/project-drive.module';
@@ -17,7 +20,9 @@ import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/
   imports: [
     DatabaseModule,
     EventEmitterModule.forRoot(),
+    AddressModule,
     AuthModule,
+    CustomerModule,
     DriveTemplateFolderModule,
     ProjectModule,
     ProjectDriveModule,
@@ -25,6 +30,7 @@ import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/
     ProjectStageModule,
     ProjectStageTransitionModule,
     ProjectTypeModule,
+    TaskModule,
     UserModule,
   ],
   controllers: [AppController],

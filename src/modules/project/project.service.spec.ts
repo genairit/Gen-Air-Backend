@@ -1,15 +1,32 @@
+import {
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+  InternalServerErrorException,
+} from '@nestjs/common';
+
+import {
+  TProjectUpdateAttributes,
+  TProjectCreationAttributes,
+} from './interfaces/project.interface';
+
 import { Test } from '@nestjs/testing';
 import { ProjectService } from './project.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ProjectRepository } from './project.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
-import { InternalServerErrorException } from '@nestjs/common';
+import { ProjectIntakeService } from './project-intake.service';
 import { IUser } from '@Modules/user/interfaces/user.interface';
+import { AddressService } from '@Modules/address/address.service';
+import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
-import { TProjectCreationAttributes } from './interfaces/project.interface';
+import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
+import { CustomerService } from '@Modules/customer/customer.service';
+import { ProjectApartmentService } from './project-apartment.service';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
+import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 
@@ -17,6 +34,141 @@ const TRANSACTION = { id: 'transaction' };
 const PROJECT_ID = 'project-1';
 const QUOTE_STAGE_ID = 'stage-quote';
 const ORDER_STAGE_ID = 'stage-order';
+const COMPANY_TYPE_ID = 'type-company';
+const PRIVATE_TYPE_ID = 'type-private';
+const CUSTOMER_ID = 'customer-1';
+
+const LINKED_CUSTOMER = {
+  name: 'בבלי נדל״ן',
+  prioritySyncStatus: 'synced',
+};
+
+const PROJECT_TYPES = {
+  [COMPANY_TYPE_ID]: {
+    id: COMPANY_TYPE_ID,
+    name: 'מסחרי',
+    canHaveApartments: false,
+    detailFieldSet: PROJECT_DETAIL_FIELD_SETS.COMPANY,
+  },
+  [PRIVATE_TYPE_ID]: {
+    id: PRIVATE_TYPE_ID,
+    name: 'לקוחות פרטיים',
+    canHaveApartments: false,
+    detailFieldSet: PROJECT_DETAIL_FIELD_SETS.PRIVATE_CLIENT,
+  },
+};
+
+const COMPANY_DETAILS = {
+  customerPhone: '052-4418230',
+  customerName: 'בבלי נדל״ן בע״מ',
+  customerCompanyNumber: '514287937',
+  customerEmail: 'office@babli-re.co.il',
+  customerAddress: 'דרך נמיר 94, תל אביב',
+};
+
+const TEL_AVIV_PLACE_ID = 'ChIJ-tel-aviv' as const;
+const ROAD_PLACE_ID = 'ChIJ-road-without-city' as const;
+const UNKNOWN_PLACE_ID = 'ChIJ-unknown' as const;
+
+const VERIFIED_ADDRESSES = {
+  [TEL_AVIV_PLACE_ID]: {
+    countryCode: 'IL',
+    city: 'תל אביב-יפו',
+    placeId: TEL_AVIV_PLACE_ID,
+    formattedAddress: 'דרך נמיר 94, תל אביב-יפו',
+  },
+  [ROAD_PLACE_ID]: {
+    city: null,
+    countryCode: 'IL',
+    placeId: ROAD_PLACE_ID,
+    formattedAddress: 'כביש 6, ישראל',
+  },
+};
+
+interface IPlaceLookupFixture {
+  placeId: keyof typeof VERIFIED_ADDRESSES | typeof UNKNOWN_PLACE_ID;
+}
+
+const CONTACT = {
+  contactName: 'דנה לוי',
+  contactPhone: '052-7788990',
+  contactRole: 'מנהלת פרויקט',
+};
+
+const COMPANY_INTAKE = {
+  ...CONTACT,
+  addressPlaceId: TEL_AVIV_PLACE_ID,
+  paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
+};
+
+const STORED_COMPANY_INTAKE = {
+  ...CONTACT,
+  paymentTermsNote: null,
+  addressCity: 'תל אביב-יפו',
+  addressPlaceId: TEL_AVIV_PLACE_ID,
+  address: 'דרך נמיר 94, תל אביב-יפו',
+  paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
+};
+
+const EMPTY_INTAKE = {
+  address: null,
+  addressCity: null,
+  contactName: null,
+  contactRole: null,
+  paymentTerms: null,
+  contactPhone: null,
+  addressPlaceId: null,
+  paymentTermsNote: null,
+};
+
+const PRIVATE_DETAILS = {
+  customerFloor: 7,
+  customerName: 'משפחת לוי',
+  customerApartment: '24',
+  customerCity: 'תל אביב-יפו',
+  customerPhone: '052-4418230',
+  customerEmail: 'levi@example.co.il',
+  customerAddress: 'דרך נמיר 94, תל אביב',
+};
+
+const STORED_COMPANY_PROJECT = {
+  ...COMPANY_DETAILS,
+  id: PROJECT_ID,
+  customerId: null,
+  parentProjectId: null,
+  customerCity: null,
+  customerUnit: null,
+  customerFloor: null,
+  stageId: QUOTE_STAGE_ID,
+  customerApartment: null,
+  projectTypeId: COMPANY_TYPE_ID,
+  customerAssociationNumber: null,
+  ...EMPTY_INTAKE,
+};
+
+const STORED_INTAKE_PROJECT = {
+  ...STORED_COMPANY_PROJECT,
+  ...STORED_COMPANY_INTAKE,
+};
+
+const LEGACY_PROJECT = {
+  id: PROJECT_ID,
+  customerId: null,
+  parentProjectId: null,
+  customerName: null,
+  customerCity: null,
+  customerUnit: null,
+  customerFloor: null,
+  customerPhone: null,
+  customerEmail: null,
+  customerAddress: null,
+  stageId: QUOTE_STAGE_ID,
+  customerApartment: null,
+  customerCompanyNumber: null,
+  projectTypeId: COMPANY_TYPE_ID,
+  customerAssociationNumber: null,
+  ...EMPTY_INTAKE,
+};
 
 const CREATOR: IUser = {
   id: 'user-1',
@@ -40,11 +192,20 @@ const createService = async () => {
     create: jest
       .fn<Promise<{ id: string }>, [TProjectCreationAttributes, object]>()
       .mockResolvedValue({ id: PROJECT_ID }),
-    update: jest.fn().mockResolvedValue(true),
+    update: jest
+      .fn<Promise<boolean>, [string, TProjectUpdateAttributes, object]>()
+      .mockResolvedValue(true),
     isCodeTaken: jest.fn().mockResolvedValue(false),
-    findById: jest
-      .fn()
-      .mockResolvedValue({ id: PROJECT_ID, stageId: QUOTE_STAGE_ID }),
+    findById: jest.fn().mockResolvedValue(STORED_COMPANY_PROJECT),
+    countByFilter: jest.fn().mockResolvedValue(0),
+    countLiveApartments: jest.fn().mockResolvedValue(0),
+    softDelete: jest.fn().mockResolvedValue(true),
+    findLiveApartmentByNumber: jest.fn().mockResolvedValue(null),
+    countApartmentsEverCreated: jest.fn().mockResolvedValue(0),
+    findByFilter: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
+  };
+  const customerService = {
+    findById: jest.fn().mockResolvedValue(LINKED_CUSTOMER),
   };
   const projectStageService = {
     getById: jest.fn().mockResolvedValue({ id: ORDER_STAGE_ID }),
@@ -55,6 +216,20 @@ const createService = async () => {
     validateAssignments: jest.fn().mockResolvedValue(null),
   };
   const transitionService = { record: jest.fn().mockResolvedValue(null) };
+  const projectTypeService = {
+    getById: jest.fn((id: keyof typeof PROJECT_TYPES) =>
+      Promise.resolve(PROJECT_TYPES[id]),
+    ),
+  };
+  const addressService = {
+    getVerifiedAddress: jest.fn(({ placeId }: IPlaceLookupFixture) => {
+      if (placeId === UNKNOWN_PLACE_ID) {
+        return Promise.reject(new NotFoundException('Place was not found'));
+      }
+
+      return Promise.resolve(VERIFIED_ADDRESSES[placeId]);
+    }),
+  };
   const eventEmitter = { emitAsync: jest.fn().mockResolvedValue([]) };
   const transactionService = {
     run: jest.fn((work: (transaction: object) => Promise<unknown>) =>
@@ -65,32 +240,39 @@ const createService = async () => {
   const moduleRef = await Test.createTestingModule({
     providers: [
       ProjectService,
+      ProjectIntakeService,
+      ProjectApartmentService,
+      { provide: CustomerService, useValue: customerService },
+      { provide: AddressService, useValue: addressService },
       { provide: EventEmitter2, useValue: eventEmitter },
       { provide: ProjectRepository, useValue: projectRepository },
       { provide: ProjectStageService, useValue: projectStageService },
       { provide: ProjectMemberService, useValue: projectMemberService },
       { provide: DatabaseTransactionService, useValue: transactionService },
       { provide: ProjectStageTransitionService, useValue: transitionService },
-      {
-        provide: ProjectTypeService,
-        useValue: { getById: jest.fn().mockResolvedValue({ id: 'type-1' }) },
-      },
+      { provide: ProjectTypeService, useValue: projectTypeService },
     ],
   }).compile();
 
   return {
     service: moduleRef.get(ProjectService),
     eventEmitter,
+    customerService,
+    addressService,
     projectRepository,
     transitionService,
+    projectTypeService,
     projectMemberService,
   };
 };
 
 describe('ProjectService.create', () => {
   const PROJECT = {
+    ...COMPANY_DETAILS,
+    ...COMPANY_INTAKE,
+    customerId: CUSTOMER_ID,
     name: 'מגדל פארק בבלי C',
-    projectTypeId: 'type-1',
+    projectTypeId: COMPANY_TYPE_ID,
     members: [{ userId: 'user-2', role: USER_ROLES.SECRETARY }],
   };
 
@@ -157,6 +339,50 @@ describe('ProjectService.create', () => {
   });
 });
 
+describe('ProjectService.create site details', () => {
+  const PROJECT = {
+    ...COMPANY_DETAILS,
+    ...COMPANY_INTAKE,
+    members: [],
+    customerId: CUSTOMER_ID,
+    name: 'מגדל פארק בבלי C',
+    projectTypeId: COMPANY_TYPE_ID,
+  };
+
+  it('stores no typed customer identity, since the linked customer holds it', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.create(
+      { ...PROJECT, customerCity: 'חיפה', customerFloor: 3 },
+      CREATOR,
+    );
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(createdAttributes).toMatchObject({
+      customerId: CUSTOMER_ID,
+      customerName: null,
+      customerCity: null,
+      customerFloor: null,
+      customerPhone: null,
+      customerCompanyNumber: null,
+    });
+  });
+
+  it('rejects a private project missing its floor and apartment, naming them', async () => {
+    const { service, projectRepository } = await createService();
+
+    await expect(
+      service.create({ ...PROJECT, projectTypeId: PRIVATE_TYPE_ID }, CREATOR),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Missing site details for this project type: customerFloor, customerApartment',
+      ),
+    );
+    expect(projectRepository.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('ProjectService.move', () => {
   it('updates the stage and records who moved it', async () => {
     const { service, projectRepository, transitionService } =
@@ -204,6 +430,440 @@ describe('ProjectService.update', () => {
   });
 });
 
+describe('ProjectService.update site details', () => {
+  const SITE_DETAILS = { customerFloor: 7, customerApartment: '24' };
+
+  const STORED_PRIVATE_PROJECT = {
+    ...STORED_COMPANY_PROJECT,
+    ...SITE_DETAILS,
+    projectTypeId: PRIVATE_TYPE_ID,
+  };
+
+  it('keeps legacy projects editable when neither the type nor the details change', async () => {
+    const { service, projectRepository, projectTypeService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(LEGACY_PROJECT);
+
+    await service.update(PROJECT_ID, { name: 'שם חדש' }, CREATOR);
+
+    const [, updatedAttributes] = projectRepository.update.mock.calls[0];
+
+    expect(projectTypeService.getById).not.toHaveBeenCalled();
+    expect(updatedAttributes).toMatchObject({ name: 'שם חדש' });
+    expect(updatedAttributes).not.toHaveProperty('customerName');
+  });
+
+  it('asks for the site details of the new type on a type switch', async () => {
+    const { service, projectRepository } = await createService();
+
+    await expect(
+      service.update(PROJECT_ID, { projectTypeId: PRIVATE_TYPE_ID }, CREATOR),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Missing site details for this project type: customerFloor, customerApartment',
+      ),
+    );
+    expect(projectRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('switches type with the new site details and clears the typed customer identity', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.update(
+      PROJECT_ID,
+      { ...SITE_DETAILS, projectTypeId: PRIVATE_TYPE_ID },
+      CREATOR,
+    );
+
+    expect(projectRepository.update).toHaveBeenCalledWith(
+      PROJECT_ID,
+      expect.objectContaining({
+        ...SITE_DETAILS,
+        customerName: null,
+        customerPhone: null,
+        customerCompanyNumber: null,
+        projectTypeId: PRIVATE_TYPE_ID,
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('rejects clearing a required site field', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_PRIVATE_PROJECT);
+
+    await expect(
+      service.update(PROJECT_ID, { customerFloor: null }, CREATOR),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Missing site details for this project type: customerFloor',
+      ),
+    );
+  });
+});
+
+describe('ProjectService.create intake fields', () => {
+  const PROJECT = {
+    ...COMPANY_DETAILS,
+    ...COMPANY_INTAKE,
+    members: [],
+    customerId: CUSTOMER_ID,
+    name: 'מגדל פארק בבלי C',
+    projectTypeId: COMPANY_TYPE_ID,
+  };
+
+  const PRIVATE_PROJECT = {
+    ...PRIVATE_DETAILS,
+    ...CONTACT,
+    members: [],
+    customerId: CUSTOMER_ID,
+    name: 'דירת משפחת לוי',
+    projectTypeId: PRIVATE_TYPE_ID,
+    addressPlaceId: TEL_AVIV_PLACE_ID,
+    paymentTerms: PAYMENT_TERMS.INSTALLMENTS_10_60_30,
+  };
+
+  const expectRejection = async (
+    project: Parameters<ProjectService['create']>[0],
+    message: string,
+  ) => {
+    const { service, projectRepository } = await createService();
+
+    await expect(service.create(project, CREATOR)).rejects.toThrow(
+      new BadRequestException(message),
+    );
+    expect(projectRepository.create).not.toHaveBeenCalled();
+  };
+
+  it('stores the address Google verified, the contact person and the payment terms', async () => {
+    const { service, projectRepository, addressService } =
+      await createService();
+
+    await service.create(PROJECT, CREATOR);
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(addressService.getVerifiedAddress).toHaveBeenCalledWith({
+      sessionToken: null,
+      placeId: TEL_AVIV_PLACE_ID,
+    });
+    expect(createdAttributes).toMatchObject(STORED_COMPANY_INTAKE);
+  });
+
+  it('rejects a project without an address', async () => {
+    await expectRejection(
+      { ...PROJECT, addressPlaceId: null },
+      'addressPlaceId is required; pick the address from the suggestions',
+    );
+  });
+
+  it('rejects an address Google cannot verify', async () => {
+    await expectRejection(
+      { ...PROJECT, addressPlaceId: UNKNOWN_PLACE_ID },
+      `Address ${UNKNOWN_PLACE_ID} could not be verified with Google; pick it again from the suggestions`,
+    );
+  });
+
+  it('requires a city in the address of a private project', async () => {
+    await expectRejection(
+      { ...PRIVATE_PROJECT, addressPlaceId: ROAD_PLACE_ID },
+      'This project type needs an address within a city; pick a street address',
+    );
+  });
+
+  it('accepts an address without a city for a company project', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.create(
+      { ...PROJECT, addressPlaceId: ROAD_PLACE_ID },
+      CREATOR,
+    );
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(createdAttributes).toMatchObject({
+      addressCity: null,
+      addressPlaceId: ROAD_PLACE_ID,
+    });
+  });
+
+  it('rejects a project without a complete contact person, naming the missing fields', async () => {
+    await expectRejection(
+      { ...PROJECT, contactPhone: null, contactRole: null },
+      'Missing contact person details: contactRole, contactPhone',
+    );
+  });
+
+  it('rejects a project without payment terms', async () => {
+    await expectRejection(
+      { ...PROJECT, paymentTerms: null },
+      'paymentTerms is required',
+    );
+  });
+
+  it('rejects payment terms that belong to another project type, listing the legal ones', async () => {
+    await expectRejection(
+      { ...PROJECT, paymentTerms: PAYMENT_TERMS.PREPAID },
+      'Payment terms "prepaid" are not available for this project type; choose one of: milestones_net_60, twelve_prepaid_checks, other',
+    );
+  });
+
+  it('accepts the private payment terms on a private project', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.create(PRIVATE_PROJECT, CREATOR);
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(createdAttributes).toMatchObject({
+      paymentTerms: PAYMENT_TERMS.INSTALLMENTS_10_60_30,
+    });
+  });
+
+  it('requires the detail when the payment terms are "other"', async () => {
+    await expectRejection(
+      { ...PROJECT, paymentTerms: PAYMENT_TERMS.OTHER },
+      'paymentTermsNote is required when paymentTerms is "other"',
+    );
+  });
+
+  it('stores the detail of "other" payment terms', async () => {
+    const { service, projectRepository } = await createService();
+    const paymentTermsNote = 'תשלום לפי שלבי ביצוע מאושרים';
+
+    await service.create(
+      { ...PROJECT, paymentTerms: PAYMENT_TERMS.OTHER, paymentTermsNote },
+      CREATOR,
+    );
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(createdAttributes).toMatchObject({
+      paymentTermsNote,
+      paymentTerms: PAYMENT_TERMS.OTHER,
+    });
+  });
+
+  it('clears the detail when a concrete payment option is chosen', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.create(
+      { ...PROJECT, paymentTermsNote: 'פרט שנשאר מהבחירה הקודמת' },
+      CREATOR,
+    );
+
+    const [createdAttributes] = projectRepository.create.mock.calls[0];
+
+    expect(createdAttributes).toMatchObject({ paymentTermsNote: null });
+  });
+});
+
+describe('ProjectService.update intake fields', () => {
+  const PAYMENT_TERMS_NOTE = 'תשלום לפי שלבי ביצוע מאושרים';
+
+  const expectRejection = async (
+    changes: Parameters<ProjectService['update']>[1],
+    message: string,
+  ) => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_INTAKE_PROJECT);
+
+    await expect(service.update(PROJECT_ID, changes, CREATOR)).rejects.toThrow(
+      new BadRequestException(message),
+    );
+    expect(projectRepository.update).not.toHaveBeenCalled();
+  };
+
+  const getUpdatedAttributes = async (
+    changes: Parameters<ProjectService['update']>[1],
+    storedProject: object = STORED_INTAKE_PROJECT,
+  ) => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(storedProject);
+
+    await service.update(PROJECT_ID, changes, CREATOR);
+
+    const [, updatedAttributes] = projectRepository.update.mock.calls[0];
+
+    return updatedAttributes;
+  };
+
+  it('lets a legacy project change its name without any intake fields', async () => {
+    const updatedAttributes = await getUpdatedAttributes(
+      { name: 'שם חדש' },
+      STORED_COMPANY_PROJECT,
+    );
+
+    expect(updatedAttributes).not.toHaveProperty('contactName');
+    expect(updatedAttributes).not.toHaveProperty('paymentTerms');
+    expect(updatedAttributes).not.toHaveProperty('addressPlaceId');
+  });
+
+  it('lets a legacy project add its contact person without asking for the other intake fields', async () => {
+    const updatedAttributes = await getUpdatedAttributes(
+      CONTACT,
+      STORED_COMPANY_PROJECT,
+    );
+
+    expect(updatedAttributes).toMatchObject(CONTACT);
+    expect(updatedAttributes).not.toHaveProperty('paymentTerms');
+  });
+
+  it('requires the whole contact person once a legacy project edits it', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_COMPANY_PROJECT);
+
+    await expect(
+      service.update(PROJECT_ID, { contactName: 'דנה לוי' }, CREATOR),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Missing contact person details: contactRole, contactPhone',
+      ),
+    );
+  });
+
+  it('changes one contact field and keeps the others', async () => {
+    const updatedAttributes = await getUpdatedAttributes({
+      contactPhone: '054-1112233',
+    });
+
+    expect(updatedAttributes).toMatchObject({
+      ...CONTACT,
+      contactPhone: '054-1112233',
+    });
+  });
+
+  it('rejects clearing a contact field', async () => {
+    await expectRejection(
+      { contactRole: null },
+      'Missing contact person details: contactRole',
+    );
+  });
+
+  it('verifies a new address with Google', async () => {
+    const updatedAttributes = await getUpdatedAttributes({
+      addressPlaceId: ROAD_PLACE_ID,
+    });
+
+    expect(updatedAttributes).toMatchObject({
+      addressCity: null,
+      address: 'כביש 6, ישראל',
+      addressPlaceId: ROAD_PLACE_ID,
+    });
+  });
+
+  it('rejects clearing the address', async () => {
+    await expectRejection(
+      { addressPlaceId: null },
+      'addressPlaceId is required; pick the address from the suggestions',
+    );
+  });
+
+  it('rejects an unverifiable address', async () => {
+    await expectRejection(
+      { addressPlaceId: UNKNOWN_PLACE_ID },
+      `Address ${UNKNOWN_PLACE_ID} could not be verified with Google; pick it again from the suggestions`,
+    );
+  });
+
+  it('rejects payment terms illegal for the project type', async () => {
+    await expectRejection(
+      { paymentTerms: PAYMENT_TERMS.INSTALLMENTS_10_60_30 },
+      'Payment terms "installments_10_60_30" are not available for this project type; choose one of: milestones_net_60, twelve_prepaid_checks, other',
+    );
+  });
+
+  it('rejects switching to "other" without its detail', async () => {
+    await expectRejection(
+      { paymentTerms: PAYMENT_TERMS.OTHER },
+      'paymentTermsNote is required when paymentTerms is "other"',
+    );
+  });
+
+  it('switches to "other" with its detail', async () => {
+    const updatedAttributes = await getUpdatedAttributes({
+      paymentTerms: PAYMENT_TERMS.OTHER,
+      paymentTermsNote: PAYMENT_TERMS_NOTE,
+    });
+
+    expect(updatedAttributes).toMatchObject({
+      paymentTerms: PAYMENT_TERMS.OTHER,
+      paymentTermsNote: PAYMENT_TERMS_NOTE,
+    });
+  });
+
+  it('clears the detail when switching from "other" to a concrete option', async () => {
+    const updatedAttributes = await getUpdatedAttributes(
+      { paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS },
+      {
+        ...STORED_INTAKE_PROJECT,
+        paymentTerms: PAYMENT_TERMS.OTHER,
+        paymentTermsNote: PAYMENT_TERMS_NOTE,
+      },
+    );
+
+    expect(updatedAttributes).toMatchObject({
+      paymentTermsNote: null,
+      paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS,
+    });
+  });
+
+  it('re-checks the current payment terms when the project type changes', async () => {
+    await expectRejection(
+      { ...PRIVATE_DETAILS, projectTypeId: PRIVATE_TYPE_ID },
+      'Payment terms "milestones_net_60" are not available for this project type; choose one of: installments_10_60_30, prepaid, other',
+    );
+  });
+
+  it('changes the type together with payment terms legal for it', async () => {
+    const updatedAttributes = await getUpdatedAttributes({
+      ...PRIVATE_DETAILS,
+      projectTypeId: PRIVATE_TYPE_ID,
+      paymentTerms: PAYMENT_TERMS.PREPAID,
+    });
+
+    expect(updatedAttributes).toMatchObject({
+      projectTypeId: PRIVATE_TYPE_ID,
+      paymentTerms: PAYMENT_TERMS.PREPAID,
+    });
+  });
+
+  it('requires a city in the current address when switching to a private project', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...STORED_INTAKE_PROJECT,
+      addressCity: null,
+      addressPlaceId: ROAD_PLACE_ID,
+    });
+
+    await expect(
+      service.update(
+        PROJECT_ID,
+        {
+          ...PRIVATE_DETAILS,
+          projectTypeId: PRIVATE_TYPE_ID,
+          paymentTerms: PAYMENT_TERMS.PREPAID,
+        },
+        CREATOR,
+      ),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'This project type needs an address within a city; pick a street address',
+      ),
+    );
+  });
+
+  it('lets a legacy project without payment terms change its type', async () => {
+    const updatedAttributes = await getUpdatedAttributes(
+      { ...PRIVATE_DETAILS, projectTypeId: PRIVATE_TYPE_ID },
+      STORED_COMPANY_PROJECT,
+    );
+
+    expect(updatedAttributes).toMatchObject({ projectTypeId: PRIVATE_TYPE_ID });
+    expect(updatedAttributes).not.toHaveProperty('paymentTerms');
+  });
+});
+
 describe('ProjectService.getStageCounts', () => {
   it('returns the count per stage and the overall total', async () => {
     const { service } = await createService();
@@ -212,5 +872,447 @@ describe('ProjectService.getStageCounts', () => {
       total: 5,
       byStage: { [QUOTE_STAGE_ID]: 2, [ORDER_STAGE_ID]: 3 },
     });
+  });
+});
+
+const BUILDING_ID = 'building-1';
+
+const BUILDING = {
+  ...STORED_INTAKE_PROJECT,
+  id: BUILDING_ID,
+  code: 'GA-84811',
+  projectTypeId: 'type-building',
+  projectType: { name: 'בנייה רוויה', canHaveApartments: true },
+};
+
+const NEW_APARTMENT = {
+  ...CONTACT,
+  customerFloor: 3,
+  customerApartment: '12',
+  customerName: 'משפחת כהן',
+};
+
+const STORED_APARTMENT = {
+  ...LEGACY_PROJECT,
+  ...CONTACT,
+  id: 'apartment-1',
+  customerFloor: 3,
+  customerApartment: '12',
+  parentProjectId: BUILDING_ID,
+};
+
+describe('ProjectService.createApartment', () => {
+  it('creates the apartment with everything the building decides', async () => {
+    const { service, projectRepository, eventEmitter } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    projectRepository.countApartmentsEverCreated.mockResolvedValue(4);
+
+    await service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR);
+
+    const [attributes] = projectRepository.create.mock.calls[0];
+
+    expect(attributes).toMatchObject({
+      ...CONTACT,
+      address: null,
+      name: 'דירה 12',
+      customerFloor: 3,
+      paymentTerms: null,
+      addressPlaceId: null,
+      code: 'GA-84811-05',
+      customerApartment: '12',
+      stageId: QUOTE_STAGE_ID,
+      customerPhone: null,
+      customerName: 'משפחת כהן',
+      parentProjectId: BUILDING_ID,
+      projectTypeId: 'type-building',
+    });
+    expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects an apartment under a project type that holds no apartments', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce({
+      ...BUILDING,
+      projectType: { name: 'מסחרי', canHaveApartments: false },
+    });
+
+    await expect(
+      service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects an apartment under another apartment', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce({
+      ...BUILDING,
+      parentProjectId: 'another-building',
+    });
+
+    await expect(
+      service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects an apartment number the building already has', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    projectRepository.findLiveApartmentByNumber.mockResolvedValue({
+      code: 'GA-84811-02',
+    });
+
+    await expect(
+      service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
+    ).rejects.toThrow(ConflictException);
+    expect(projectRepository.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService.getApartments', () => {
+  it('pages the building apartments 25 at a time, oldest first, with the total', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    projectRepository.countByFilter.mockResolvedValue(73);
+
+    const page = await service.getApartments(BUILDING_ID, { search: '12' });
+
+    expect(page.total).toBe(73);
+    expect(projectRepository.findByFilter).toHaveBeenCalledWith(
+      expect.objectContaining({ parentProjectId: BUILDING_ID, search: '12' }),
+      {
+        batchCursor: null,
+        batchSize: 25,
+        direction: CURSOR_DIRECTIONS.OLDEST_FIRST,
+      },
+    );
+  });
+});
+
+describe('ProjectService.getByFilter', () => {
+  it('lists buildings and standalone projects only', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.getByFilter({});
+
+    expect(projectRepository.findByFilter).toHaveBeenCalledWith(
+      expect.objectContaining({ parentProjectId: null }),
+      expect.anything(),
+    );
+  });
+});
+
+describe('ProjectService.update apartment', () => {
+  it('rejects fields the apartment takes from its building, naming them', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+
+    await expect(
+      service.update(
+        STORED_APARTMENT.id,
+        {
+          addressPlaceId: TEL_AVIV_PLACE_ID,
+          projectTypeId: PRIVATE_TYPE_ID,
+          customerId: 'customer-1',
+        },
+        CREATOR,
+      ),
+    ).rejects.toThrow('addressPlaceId, projectTypeId, customerId');
+    expect(projectRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('updates the end customer and contact without asking for building fields', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+
+    await service.update(
+      STORED_APARTMENT.id,
+      { customerName: 'משפחת לוי', contactPhone: '054-1112233' },
+      CREATOR,
+    );
+
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      ...CONTACT,
+      customerFloor: 3,
+      customerApartment: '12',
+      customerName: 'משפחת לוי',
+      contactPhone: '054-1112233',
+    });
+  });
+
+  it('rejects clearing the floor', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+
+    await expect(
+      service.update(STORED_APARTMENT.id, { customerFloor: null }, CREATOR),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects moving to an apartment number the building already has', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    projectRepository.findLiveApartmentByNumber.mockResolvedValue({
+      code: 'GA-84811-07',
+    });
+
+    await expect(
+      service.update(STORED_APARTMENT.id, { customerApartment: '14' }, CREATOR),
+    ).rejects.toThrow(ConflictException);
+  });
+});
+
+describe('ProjectService customer link', () => {
+  const PROJECT = {
+    ...COMPANY_DETAILS,
+    ...COMPANY_INTAKE,
+    members: [],
+    customerId: CUSTOMER_ID,
+    name: 'מגדל פארק בבלי C',
+    projectTypeId: COMPANY_TYPE_ID,
+  };
+
+  it('rejects a customer that does not exist', async () => {
+    const { service, customerService } = await createService();
+    customerService.findById.mockResolvedValue(null);
+
+    await expect(service.create(PROJECT, CREATOR)).rejects.toThrow(
+      'Customer customer-1 was not found',
+    );
+  });
+
+  it('rejects a customer whose Priority sync failed', async () => {
+    const { service, customerService } = await createService();
+    customerService.findById.mockResolvedValue({
+      name: 'עמותת אור',
+      prioritySyncStatus: 'failed',
+    });
+
+    await expect(service.create(PROJECT, CREATOR)).rejects.toThrow(
+      'has not reached Priority yet',
+    );
+  });
+
+  it('links a customer that is still waiting for Priority', async () => {
+    const { service, customerService, projectRepository } =
+      await createService();
+    customerService.findById.mockResolvedValue({
+      name: 'בבלי נדל״ן',
+      prioritySyncStatus: 'pending',
+    });
+
+    await service.create(PROJECT, CREATOR);
+
+    expect(projectRepository.create.mock.calls[0][0].customerId).toBe(
+      CUSTOMER_ID,
+    );
+  });
+});
+
+describe('ProjectService building guards', () => {
+  it('refuses to delete a building that still has apartments', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.countLiveApartments.mockResolvedValue(3);
+
+    await expect(service.delete(BUILDING_ID)).rejects.toThrow(
+      ConflictException,
+    );
+    expect(projectRepository.softDelete).not.toHaveBeenCalled();
+  });
+
+  it('refuses to change a building with apartments to a type without apartments', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(BUILDING);
+    projectRepository.countLiveApartments.mockResolvedValue(3);
+
+    await expect(
+      service.update(BUILDING_ID, { projectTypeId: PRIVATE_TYPE_ID }, CREATOR),
+    ).rejects.toThrow('cannot hold apartments');
+  });
+});
+
+const BUILDING_INHERITANCE = {
+  id: BUILDING_ID,
+  code: 'GA-84811',
+  name: 'מגדלי שלום',
+  notes: 'תמ״א 38: חיזוק קומה 4 לפני התקנת יחידות',
+  address: STORED_COMPANY_INTAKE.address,
+  addressCity: STORED_COMPANY_INTAKE.addressCity,
+  addressPlaceId: STORED_COMPANY_INTAKE.addressPlaceId,
+  paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
+  paymentTermsNote: null,
+};
+
+const APARTMENT_WITH_BUILDING = {
+  ...STORED_APARTMENT,
+  notes: null,
+  parentProject: BUILDING_INHERITANCE,
+  projectType: { detailFieldSet: PROJECT_DETAIL_FIELD_SETS.COMPANY },
+};
+
+describe('ProjectService.getById apartment', () => {
+  it('returns the building address, payment terms and notes, marked as inherited', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);
+
+    await expect(service.getById(STORED_APARTMENT.id)).resolves.toMatchObject({
+      address: BUILDING_INHERITANCE.address,
+      addressPlaceId: TEL_AVIV_PLACE_ID,
+      parentNotes: BUILDING_INHERITANCE.notes,
+      paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
+      inheritedFields: [
+        'address',
+        'addressCity',
+        'addressPlaceId',
+        'paymentTerms',
+        'paymentTermsNote',
+      ],
+    });
+  });
+
+  it('returns a standalone project unchanged', async () => {
+    const { service } = await createService();
+
+    const project = await service.getById(PROJECT_ID);
+
+    expect(project).not.toHaveProperty('inheritedFields');
+  });
+});
+
+describe('ProjectService.getApartments inheritance', () => {
+  it('resolves every listed apartment against its building', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce({
+      ...BUILDING,
+      ...BUILDING_INHERITANCE,
+    });
+    projectRepository.findByFilter.mockResolvedValue({
+      items: [STORED_APARTMENT],
+      nextCursor: null,
+    });
+
+    const page = await service.getApartments(BUILDING_ID, {});
+
+    expect(page.items[0]).toMatchObject({
+      parentNotes: BUILDING_INHERITANCE.notes,
+      paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
+    });
+  });
+});
+
+describe('ProjectService.update apartment payment terms', () => {
+  it('stores an override that is legal for the building type', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);
+
+    await service.update(
+      STORED_APARTMENT.id,
+      { paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS },
+      CREATOR,
+    );
+
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      paymentTermsNote: null,
+      paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS,
+    });
+  });
+
+  it('rejects an override the building type does not offer', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);
+
+    await expect(
+      service.update(
+        STORED_APARTMENT.id,
+        { paymentTerms: PAYMENT_TERMS.PREPAID },
+        CREATOR,
+      ),
+    ).rejects.toThrow('not available for this project type');
+  });
+
+  it('returns to the building terms by clearing the override', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...APARTMENT_WITH_BUILDING,
+      paymentTerms: PAYMENT_TERMS.OTHER,
+      paymentTermsNote: 'תשלום מלא במסירה',
+    });
+
+    await service.update(STORED_APARTMENT.id, { paymentTerms: null }, CREATOR);
+
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      paymentTerms: null,
+      paymentTermsNote: null,
+    });
+  });
+
+  it('saves the apartment own notes', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);
+
+    await service.update(
+      STORED_APARTMENT.id,
+      { notes: 'הדייר זמין אחר הצהריים' },
+      CREATOR,
+    );
+
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      notes: 'הדייר זמין אחר הצהריים',
+    });
+  });
+});
+
+describe('ProjectService.update building notes', () => {
+  it('saves the notes every apartment reads', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.update(PROJECT_ID, { notes: 'תמ״א 38' }, CREATOR);
+
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      notes: 'תמ״א 38',
+    });
+  });
+});
+
+describe('ProjectService.getApartmentStageCounts', () => {
+  it('counts the building apartments per stage', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+
+    await expect(service.getApartmentStageCounts(BUILDING_ID)).resolves.toEqual(
+      { total: 5, byStage: { [QUOTE_STAGE_ID]: 2, [ORDER_STAGE_ID]: 3 } },
+    );
+    expect(projectRepository.countGroupedByStage).toHaveBeenCalledWith(
+      expect.objectContaining({ parentProjectId: BUILDING_ID }),
+    );
+  });
+
+  it('rejects a project that holds no apartments', async () => {
+    const { service } = await createService();
+
+    await expect(service.getApartmentStageCounts(PROJECT_ID)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+});
+
+describe('ProjectService apartment contact', () => {
+  it('creates an apartment whose contact has no role', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await service.createApartment(
+      BUILDING_ID,
+      { ...NEW_APARTMENT, contactRole: null },
+      CREATOR,
+    );
+
+    expect(projectRepository.create.mock.calls[0][0].contactRole).toBeNull();
+  });
+
+  it('rejects clearing the apartment contact mobile', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+
+    await expect(
+      service.update(STORED_APARTMENT.id, { contactPhone: null }, CREATOR),
+    ).rejects.toThrow('contactPhone');
   });
 });

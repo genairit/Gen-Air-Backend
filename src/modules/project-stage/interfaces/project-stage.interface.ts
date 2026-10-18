@@ -14,7 +14,3 @@ export type TProjectStageCreationAttributes = Pick<
   IProjectStage,
   'name' | 'description' | 'tag' | 'color' | 'position'
 >;
-
-export type TProjectStageUpdateAttributes = Partial<
-  Pick<IProjectStage, 'name' | 'description' | 'tag' | 'color'>
->;
