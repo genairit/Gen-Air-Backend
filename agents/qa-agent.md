@@ -88,6 +88,23 @@ working-tree fingerprints after execution. A changed revision invalidates the re
 a rerun. A nonzero exit, unexpected failure, flaky/retried failure, skipped required criterion,
 interrupted run, or infrastructure error is **FAILED**. A subset passing is not a full pass.
 
+The feature runs above are owned by the QA agent and happen before feature PR publication.
+They are not GitHub Actions runs. For frontend features, the developer supplies an isolated
+candidate checkout combining the feature with current frontend `dev`; QA never mutates an app
+checkout. Merge required backend dependencies into backend `dev` first and resolve that backend
+revision to a SHA. Recheck frontend candidate/base, backend and Automation revisions before feature
+merge; changed revisions require renewed QA verification. Never reuse a stale passing report.
+
+GitHub Actions separately runs full regression only for frontend `dev` → `test` and `test` → `main`,
+paired with backend `test` and `main`, respectively. It does not run on feature → `dev`, backend
+PRs, Automation PRs, unrelated pushes or standalone dispatches. Promotion PRs use that GitHub gate
+without a duplicate feature-QA run. Both promotion checks, full regression and backend compatibility,
+must pass before merge. The lightweight backend notifier refreshes only promotion gates after
+backend `test`/`main` advances; it never starts feature → `dev` automation.
+
+When coverage changes, the developer updates both frontend workflow pins to the reviewed Automation
+commit. Keep isolated seeded data, faked integrations and sanitized artifacts for all browser runs.
+
 ### 4. Route Failures and Iterate
 
 Return **FAILED** immediately with each failed flow's test/spec, reproducible steps, expected and

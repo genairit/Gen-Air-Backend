@@ -110,6 +110,18 @@ context with the card, both app feature refs and diffs, clean review result, and
 It maintains Playwright coverage in Gen-Air-Automation, runs targeted and full regression against
 those exact revisions, opens the Automation PR, and returns the structured PASSED/FAILED report.
 
+Keep this feature-QA behavior: targeted tests followed by the full suite before feature PRs.
+Frontend feature → `dev` has no duplicate GitHub Actions suite. The developer supplies an isolated
+candidate checkout using current frontend `dev` and latest backend `dev` after dependencies merge.
+Before feature merge, confirm the candidate/base, backend and Automation revisions still match the
+QA report; any change requires renewed QA verification, not a reused pass.
+
+GitHub Actions runs the full suite only for frontend `dev` → `test` and `test` → `main`, against
+backend `test` and `main`, respectively. Backend and Automation PRs do not trigger it. Promotion
+PRs use this gate without an additional feature-QA full run. Require promotion full regression and
+fresh backend compatibility before merge; wait for backend promotion and notifier completion.
+When coverage changes, update both frontend workflow pins to the reviewed Automation commit.
+
 - **FAILED — application bug:** the development agent fixes the app branch, verifies it, and
   repeats code review until clean before requesting QA again.
 - **FAILED — test bug:** the QA agent fixes and reviews Automation tests, then reruns QA.

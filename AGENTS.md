@@ -46,6 +46,11 @@ blocked, missing or stale QA result blocks the feature PR. Only PASSED continues
 attach the QA report and Automation PR with proof, open the feature PR into `dev`,
 backfill that PR link in the Automation PR, and update the board.
 
+Feature QA runs targeted tests and full regression before the feature PR. GitHub Actions has no
+feature → `dev` run; only frontend `dev` → `test` and `test` → `main` promotion PRs run automatic
+integration. Before feature merge, recheck the QA candidate/base, backend and Automation revisions;
+changes require renewed QA. Promotion PRs rely on their GitHub gate without a duplicate QA run.
+
 ## Codex adaptations
 
 - User instructions and existing authorization take precedence over these shared
