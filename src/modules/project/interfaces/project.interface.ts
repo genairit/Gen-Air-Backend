@@ -76,12 +76,12 @@ export interface IProject extends IProjectCustomerDetails, TProjectIntake {
   projectTypeId: string;
   deletedAt: Date | null;
   parentProject?: IProject;
-  erpSyncedAt: Date | null;
   customerId: string | null;
+  priorityId: string | null;
   projectType?: IProjectType;
   members?: IProjectMember[];
-  erpReference: string | null;
   driveFolderId: string | null;
+  prioritySyncedAt: Date | null;
   parentProjectId: string | null;
 }
 
