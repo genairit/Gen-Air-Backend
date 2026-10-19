@@ -101,11 +101,11 @@ export class Project
   @Column(DataType.STRING(FIELD_LENGTHS.DRIVE_ID))
   declare driveFolderId: string | null;
 
-  @Column(DataType.STRING(FIELD_LENGTHS.ERP_REFERENCE))
-  declare erpReference: string | null;
+  @Column(DataType.STRING(FIELD_LENGTHS.PRIORITY_ID))
+  declare priorityId: string | null;
 
   @Column(DataType.DATE(3))
-  declare erpSyncedAt: Date | null;
+  declare prioritySyncedAt: Date | null;
 
   @Column(DataType.STRING(FIELD_LENGTHS.CUSTOMER_NAME))
   declare customerName: string | null;
