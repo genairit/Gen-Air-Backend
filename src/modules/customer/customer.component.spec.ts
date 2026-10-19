@@ -74,19 +74,22 @@ describe('CRM-only customer creation API', () => {
     expect(customerRepository.create).not.toHaveBeenCalled();
   });
 
-  it.each([USER_ROLES.LEAD_INSTALLER, USER_ROLES.SECRETARY])(
-    'rejects %s before writing',
-    async (role) => {
-      await request(application.app!.getHttpServer())
-        .post('/customer')
-        .auth(role, { type: 'bearer' })
-        .send(CUSTOMER_INPUT)
-        .expect(403);
-      expect(customerRepository.create).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    USER_ROLES.FINANCE,
+    USER_ROLES.ENGINEER,
+    USER_ROLES.INSTALLER,
+    USER_ROLES.SECRETARY,
+    USER_ROLES.PROJECT_MANAGER,
+  ])('rejects %s before writing', async (role) => {
+    await request(application.app!.getHttpServer())
+      .post('/customer')
+      .auth(role, { type: 'bearer' })
+      .send(CUSTOMER_INPUT)
+      .expect(403);
+    expect(customerRepository.create).not.toHaveBeenCalled();
+  });
 
-  it.each([USER_ROLES.SYSTEM_ADMIN, USER_ROLES.PROJECT_MANAGER])(
+  it.each([USER_ROLES.SYSTEM_ADMIN])(
     'allows %s to create a CRM customer using the authenticated identity',
     async (role) => {
       const response = await request(application.app!.getHttpServer())

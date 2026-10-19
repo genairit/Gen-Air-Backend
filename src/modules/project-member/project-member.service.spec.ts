@@ -12,7 +12,7 @@ const createService = async () => {
   const userService = {
     findByIds: jest.fn().mockResolvedValue([
       { id: SECRETARY_ID, role: USER_ROLES.SECRETARY },
-      { id: INSTALLER_ID, role: USER_ROLES.LEAD_INSTALLER },
+      { id: INSTALLER_ID, role: USER_ROLES.INSTALLER },
     ]),
   };
 
@@ -34,7 +34,7 @@ describe('ProjectMemberService.validateAssignments', () => {
     await expect(
       service.validateAssignments([
         { userId: SECRETARY_ID, role: USER_ROLES.SECRETARY },
-        { userId: INSTALLER_ID, role: USER_ROLES.LEAD_INSTALLER },
+        { userId: INSTALLER_ID, role: USER_ROLES.INSTALLER },
       ]),
     ).resolves.toBeUndefined();
   });

@@ -18,10 +18,12 @@ Enum payment_terms {
 }
 
 Enum user_role {
-  system_admin
-  secretary
-  project_manager
-  lead_installer
+  system_admin    [note: 'הנהלה / מנהל מערכת']
+  engineer        [note: 'עובד הנדסה']
+  secretary       [note: 'מזכירה']
+  project_manager [note: 'מנהל פרויקט']
+  finance         [note: 'מחלקת כספים']
+  installer       [note: 'מתקין / טכנאי שטח']
 }
 
 Table users {
@@ -151,7 +153,7 @@ Table project_members {
   id         uuid        [pk, default: `gen_random_uuid()`]
   project_id uuid        [not null, ref: > projects.id]
   user_id    uuid        [not null, ref: > users.id]
-  role       user_role   [not null]
+  role       user_role   [not null, note: 'Project slots only: engineer, secretary, project_manager, installer']
   created_at timestamptz(3) [not null, default: `now()`]
   updated_at timestamptz(3) [not null, default: `now()`]
 

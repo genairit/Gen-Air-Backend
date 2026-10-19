@@ -43,10 +43,13 @@ const makeUser = (id: string, role: IUser['role']): IUser => ({
   deletedAt: null,
 });
 const users = {
-  manager: makeUser(MANAGER_ID, USER_ROLES.PROJECT_MANAGER),
-  employee: makeUser(EMPLOYEE_ID, USER_ROLES.LEAD_INSTALLER),
-  other: makeUser(OTHER_ID, USER_ROLES.LEAD_INSTALLER),
+  manager: makeUser(MANAGER_ID, USER_ROLES.SYSTEM_ADMIN),
+  employee: makeUser(EMPLOYEE_ID, USER_ROLES.ENGINEER),
+  other: makeUser(OTHER_ID, USER_ROLES.ENGINEER),
   secretary: makeUser(OTHER_ID, USER_ROLES.SECRETARY),
+  finance: makeUser(OTHER_ID, USER_ROLES.FINANCE),
+  installer: makeUser(OTHER_ID, USER_ROLES.INSTALLER),
+  projectManager: makeUser(OTHER_ID, USER_ROLES.PROJECT_MANAGER),
 };
 const task = (): ITask => ({
   id: TASK_ID,
@@ -91,6 +94,9 @@ describe('Task HTTP permission boundaries', () => {
     findByTask: jest.fn(() => Promise.resolve([] as object[])),
   };
   const events = { emitAsync: jest.fn(() => Promise.resolve([])) };
+  const userService = {
+    getById: jest.fn((): Promise<IUser> => Promise.resolve(users.employee)),
+  };
   const application: { app: INestApplication<Server> | null } = { app: null };
   const server = () => application.app!.getHttpServer();
   const payload = {
@@ -127,7 +133,7 @@ describe('Task HTTP permission boundaries', () => {
         },
         {
           provide: UserService,
-          useValue: { getById: jest.fn(() => Promise.resolve(users.employee)) },
+          useValue: userService,
         },
         {
           provide: DatabaseTransactionService,
@@ -160,6 +166,10 @@ describe('Task HTTP permission boundaries', () => {
     jest.clearAllMocks();
     state.task = task();
     state.projectCustomerId = CUSTOMER_ID;
+    userService.getById.mockReset();
+    userService.getById.mockImplementation(() =>
+      Promise.resolve(users.employee),
+    );
   });
   afterAll(async () => {
     await application.app?.close();
@@ -168,7 +178,7 @@ describe('Task HTTP permission boundaries', () => {
   it('requires authentication', async () => {
     await request(server()).get('/task').expect(401);
   });
-  it.each(['employee', 'secretary'])(
+  it.each(['employee', 'secretary', 'projectManager', 'finance'])(
     'denies manager mutations to %s',
     async (token) => {
       await request(server())
@@ -193,7 +203,63 @@ describe('Task HTTP permission boundaries', () => {
       expect(repository.update).not.toHaveBeenCalled();
     },
   );
-  it('allows every employee to change status', async () => {
+  it.each(['secretary', 'installer', 'projectManager', 'finance'])(
+    'denies status changes and claiming to %s',
+    async (token) => {
+      state.task.assigneeId = null;
+      await request(server())
+        .patch(`/task/${TASK_ID}/status`)
+        .auth(token, { type: 'bearer' })
+        .send({ status: 'in_progress' })
+        .expect(403);
+      await request(server())
+        .patch(`/task/${TASK_ID}/claim`)
+        .auth(token, { type: 'bearer' })
+        .expect(403);
+      expect(repository.update).not.toHaveBeenCalled();
+    },
+  );
+  it('rejects assigning a task to a non-engineering employee', async () => {
+    userService.getById.mockResolvedValueOnce(users.installer);
+    await request(server())
+      .post('/task')
+      .auth('manager', { type: 'bearer' })
+      .send(payload)
+      .expect(400);
+    userService.getById.mockResolvedValueOnce(users.secretary);
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ assigneeId: OTHER_ID })
+      .expect(400);
+    expect(repository.create).not.toHaveBeenCalled();
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+  it('denies management claiming a task', async () => {
+    state.task.assigneeId = null;
+    await request(server())
+      .patch(`/task/${TASK_ID}/claim`)
+      .auth('manager', { type: 'bearer' })
+      .expect(403);
+    expect(state.task.assigneeId).toBeNull();
+  });
+  it('lets an admin edit a task that keeps its legacy non-engineer assignee', async () => {
+    state.task = { ...task(), assigneeId: OTHER_ID };
+    userService.getById.mockResolvedValue(users.installer);
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ title: 'Renamed' })
+      .expect(200);
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ title: 'Renamed again', assigneeId: OTHER_ID })
+      .expect(200);
+    expect(userService.getById).not.toHaveBeenCalled();
+    expect(state.task.title).toBe('Renamed again');
+  });
+  it('allows engineers and admins to change status', async () => {
     await request(server())
       .patch(`/task/${TASK_ID}/status`)
       .auth('employee', { type: 'bearer' })

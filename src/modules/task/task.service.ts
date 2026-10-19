@@ -20,6 +20,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { UserService } from '@Modules/user/user.service';
+import { USER_ROLES } from '@Constants/user-role.constant';
 import { GetTasksByFilterDto } from './dto/get-by-filter.dto';
 import { isDueDateBeforeToday } from '@Utilities/date.utility';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
@@ -30,6 +31,7 @@ import { TaskStatusType } from './constants/task-status.constant';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
+import { findChangedAssigneeId } from './utilities/task-assignee.utility';
 import { EMPTY_TASK_STATUS_COUNTS } from './constants/task-status.constant';
 import { TaskStatusTransitionRepository } from './task-status-transition.repository';
 import { ITaskStatusTransition } from './interfaces/task-status-transition.interface';
@@ -162,7 +164,7 @@ export class TaskService {
       await this.validateRelations(
         input.projectId ?? task.projectId,
         input.customerId ?? task.customerId,
-        'assigneeId' in input ? (input.assigneeId ?? null) : task.assigneeId,
+        findChangedAssigneeId(task, input),
       );
       const attributes: TTaskUpdateAttributes = {
         ...('title' in input && { title: input.title?.trim() }),
@@ -310,11 +312,27 @@ export class TaskService {
     const [project] = await Promise.all([
       this.projectService.getById(projectId),
       this.customerService.getById(customerId),
-      ...(assigneeId ? [this.userService.getById(assigneeId)] : []),
+      this.assertAssignableEngineer(assigneeId),
     ]);
     if (project.customerId && project.customerId !== customerId) {
       throw new BadRequestException(
         'Task customer must match the project customer',
+      );
+    }
+  }
+
+  private async assertAssignableEngineer(
+    assigneeId: string | null,
+  ): Promise<void> {
+    if (!assigneeId) {
+      return;
+    }
+
+    const assignee = await this.userService.getById(assigneeId);
+
+    if (assignee.role !== USER_ROLES.ENGINEER) {
+      throw new BadRequestException(
+        'Tasks can be assigned only to engineering employees',
       );
     }
   }
