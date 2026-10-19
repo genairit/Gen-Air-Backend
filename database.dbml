@@ -115,8 +115,8 @@ Table projects {
   parent_project_id uuid       [ref: > projects.id, note: 'The building an apartment belongs to; one level only (trigger trg_projects_single_level_nesting)']
   created_by_id   uuid         [not null, ref: > users.id]
   drive_folder_id varchar(128) [note: 'Root project folder; subfolders are read live from Drive']
-  erp_reference   varchar(64)
-  erp_synced_at   timestamptz(3)
+  priority_id   varchar(64)
+  priority_synced_at   timestamptz(3)
   customer_name               varchar(200) [note: 'Company, private client or institution name, depending on the project type']
   customer_company_number     varchar(9)   [note: 'ח.פ / ת.פ — commercial and multi-unit projects']
   customer_association_number varchar(9)   [note: 'מ״ע — institutional projects']
