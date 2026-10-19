@@ -37,13 +37,15 @@ or database migration is needed for upload validation.
 
 ## Frontend integration gate
 
-Backend PRs do not start Playwright. Merge/promote backend dependencies into `dev`, `test`, or
-`main` before the consuming frontend PR targets that same branch. The frontend gate tests its
-candidate merge against that destination's backend SHA.
+The QA agent keeps its targeted and full feature verification before PRs. Backend PRs do not
+trigger a GitHub Playwright run. Feature → dev relies on QA evidence and has no duplicate GitHub
+suite; frontend promotions dev → test and test → main run against the matching backend destination.
+Merge/promote backend dependencies into that destination before frontend verification.
 
-Release-branch pushes run `.github/workflows/refresh-frontend-gates.yml`, a lightweight notifier
-that invalidates existing frontend compatibility results and reruns completed eligible frontend
-checks. It needs the Actions secret `FRONTEND_GATE_TOKEN` scoped to Gen-Air-Frontend: Pull requests
-read, Actions read/write, Commit statuses read/write, Metadata read. It never runs the app suite.
+Backend test/main pushes run `.github/workflows/refresh-frontend-gates.yml`, a lightweight notifier
+that invalidates frontend promotion compatibility results and refreshes completed promotion checks.
+It needs `FRONTEND_GATE_TOKEN` scoped to Gen-Air-Frontend: Pull requests read, Actions read/write,
+Commit statuses read/write, Metadata read. It runs no Playwright and does not observe dev or refresh
+feature gates. Recheck feature QA evidence manually after backend dev changes.
 See Gen-Air-Automation `docs/release-gate-rollout.md` before changing required checks or deploying
 this workflow. Releases must wait for backend promotion and notifier completion.

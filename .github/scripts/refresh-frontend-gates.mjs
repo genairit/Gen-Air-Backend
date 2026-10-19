@@ -1,10 +1,10 @@
 const FRONTEND = { owner: 'genairit', repo: 'Gen-Air-Frontend' };
 const RELEASE_BRANCHES = { DEV: 'dev', TEST: 'test', MAIN: 'main' };
-const RELEASE_TARGETS = Object.values(RELEASE_BRANCHES);
 const PROMOTIONS = {
   [RELEASE_BRANCHES.TEST]: RELEASE_BRANCHES.DEV,
   [RELEASE_BRANCHES.MAIN]: RELEASE_BRANCHES.TEST,
 };
+const RELEASE_TARGETS = Object.keys(PROMOTIONS);
 
 export const refreshFrontendGates = async ({ github, context, core }) => {
   if (
@@ -28,13 +28,11 @@ export const refreshFrontendGates = async ({ github, context, core }) => {
     base: target,
     per_page: 100,
   });
-  const expectedSource = PROMOTIONS[target] ?? null;
+  const expectedSource = PROMOTIONS[target];
   const eligibleRequests = requests.filter((request) => {
     const sameRepository =
       request.head.repo?.full_name === `${FRONTEND.owner}/${FRONTEND.repo}`;
-    const validSource = expectedSource
-      ? request.head.ref === expectedSource
-      : !RELEASE_TARGETS.includes(request.head.ref);
+    const validSource = request.head.ref === expectedSource;
     return sameRepository && validSource;
   });
   for (const request of eligibleRequests) {

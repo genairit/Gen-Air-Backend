@@ -34,19 +34,22 @@ only to the relevant code:
 
 ## Code review and QA gates
 
-When implementation is verified, run `$code-review` in Mode B; fix every finding and
-remove its annotations, then obtain clean review before invoking `$qa` in a fresh context.
-QA maintains Automation coverage and returns scoped results against exact revisions. Relevant
-local unit/contract/type checks must pass before feature PR publication; report integration as
-PENDING until the eligible frontend release gate runs. Application fixes require another clean
-review; test fixes belong to QA. Failed, blocked, missing or stale local QA blocks feature PRs.
+When a task's implementation is finished and verified, run `$code-review` in
+Mode B on the branch before attaching proof or opening a pull request. Fix every
+finding it reports, delete its `// CR:` annotations, re-verify, and run it again
+until it reports no findings. Only then continue with the development workflow:
+run `$qa` in a fresh context against the exact feature refs. The QA agent writes only to
+Gen-Air-Automation, opens its test PR, and returns PASSED/FAILED with coverage, commands,
+revisions and artifacts. On an application failure, the developer fixes it and repeats
+code review before QA; on a test failure, QA fixes Automation and reruns. A failed,
+blocked, missing or stale QA result blocks the feature PR. Only PASSED continues to
+attach the QA report and Automation PR with proof, open the feature PR into `dev`,
+backfill that PR link in the Automation PR, and update the board.
 
-Run automatic full Playwright only through frontend feature → `dev`, `dev` → `test`, and
-`test` → `main` PRs, against the matching destination backend branch after dependencies merge.
-Backend and Automation PRs receive local checks and maintained coverage without browser runs.
-Frontend merge requires full regression and fresh backend compatibility. Attach scoped QA and
-CI evidence to the card/PRs, record immutable revisions, and backfill feature links. Follow the
-existing [QA agent](agents/qa-agent.md) and [workflow](rules/development-workflow-standards.md).
+Feature QA runs targeted tests and full regression before the feature PR. GitHub Actions has no
+feature → `dev` run; only frontend `dev` → `test` and `test` → `main` promotion PRs run automatic
+integration. Before feature merge, recheck the QA candidate/base, backend and Automation revisions;
+changes require renewed QA. Promotion PRs rely on their GitHub gate without a duplicate QA run.
 
 ## Codex adaptations
 

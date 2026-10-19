@@ -8,8 +8,7 @@ each step, and the task itself must carry the evidence that the work was finishe
 
 **Golden rule:** never touch code before the task is understood and moved to the active list and a
 branch exists for it, and never open a merge request before the code review agent reports no findings
-and local QA reports PASSED, with its scoped report and proof attached to the task. Frontend merge
-requires the separate full integration gate to pass after the PR exists.
+and the QA agent reports PASSED, with its report and the proof of completion attached to the task.
 
 ---
 
@@ -25,13 +24,10 @@ The steps below are ordered and mandatory. Do not skip a step, and do not reorde
 6. **Review the changes with the code review agent** — fix every finding it reports, delete its
    `// CR:` annotations, and review again until it reports none.
 7. **Run the [QA agent](../agents/qa-agent.md)** against the exact feature revisions; fix failures
-   through the responsible agent and repeat until local checks report **PASSED**, with integration
-   explicitly pending the frontend release PR.
+   through the responsible agent and repeat until it reports **PASSED**.
 8. **Attach proof of completion** to the task — evidence plus a summary of what was implemented.
 9. **Open a merge request** from the branch into `dev`.
 10. **Attach the merge request link** to the task.
-11. **Verify the frontend release gate** when applicable; require full regression and fresh backend
-    compatibility before frontend merge.
 
 ## 2. Open the Link and Understand the Task First
 
@@ -111,38 +107,35 @@ annotations remain breaks the flow.
 
 After code review reports no findings, invoke the [QA agent](../agents/qa-agent.md) in a fresh
 context with the card, both app feature refs and diffs, clean review result, and Automation repo.
-It maintains Playwright coverage in Gen-Air-Automation and runs relevant local unit, contract,
-formatting and type checks. Local PASSED permits feature PR publication; the scoped report must
-mark deferred browser integration PENDING rather than claim it passed.
+It maintains Playwright coverage in Gen-Air-Automation, runs targeted and full regression against
+those exact revisions, opens the Automation PR, and returns the structured PASSED/FAILED report.
 
-Automatic full Playwright regression runs only through eligible Gen-Air-Frontend PRs: feature →
-`dev`, `dev` → `test`, and `test` → `main`. Pair each with the latest backend commit on its matching
-destination branch. Merge/promote backend dependencies first, test the frontend candidate merge,
-and report immutable app/Automation SHAs. When test coverage changes, update both frontend workflow
-pins to the reviewed Automation commit before invoking its gate.
+Keep this feature-QA behavior: targeted tests followed by the full suite before feature PRs.
+Frontend feature → `dev` has no duplicate GitHub Actions suite. The developer supplies an isolated
+candidate checkout using current frontend `dev` and latest backend `dev` after dependencies merge.
+Before feature merge, confirm the candidate/base, backend and Automation revisions still match the
+QA report; any change requires renewed QA verification, not a reused pass.
 
-Backend and Automation PRs retain code review, local verification and maintained coverage; they do
-not start the browser suite. Do not trigger standalone, independent-push or scheduled full runs.
-Eligible frontend gates may be rerun. Local exploratory browser runs require explicit user request.
-The lightweight backend notifier may invalidate and refresh eligible frontend checks without
-running Playwright itself.
+GitHub Actions runs the full suite only for frontend `dev` → `test` and `test` → `main`, against
+backend `test` and `main`, respectively. Backend and Automation PRs do not trigger it. Promotion
+PRs use this gate without an additional feature-QA full run. Require promotion full regression and
+fresh backend compatibility before merge; wait for backend promotion and notifier completion.
+When coverage changes, update both frontend workflow pins to the reviewed Automation commit.
 
 - **FAILED — application bug:** the development agent fixes the app branch, verifies it, and
   repeats code review until clean before requesting QA again.
-- **FAILED — test bug:** QA fixes and reviews Automation tests, then repeats checks for that phase.
-- **FAILED — infrastructure or unknown:** resolve the blocker and rerun the affected gate.
-- **Local PASSED:** attach the scoped report, coverage matrix, refs, executed checks and Automation
-  PR link. Open the feature PR and backfill links; mark pending integration and rollout separately.
-- **Frontend integration PASSED:** the full existing suite and fresh backend compatibility passed
-  for that candidate merge. Preserve isolated seeded data, faked integrations and sanitized reports,
-  traces and screenshots. Missing dependencies or stale results block merge. Wait for backend
-  promotion and notifier completion; asynchronous delivery is not an atomic cross-repository lock.
+- **FAILED — test bug:** the QA agent fixes and reviews Automation tests, then reruns QA.
+- **FAILED — infrastructure or unknown:** resolve the blocker and repeat the complete run.
+- **PASSED:** attach the QA report, coverage matrix, tested refs, results, artifacts, and Automation
+  PR link with the proof below. Required criteria cannot be skipped to obtain a pass.
 
-Do not publish feature PRs with failed, blocked, missing or stale local QA. A changed app/test
-revision invalidates its corresponding result. After creating the frontend PR, attach its full
-integration result to the task before frontend merge. Documentation/agent-only changes use executed
-static/contract checks; never fabricate browser coverage or require an automatic standalone suite.
-Automation deliverables receive review and local verification without recursively spawning QA.
+Do not open a feature PR while QA is FAILED, blocked, missing, or stale. Any app/test change after
+QA invalidates its pass. Before the feature PR exists, the Automation PR links real branch compare
+URLs; after creating the feature PR, backfill its link in the Automation PR and card report.
+Documentation-only criteria use executed static/contract checks with an explicit explanation;
+never fabricate browser coverage. Automation test deliverables receive code review and real test
+runs without recursively spawning QA. The initial canonical QA-agent definition can be reviewed
+and published with static contract verification; its app rollout still requires the real QA run.
 
 ## 8. Attach Proof of Completion to the Task
 
@@ -152,9 +145,9 @@ Attach to the card:
 - **Evidence that it works** — a screenshot of the tests passing, a screenshot of the UI in its
   intended state, the response of the endpoint you exercised, or the equivalent artifact for the kind
   of work you did.
-- **The QA handoff** — scoped PASSED report, criterion-to-test mapping, exact tested revisions,
-  executed local checks, integration state/gate link, sanitized artifacts and the Automation PR
-  (or justified unchanged coverage link). Append frontend integration evidence after its PR runs.
+- **The QA handoff** — PASSED report, criterion-to-test mapping, exact tested revisions, targeted
+  and full regression results, sanitized artifacts, and the Automation PR (or justified unchanged
+  existing coverage link).
 - **A summary of what was implemented** — what changed, and how each requirement you read on the card
   is now met.
 
