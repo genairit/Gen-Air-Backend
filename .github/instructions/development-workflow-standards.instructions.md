@@ -2,6 +2,8 @@
 applyTo: '**'
 ---
 
+GenAir execution policy: [../../rules/genair-automatic-qa-policy.md](../../rules/genair-automatic-qa-policy.md) overrides automatic browser-run requirements below.
+
 # Development Workflow — From Board Task to Merge Request
 
 Every piece of work starts on the board and ends on the board. A task is not "in progress" because

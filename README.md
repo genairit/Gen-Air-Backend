@@ -34,3 +34,16 @@ scanning/content sanitization would be an additional layer before production use
 Deploy the backend policy endpoint before the corresponding frontend change;
 clients fail closed if that policy cannot be loaded. No new environment variable
 or database migration is needed for upload validation.
+
+## Frontend integration gate
+
+Backend PRs do not start Playwright. Merge/promote backend dependencies into `dev`, `test`, or
+`main` before the consuming frontend PR targets that same branch. The frontend gate tests its
+candidate merge against that destination's backend SHA.
+
+Release-branch pushes run `.github/workflows/refresh-frontend-gates.yml`, a lightweight notifier
+that invalidates existing frontend compatibility results and reruns completed eligible frontend
+checks. It needs the Actions secret `FRONTEND_GATE_TOKEN` scoped to Gen-Air-Frontend: Pull requests
+read, Actions read/write, Commit statuses read/write, Metadata read. It never runs the app suite.
+See Gen-Air-Automation `docs/release-gate-rollout.md` before changing required checks or deploying
+this workflow. Releases must wait for backend promotion and notifier completion.

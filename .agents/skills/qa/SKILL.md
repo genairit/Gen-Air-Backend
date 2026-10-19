@@ -3,6 +3,8 @@ name: qa
 description: 'Run feature QA in Gen-Air-Automation after clean code review; return a structured PASSED/FAILED report before proof and feature PRs.'
 ---
 
+GenAir execution policy: [../../../rules/genair-automatic-qa-policy.md](../../../rules/genair-automatic-qa-policy.md) overrides automatic browser-run requirements below.
+
 # Feature QA
 
 Read the canonical [QA agent](../../../agents/qa-agent.md) in full and follow

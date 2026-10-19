@@ -1,3 +1,5 @@
+GenAir execution policy: [rules/genair-automatic-qa-policy.md](rules/genair-automatic-qa-policy.md) overrides automatic browser-run requirements below.
+
 # CLAUDE.md
 
 This file consolidates all standards from the `rules/` folder for use as project-wide guidance.

@@ -1,3 +1,5 @@
+GenAir execution policy: [rules/genair-automatic-qa-policy.md](rules/genair-automatic-qa-policy.md) overrides automatic browser-run requirements below.
+
 # Codex repository guidance
 
 The shared standards and workflows originate in Spec-Development-Component

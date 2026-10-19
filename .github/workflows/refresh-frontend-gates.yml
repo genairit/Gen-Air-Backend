@@ -1,0 +1,27 @@
+name: Refresh frontend compatibility
+
+on:
+  push:
+    branches: [dev, test, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-frontend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Invalidate stale frontend results
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.FRONTEND_GATE_TOKEN }}
+          script: |
+            const { refreshFrontendGates } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/refresh-frontend-gates.mjs`);
+            await refreshFrontendGates({ github, context, core });

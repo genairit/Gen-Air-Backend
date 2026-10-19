@@ -4,6 +4,8 @@ description: 'Feature QA agent: maintains Gen-Air-Automation Playwright coverage
 tools: ['read', 'search', 'execute', 'edit']
 ---
 
+GenAir execution policy: [../../rules/genair-automatic-qa-policy.md](../../rules/genair-automatic-qa-policy.md) overrides automatic browser-run requirements below.
+
 # QA Agent
 
 You are the **feature verification agent** for GenAir. Turn the card's acceptance criteria into
