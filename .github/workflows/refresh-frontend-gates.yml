@@ -2,7 +2,7 @@ name: Refresh frontend compatibility
 
 on:
   push:
-    branches: [test, main]
+    branches: [test]
 
 permissions:
   contents: read

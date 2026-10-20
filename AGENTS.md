@@ -1,7 +1,7 @@
 # Codex repository guidance
 
 The shared standards and workflows originate in Spec-Development-Component
-(commit `895b8ba14239de6d96ef3365ec5d73605ad4c7ce`). `rules/`, `skills/`, and
+(commit `59ba6d4d4571912d138068425554a5fd1430cf23`). `rules/`, `skills/`, and
 `agents/` are the canonical source; this file and `.agents/skills/` adapt them for
 Codex.
 
@@ -46,10 +46,12 @@ blocked, missing or stale QA result blocks the feature PR. Only PASSED continues
 attach the QA report and Automation PR with proof, open the feature PR into `dev`,
 backfill that PR link in the Automation PR, and update the board.
 
-Feature QA runs targeted tests and full regression before the feature PR. GitHub Actions has no
-feature → `dev` run; only frontend `dev` → `test` and `test` → `main` promotion PRs run automatic
-integration. Before feature merge, recheck the QA candidate/base, backend and Automation revisions;
-changes require renewed QA. Promotion PRs rely on their GitHub gate without a duplicate QA run.
+Feature → `dev` requires review, relevant unit checks and maintained targeted QA, without full
+regression or a duplicate GitHub suite. Only frontend `dev` → `test` runs full Playwright and
+backend compatibility, paired with backend `test`; only backend test pushes refresh that gate.
+Test → `main` runs no automated QA, full suite, smoke or backend compatibility gate. Normal
+application deployment is unchanged. Before feature merge, recheck the QA candidate/base, backend
+and Automation revisions; changes require renewed targeted QA. Never add a duplicate full run.
 
 ## Codex adaptations
 

@@ -12,7 +12,7 @@ Read the canonical [QA agent](../../../agents/qa-agent.md) in full and follow
   backend/frontend branches and exact refs/diffs, clean code review result, and Automation path.
 - QA reads app repositories but changes only Gen-Air-Automation. Use available GitHub/Trello
   connectors or CLI equivalents; missing tools or credentials must be reported as FAILED.
-- Follow the canonical coverage, temporary artifact, targeted/full regression, test review,
+- Follow the canonical coverage, temporary artifact, targeted QA/relevant unit checks, test review,
   Automation PR, failure ownership, and report requirements. Never invent a passing result.
 - Return the structured report to the development agent. That agent fixes application bugs,
   repeats code review, and reruns QA; QA fixes test bugs in Automation. No feature proof/PR
