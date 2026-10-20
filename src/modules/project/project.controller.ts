@@ -59,7 +59,7 @@ export class ProjectController {
   }
 
   @Post()
-  @UserRoles(ROLE_PERMISSIONS.EDIT_PROJECTS)
+  @UserRoles(ROLE_PERMISSIONS.CREATE_PROJECTS)
   create(
     @Body() project: CreateProjectDto,
     @AuthenticatedUser() creator: IUser,

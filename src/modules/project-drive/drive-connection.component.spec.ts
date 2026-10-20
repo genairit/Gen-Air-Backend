@@ -34,7 +34,7 @@ describe('Drive connection access', () => {
               const roles: Record<string, string> = {
                 admin: 'system_admin',
                 manager: 'project_manager',
-                employee: 'lead_installer',
+                employee: 'installer',
               };
               if (!(token in roles)) {
                 throw new UnauthorizedException();
