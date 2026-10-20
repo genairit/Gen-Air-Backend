@@ -1,6 +1,7 @@
 import {
   Injectable,
   HttpException,
+  NotFoundException,
   ConflictException,
   BadGatewayException,
   BadRequestException,
@@ -15,6 +16,7 @@ import {
 
 import {
   IDriveItem,
+  IDriveFileMetadata,
   TFileCountByFolderId,
 } from '@Interfaces/google-drive.interface';
 
@@ -22,6 +24,7 @@ import { rm } from 'node:fs/promises';
 import { OnEvent } from '@nestjs/event-emitter';
 import { DriveFolderDto } from './dto/drive-folder.dto';
 import { Meta, TypedLogger } from '@Logger/logger.service';
+import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { decodeUploadedFileName } from '@Utilities/upload.utility';
@@ -140,6 +143,71 @@ export class ProjectDriveService {
     }
   }
 
+  async moveFile(
+    projectId: string,
+    fileId: string,
+    folder: DriveFolderDto,
+  ): Promise<void> {
+    const rootId = await this.resolveProjectFolder(projectId, {});
+    const destinationFolderId = await this.resolveProjectFolder(
+      projectId,
+      folder,
+    );
+    const file = await this.requireProjectFile(fileId, rootId);
+    if (file.parents.includes(destinationFolderId)) {
+      return;
+    }
+
+    await this.callDrive(() =>
+      this.googleDriveService.moveFile({
+        fileId,
+        parentIds: file.parents,
+        destinationFolderId,
+      }),
+    );
+  }
+
+  async trashFile(projectId: string, fileId: string): Promise<void> {
+    const rootId = await this.resolveProjectFolder(projectId, {});
+    await this.requireProjectFile(fileId, rootId);
+    await this.callDrive(() => this.googleDriveService.trashFile(fileId));
+  }
+
+  private async requireProjectFile(
+    fileId: string,
+    rootId: string,
+  ): Promise<IDriveFileMetadata> {
+    const file = await this.requireLiveItem(fileId);
+    const isFolder = file.mimeType === GOOGLE_DRIVE.FOLDER_MIME_TYPE;
+    const isShortcut = file.mimeType === GOOGLE_DRIVE.SHORTCUT_MIME_TYPE;
+    const hasNoParent = file.parents.length === 0;
+    if (isFolder || isShortcut || hasNoParent) {
+      throw new BadRequestException('Select a file inside this project');
+    }
+
+    const parentsWithinProject = await this.callDrive(() =>
+      Promise.all(
+        file.parents.map((parentId) => this.isWithinFolder(parentId, rootId)),
+      ),
+    );
+    if (!parentsWithinProject.every(Boolean)) {
+      throw new BadRequestException('The file is outside this project');
+    }
+
+    return file;
+  }
+
+  private async requireLiveItem(fileId: string): Promise<IDriveFileMetadata> {
+    const item = await this.callDrive(() =>
+      this.googleDriveService.getFileMetadata(fileId),
+    );
+    if (!item || item.trashed) {
+      throw new NotFoundException('The Drive item is unavailable');
+    }
+
+    return item;
+  }
+
   private async provisionProject(projectId: string): Promise<IProject> {
     const projectsRootFolderId = this.getProjectsRootFolderId();
     const [project, templateTree] = await Promise.all([
@@ -221,6 +289,11 @@ export class ProjectDriveService {
     }
 
     const folderId = folder.folderId ?? projectFolderId;
+    const metadata = await this.requireLiveItem(folderId);
+    if (metadata.mimeType !== GOOGLE_DRIVE.FOLDER_MIME_TYPE) {
+      throw new BadRequestException('Select a folder inside this project');
+    }
+
     const isWithinProject = await this.callDrive(() =>
       this.isWithinFolder(folderId, projectFolderId),
     );

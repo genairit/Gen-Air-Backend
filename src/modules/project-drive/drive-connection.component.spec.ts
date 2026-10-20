@@ -23,6 +23,8 @@ describe('Drive connection access', () => {
       driveConnectionResult(DRIVE_CONNECTION_STATUS.NOT_CONFIGURED),
     );
   const provision = jest.fn().mockResolvedValue({ id: 'project' });
+  const moveFile = jest.fn(async (): Promise<void> => {});
+  const trashFile = jest.fn(async (): Promise<void> => {});
   const projectId = '92710bd0-68c9-4e20-a4e2-ef75e519f6ce';
   beforeAll(async () => {
     const module = await Test.createTestingModule({
@@ -30,7 +32,7 @@ describe('Drive connection access', () => {
       providers: [
         {
           provide: ProjectDriveService,
-          useValue: { checkConnection, provision },
+          useValue: { checkConnection, provision, moveFile, trashFile },
         },
         {
           provide: AuthService,
@@ -63,6 +65,8 @@ describe('Drive connection access', () => {
   beforeEach(() => {
     checkConnection.mockClear();
     provision.mockClear();
+    moveFile.mockClear();
+    trashFile.mockClear();
   });
   afterAll(async () => application.app?.close());
   it('requires authentication', async () => {
@@ -119,5 +123,101 @@ describe('Drive connection access', () => {
       writesTested: false,
     });
     expect(checkConnection).toHaveBeenCalledTimes(1);
+  });
+
+  describe.each(['patch', 'delete'] as const)(
+    '%s file management access',
+    (method) => {
+      const fileId = 'drive-file_123';
+      const route = `/project-drive/${projectId}/files/${fileId}`;
+      const mutation = () => (method === 'patch' ? moveFile : trashFile);
+
+      it('requires authentication before invoking the service', async () => {
+        await request(application.app!.getHttpServer())
+          [method](route)
+          .send({})
+          .expect(401);
+        expect(mutation()).not.toHaveBeenCalled();
+      });
+
+      it.each(['employee', 'engineer'])(
+        'rejects %s before invoking the service',
+        async (token) => {
+          await request(application.app!.getHttpServer())
+            [method](route)
+            .auth(token, { type: 'bearer' })
+            .send({})
+            .expect(403);
+          expect(mutation()).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each(['admin', 'manager', 'secretary'])(
+        'allows the project editor %s and returns an empty 204 response',
+        async (token) => {
+          const response = await request(application.app!.getHttpServer())
+            [method](route)
+            .auth(token, { type: 'bearer' })
+            .send({})
+            .expect(204);
+          expect(response.text).toBe('');
+          if (method === 'patch') {
+            expect(moveFile).toHaveBeenCalledWith(projectId, fileId, {});
+            return;
+          }
+          expect(trashFile).toHaveBeenCalledWith(projectId, fileId);
+        },
+      );
+
+      it.each([
+        ['/project-drive/invalid-project/files/drive-file', 'project UUID'],
+        [`/project-drive/${projectId}/files/unsafe%27file`, 'Drive file id'],
+        [
+          `/project-drive/${projectId}/files/unsafe%2Cfile`,
+          'Drive file id comma',
+        ],
+      ])('rejects malformed route %s (%s)', async (invalidRoute) => {
+        await request(application.app!.getHttpServer())
+          [method](invalidRoute)
+          .auth('admin', { type: 'bearer' })
+          .send({})
+          .expect(400);
+        expect(mutation()).not.toHaveBeenCalled();
+      });
+    },
+  );
+
+  it('passes the requested destination folder to the move service', async () => {
+    await request(application.app!.getHttpServer())
+      .patch(`/project-drive/${projectId}/files/drive-file`)
+      .auth('manager', { type: 'bearer' })
+      .send({ folderId: 'destination-folder' })
+      .expect(204);
+    expect(moveFile).toHaveBeenCalledWith(projectId, 'drive-file', {
+      folderId: 'destination-folder',
+    });
+  });
+
+  it.each(['', 'unsafe,folder', "unsafe'folder", '../foreign', 42])(
+    'rejects an unsafe move destination %s',
+    async (folderId) => {
+      await request(application.app!.getHttpServer())
+        .patch(`/project-drive/${projectId}/files/drive-file`)
+        .auth('admin', { type: 'bearer' })
+        .send({ folderId })
+        .expect(400);
+      expect(moveFile).not.toHaveBeenCalled();
+    },
+  );
+
+  it('accepts a null optional move destination as the project root', async () => {
+    await request(application.app!.getHttpServer())
+      .patch(`/project-drive/${projectId}/files/drive-file`)
+      .auth('admin', { type: 'bearer' })
+      .send({ folderId: null })
+      .expect(204);
+    expect(moveFile).toHaveBeenCalledWith(projectId, 'drive-file', {
+      folderId: null,
+    });
   });
 });
