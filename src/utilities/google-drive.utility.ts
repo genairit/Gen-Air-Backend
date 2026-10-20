@@ -26,6 +26,12 @@ export const buildChildFolderByNameQuery = (
 ): string =>
   `${buildChildrenQuery(parentId)} and mimeType = '${GOOGLE_DRIVE.FOLDER_MIME_TYPE}' and name = '${escapeDriveQueryValue(name)}'`;
 
+export const buildProjectFolderQuery = (
+  projectId: string,
+  parentId: string,
+): string =>
+  `${buildChildrenQuery(parentId)} and mimeType = '${GOOGLE_DRIVE.FOLDER_MIME_TYPE}' and appProperties has { key='${GOOGLE_DRIVE.PROJECT_PROPERTY}' and value='${escapeDriveQueryValue(projectId)}' }`;
+
 export const toDriveItem = (file: drive_v3.Schema$File): IDriveItem | null => {
   if (!file.id || !file.name || !file.mimeType) {
     return null;

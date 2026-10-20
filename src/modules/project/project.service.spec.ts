@@ -926,6 +926,24 @@ describe('ProjectService.createApartment', () => {
       parentProjectId: BUILDING_ID,
       projectTypeId: 'type-building',
     });
+    expect(eventEmitter.emitAsync).toHaveBeenCalledTimes(1);
+    expect(eventEmitter.emitAsync).toHaveBeenCalledWith(
+      DOMAIN_EVENTS.PROJECT_CREATED,
+      { projectId: PROJECT_ID },
+    );
+    expect(projectRepository.create.mock.invocationCallOrder[0]).toBeLessThan(
+      eventEmitter.emitAsync.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not announce an apartment whose persistence fails', async () => {
+    const { service, projectRepository, eventEmitter } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    projectRepository.create.mockRejectedValue(new Error('write failed'));
+
+    await expect(
+      service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
+    ).rejects.toThrow('write failed');
     expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
   });
 
