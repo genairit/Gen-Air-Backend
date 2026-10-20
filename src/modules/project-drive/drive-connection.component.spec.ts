@@ -22,11 +22,16 @@ describe('Drive connection access', () => {
     .mockResolvedValue(
       driveConnectionResult(DRIVE_CONNECTION_STATUS.NOT_CONFIGURED),
     );
+  const provision = jest.fn().mockResolvedValue({ id: 'project' });
+  const projectId = '92710bd0-68c9-4e20-a4e2-ef75e519f6ce';
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       controllers: [ProjectDriveController],
       providers: [
-        { provide: ProjectDriveService, useValue: { checkConnection } },
+        {
+          provide: ProjectDriveService,
+          useValue: { checkConnection, provision },
+        },
         {
           provide: AuthService,
           useValue: {
@@ -35,6 +40,8 @@ describe('Drive connection access', () => {
                 admin: 'system_admin',
                 manager: 'project_manager',
                 employee: 'installer',
+                engineer: 'engineer',
+                secretary: 'secretary',
               };
               if (!(token in roles)) {
                 throw new UnauthorizedException();
@@ -53,7 +60,10 @@ describe('Drive connection access', () => {
     );
     await application.app.init();
   });
-  beforeEach(() => checkConnection.mockClear());
+  beforeEach(() => {
+    checkConnection.mockClear();
+    provision.mockClear();
+  });
   afterAll(async () => application.app?.close());
   it('requires authentication', async () => {
     await request(application.app!.getHttpServer())
@@ -69,6 +79,33 @@ describe('Drive connection access', () => {
         .auth(token, { type: 'bearer' })
         .expect(403);
       expect(checkConnection).not.toHaveBeenCalled();
+    },
+  );
+  it('requires authentication to provision a project', async () => {
+    await request(application.app!.getHttpServer())
+      .post(`/project-drive/${projectId}/provision`)
+      .expect(401);
+    expect(provision).not.toHaveBeenCalled();
+  });
+  it.each(['employee', 'engineer'])(
+    'rejects provisioning by %s before touching Drive',
+    async (token) => {
+      await request(application.app!.getHttpServer())
+        .post(`/project-drive/${projectId}/provision`)
+        .auth(token, { type: 'bearer' })
+        .expect(403);
+      expect(provision).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['admin', 'manager', 'secretary'])(
+    'allows provisioning by project editor %s',
+    async (token) => {
+      await request(application.app!.getHttpServer())
+        .post(`/project-drive/${projectId}/provision`)
+        .auth(token, { type: 'bearer' })
+        .expect(201);
+      expect(provision).toHaveBeenCalledWith(projectId);
+      expect(provision).toHaveBeenCalledTimes(1);
     },
   );
   it('routes the administrator check without treating connection as a project UUID', async () => {

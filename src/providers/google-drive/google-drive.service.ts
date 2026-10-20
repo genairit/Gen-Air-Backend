@@ -3,6 +3,7 @@ import {
   toDriveItems,
   buildChildrenQuery,
   isDriveNotFoundError,
+  buildProjectFolderQuery,
   buildChildrenOfAnyQuery,
   buildChildFolderByNameQuery,
 } from '@Utilities/google-drive.utility';
@@ -103,14 +104,22 @@ export class GoogleDriveService {
     });
   }
 
-  async ensureFolder(name: string, parentId: string): Promise<string> {
-    const existingFolderId = await this.findChildFolderId(name, parentId);
+  async ensureFolder(
+    name: string,
+    parentId: string,
+    projectId?: string,
+  ): Promise<string> {
+    const query = projectId
+      ? buildProjectFolderQuery(projectId, parentId)
+      : buildChildFolderByNameQuery(name, parentId);
+    const folders = await this.listAll(query, 'id');
+    const existingFolderId = folders.at(0)?.id;
 
     if (existingFolderId) {
       return existingFolderId;
     }
 
-    return this.createFolder(name, parentId);
+    return this.createFolder(name, parentId, projectId);
   }
 
   async findParentIds(fileId: string): Promise<string[] | null> {
@@ -143,25 +152,20 @@ export class GoogleDriveService {
     return this.requireItem(data);
   }
 
-  private async findChildFolderId(
+  private async createFolder(
     name: string,
     parentId: string,
-  ): Promise<string | null> {
-    const folders = await this.listAll(
-      buildChildFolderByNameQuery(name, parentId),
-      'id',
-    );
-
-    return folders.at(0)?.id ?? null;
-  }
-
-  private async createFolder(name: string, parentId: string): Promise<string> {
+    projectId?: string,
+  ): Promise<string> {
     const { data } = await this.drive.files.create({
       ...SHARED_DRIVE_OPTIONS,
       fields: GOOGLE_DRIVE.ITEM_FIELDS,
       requestBody: {
         name,
         parents: [parentId],
+        ...(projectId
+          ? { appProperties: { [GOOGLE_DRIVE.PROJECT_PROPERTY]: projectId } }
+          : {}),
         mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
       },
     });

@@ -61,6 +61,12 @@ export const getDriveConnectionFailure = (
   if (!isObject(error)) {
     return DRIVE_CONNECTION_STATUS.UNAVAILABLE;
   }
+  const missingDefaultCredentials =
+    typeof error.message === 'string' &&
+    error.message.includes('Could not load the default credentials');
+  if (missingDefaultCredentials) {
+    return DRIVE_CONNECTION_STATUS.AUTHENTICATION_FAILED;
+  }
   const response = isObject(error.response) ? error.response : null;
   const status = response?.status ?? error.code;
   const byStatus: Record<string, DriveConnectionStatusType> = {

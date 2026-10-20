@@ -10,6 +10,7 @@ import {
 import {
   MAX_FOLDER_DEPTH,
   PROJECT_ROOT_FOLDER_NAME,
+  PROJECT_DRIVE_ERROR_CODES,
 } from './constants/project-drive.constant';
 
 import {
@@ -31,6 +32,8 @@ import { toProjectDriveFolder } from './utilities/drive-folder-status.utility';
 import type { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { validateDriveUploads } from '@Utilities/validate-drive-upload.utility';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
+import { DRIVE_CONNECTION_STATUS } from '@Providers/google-drive/constants/drive-connection.constant';
+import { getDriveConnectionFailure } from '@Providers/google-drive/utilities/drive-connection.utility';
 import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
 import { DriveTemplateFolderService } from '@Modules/drive-template-folder/drive-template-folder.service';
 import { IDriveTemplateFolderNode } from '@Modules/drive-template-folder/interfaces/drive-template-folder.interface';
@@ -38,6 +41,8 @@ import { IDriveTemplateFolderNode } from '@Modules/drive-template-folder/interfa
 @Injectable()
 export class ProjectDriveService {
   private readonly logger = new TypedLogger<Meta>(ProjectDriveService.name);
+
+  private readonly provisioning = new Map<string, Promise<IProject>>();
 
   constructor(
     private readonly projectService: ProjectService,
@@ -71,23 +76,17 @@ export class ProjectDriveService {
     }
   }
 
-  async provision(projectId: string): Promise<IProject> {
-    const projectsRootFolderId = this.getProjectsRootFolderId();
-    const [project, templateTree] = await Promise.all([
-      this.projectService.getById(projectId),
-      this.driveTemplateFolderService.getTree(),
-    ]);
+  provision(projectId: string): Promise<IProject> {
+    const pending = this.provisioning.get(projectId);
+    if (pending) {
+      return pending;
+    }
 
-    const projectFolderId = await this.ensureProjectFolder(
-      project,
-      projectsRootFolderId,
-    );
-
-    await this.callDrive(() =>
-      this.createTemplateFolders(project, templateTree, projectFolderId),
-    );
-
-    return this.projectService.getById(projectId);
+    const operation = this.provisionProject(projectId).finally(() => {
+      this.provisioning.delete(projectId);
+    });
+    this.provisioning.set(projectId, operation);
+    return operation;
   }
 
   async getContents(
@@ -141,6 +140,26 @@ export class ProjectDriveService {
     }
   }
 
+  private async provisionProject(projectId: string): Promise<IProject> {
+    const projectsRootFolderId = this.getProjectsRootFolderId();
+    const [project, templateTree] = await Promise.all([
+      this.projectService.getById(projectId),
+      this.driveTemplateFolderService.getTree(),
+    ]);
+    const projectFolderId = await this.ensureProjectFolder(
+      project,
+      projectsRootFolderId,
+    );
+    await this.callDrive(() =>
+      this.createTemplateFolders(project, templateTree, projectFolderId),
+    );
+
+    if (!project.driveFolderId) {
+      await this.projectService.setDriveFolderId(project.id, projectFolderId);
+    }
+    return this.projectService.getById(projectId);
+  }
+
   private async ensureProjectFolder(
     project: IProject,
     projectsRootFolderId: string,
@@ -153,10 +172,9 @@ export class ProjectDriveService {
       this.googleDriveService.ensureFolder(
         renderDriveFolderName(PROJECT_ROOT_FOLDER_NAME, project),
         projectsRootFolderId,
+        project.id,
       ),
     );
-
-    await this.projectService.setDriveFolderId(project.id, projectFolderId);
 
     return projectFolderId;
   }
@@ -166,7 +184,7 @@ export class ProjectDriveService {
     templateNodes: IDriveTemplateFolderNode[],
     parentFolderId: string,
   ): Promise<void> {
-    await Promise.all(
+    const results = await Promise.allSettled(
       templateNodes.map(async (templateNode) => {
         const folderId = await this.googleDriveService.ensureFolder(
           renderDriveFolderName(templateNode.name, project),
@@ -180,6 +198,10 @@ export class ProjectDriveService {
         );
       }),
     );
+    const failure = results.find((result) => result.status === 'rejected');
+    if (failure) {
+      throw failure.reason;
+    }
   }
 
   private async resolveProjectFolder(
@@ -192,9 +214,10 @@ export class ProjectDriveService {
     const projectFolderId = project.driveFolderId;
 
     if (!projectFolderId) {
-      throw new ConflictException(
-        `Project ${projectId} has no Drive folder yet; create it first`,
-      );
+      throw new ConflictException({
+        code: PROJECT_DRIVE_ERROR_CODES.NOT_PROVISIONED,
+        message: 'The project Drive folder has not been created yet',
+      });
     }
 
     const folderId = folder.folderId ?? projectFolderId;
@@ -283,6 +306,16 @@ export class ProjectDriveService {
       }
 
       this.logger.error({ error, message: 'Google Drive request failed' });
+
+      if (
+        getDriveConnectionFailure(error) ===
+        DRIVE_CONNECTION_STATUS.AUTHENTICATION_FAILED
+      ) {
+        throw new ServiceUnavailableException({
+          code: PROJECT_DRIVE_ERROR_CODES.AUTHENTICATION_FAILED,
+          message: 'Google Drive authentication is unavailable',
+        });
+      }
 
       throw new BadGatewayException('Google Drive request failed', {
         cause: error,
