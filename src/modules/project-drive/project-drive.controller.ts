@@ -1,8 +1,13 @@
 import {
   Get,
+  Body,
   Post,
+  Patch,
   Param,
   Query,
+  Delete,
+  HttpCode,
+  HttpStatus,
   Controller,
   UploadedFiles,
   ParseUUIDPipe,
@@ -18,6 +23,7 @@ import { DriveFolderDto } from './dto/drive-folder.dto';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { UserRoles } from '@Decorators/user-roles.decorator';
 import { ProjectDriveService } from './project-drive.service';
+import { DriveFileParamsDto } from './dto/drive-file-params.dto';
 import type { IDriveItem } from '@Interfaces/google-drive.interface';
 import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
 import { ApiTags, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
@@ -68,6 +74,27 @@ export class ProjectDriveController {
     @UploadedFiles() files: Express.Multer.File[],
   ): Promise<IDriveItem[]> {
     return this.projectDriveService.upload(projectId, folder, files ?? []);
+  }
+
+  @Patch(':projectId/files/:fileId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UserRoles(ROLE_PERMISSIONS.EDIT_PROJECTS)
+  moveFile(
+    @Param() params: DriveFileParamsDto,
+    @Body() folder: DriveFolderDto,
+  ): Promise<void> {
+    return this.projectDriveService.moveFile(
+      params.projectId,
+      params.fileId,
+      folder,
+    );
+  }
+
+  @Delete(':projectId/files/:fileId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UserRoles(ROLE_PERMISSIONS.EDIT_PROJECTS)
+  trashFile(@Param() params: DriveFileParamsDto): Promise<void> {
+    return this.projectDriveService.trashFile(params.projectId, params.fileId);
   }
 
   @Post(':projectId/provision')
