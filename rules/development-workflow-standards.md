@@ -107,25 +107,28 @@ annotations remain breaks the flow.
 
 After code review reports no findings, invoke the [QA agent](../agents/qa-agent.md) in a fresh
 context with the card, both app feature refs and diffs, clean review result, and Automation repo.
-It maintains Playwright coverage in Gen-Air-Automation, runs targeted and full regression against
-those exact revisions, opens the Automation PR, and returns the structured PASSED/FAILED report.
+It maintains Playwright coverage in Gen-Air-Automation, runs targeted QA and relevant unit checks
+against those exact revisions, opens the Automation PR, and returns the structured PASSED/FAILED report.
 
-Keep this feature-QA behavior: targeted tests followed by the full suite before feature PRs.
+Feature → dev requires code review, relevant unit checks and targeted QA, with maintained
+Automation coverage for new features. Do not run full regression before feature PRs.
 Frontend feature → `dev` has no duplicate GitHub Actions suite. The developer supplies an isolated
 candidate checkout using current frontend `dev` and latest backend `dev` after dependencies merge.
 Before feature merge, confirm the candidate/base, backend and Automation revisions still match the
 QA report; any change requires renewed QA verification, not a reused pass.
 
-GitHub Actions runs the full suite only for frontend `dev` → `test` and `test` → `main`, against
-backend `test` and `main`, respectively. Backend and Automation PRs do not trigger it. Promotion
-PRs use this gate without an additional feature-QA full run. Require promotion full regression and
-fresh backend compatibility before merge; wait for backend promotion and notifier completion.
+GitHub Actions runs the full Playwright suite only for frontend `dev` → `test`, against backend
+`test`, without an additional QA-agent run. Require that promotion's full regression and fresh
+backend compatibility before merge; wait for backend test promotion and notifier completion.
+Backend test pushes refresh only this frontend gate. Backend and Automation PRs do not run the
+suite. Test → `main` runs no automated QA, full suite, smoke checks or backend compatibility gate;
+backend main pushes do not refresh gates. Normal application deployment is unchanged.
 When coverage changes, update both frontend workflow pins to the reviewed Automation commit.
 
 - **FAILED — application bug:** the development agent fixes the app branch, verifies it, and
   repeats code review until clean before requesting QA again.
 - **FAILED — test bug:** the QA agent fixes and reviews Automation tests, then reruns QA.
-- **FAILED — infrastructure or unknown:** resolve the blocker and repeat the complete run.
+- **FAILED — infrastructure or unknown:** resolve the blocker and repeat the affected targeted checks.
 - **PASSED:** attach the QA report, coverage matrix, tested refs, results, artifacts, and Automation
   PR link with the proof below. Required criteria cannot be skipped to obtain a pass.
 
@@ -146,7 +149,7 @@ Attach to the card:
   intended state, the response of the endpoint you exercised, or the equivalent artifact for the kind
   of work you did.
 - **The QA handoff** — PASSED report, criterion-to-test mapping, exact tested revisions, targeted
-  and full regression results, sanitized artifacts, and the Automation PR (or justified unchanged
+  and relevant unit-check results, sanitized artifacts, and the Automation PR (or justified unchanged
   existing coverage link).
 - **A summary of what was implemented** — what changed, and how each requirement you read on the card
   is now met.
