@@ -1,8 +1,7 @@
 const FRONTEND = { owner: 'genairit', repo: 'Gen-Air-Frontend' };
-const RELEASE_BRANCHES = { DEV: 'dev', TEST: 'test', MAIN: 'main' };
+const RELEASE_BRANCHES = { DEV: 'dev', TEST: 'test' };
 const PROMOTIONS = {
   [RELEASE_BRANCHES.TEST]: RELEASE_BRANCHES.DEV,
-  [RELEASE_BRANCHES.MAIN]: RELEASE_BRANCHES.TEST,
 };
 const RELEASE_TARGETS = Object.keys(PROMOTIONS);
 
