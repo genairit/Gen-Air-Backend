@@ -1,4 +1,8 @@
-import { UserRoleType } from '@Constants/user-role.constant';
+import {
+  UserRoleType,
+  ProjectMemberRoleType,
+} from '@Constants/user-role.constant';
+
 import { IUser } from '@Modules/user/interfaces/user.interface';
 
 export interface IProjectMember {
@@ -13,7 +17,7 @@ export interface IProjectMember {
 
 export interface IProjectMemberAssignment {
   userId: string;
-  role: UserRoleType;
+  role: ProjectMemberRoleType;
 }
 
 export type TProjectMemberCreationAttributes = Pick<
