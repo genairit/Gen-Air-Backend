@@ -11,7 +11,9 @@ import {
 import {
   IDriveItem,
   IDriveUpload,
+  IDriveFileMove,
   IDriveTreeWalk,
+  IDriveFileMetadata,
   TFileCountByFolderId,
 } from '@Interfaces/google-drive.interface';
 
@@ -127,10 +129,10 @@ export class GoogleDriveService {
       const { data } = await this.drive.files.get({
         ...SHARED_DRIVE_OPTIONS,
         fileId,
-        fields: 'parents',
+        fields: 'parents,trashed',
       });
 
-      return data.parents ?? [];
+      return data.trashed ? null : (data.parents ?? []);
     } catch (error) {
       if (isDriveNotFoundError(error)) {
         return null;
@@ -138,6 +140,55 @@ export class GoogleDriveService {
 
       throw error;
     }
+  }
+
+  async getFileMetadata(fileId: string): Promise<IDriveFileMetadata | null> {
+    try {
+      const { data } = await this.drive.files.get({
+        ...SHARED_DRIVE_OPTIONS,
+        fileId,
+        fields: GOOGLE_DRIVE.FILE_METADATA_FIELDS,
+      });
+      if (!data.id || !data.mimeType) {
+        return null;
+      }
+
+      return {
+        id: data.id,
+        mimeType: data.mimeType,
+        parents: data.parents ?? [],
+        trashed: data.trashed ?? false,
+      };
+    } catch (error) {
+      if (isDriveNotFoundError(error)) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  async moveFile({
+    fileId,
+    parentIds,
+    destinationFolderId,
+  }: IDriveFileMove): Promise<void> {
+    await this.drive.files.update({
+      ...SHARED_DRIVE_OPTIONS,
+      fileId,
+      fields: 'id',
+      addParents: destinationFolderId,
+      removeParents: parentIds.join(','),
+    });
+  }
+
+  async trashFile(fileId: string): Promise<void> {
+    await this.drive.files.update({
+      ...SHARED_DRIVE_OPTIONS,
+      fileId,
+      fields: 'id',
+      requestBody: { trashed: true },
+    });
   }
 
   async uploadFile(upload: IDriveUpload): Promise<IDriveItem> {

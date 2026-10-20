@@ -10,9 +10,17 @@ import { EnvironmentManager } from '@Utilities/environment-manager.utility';
 const mockGet = jest.fn();
 const mockList = jest.fn();
 const mockCreate = jest.fn();
+const mockUpdate = jest.fn();
+const mockDelete = jest.fn();
 jest.mock('@googleapis/drive', () => ({
   drive: () => ({
-    files: { get: mockGet, list: mockList, create: mockCreate },
+    files: {
+      get: mockGet,
+      list: mockList,
+      create: mockCreate,
+      update: mockUpdate,
+      delete: mockDelete,
+    },
   }),
   auth: { GoogleAuth: jest.fn() },
 }));
@@ -216,4 +224,133 @@ describe('Google Drive project folder identity', () => {
 
     expect(mockList.mock.calls[0][0].q).toBe(mockList.mock.calls[1][0].q);
   });
+});
+
+describe('Google Drive file management', () => {
+  beforeEach(() => {
+    mockGet.mockReset();
+    mockUpdate.mockReset();
+    mockDelete.mockReset();
+    mockUpdate.mockResolvedValue({ data: {} });
+  });
+
+  it('reads the file metadata needed to validate project mutations', async () => {
+    const metadata = {
+      id: 'file',
+      mimeType: 'application/pdf',
+      parents: ['source'],
+      trashed: false,
+    };
+    mockGet.mockResolvedValue({ data: metadata });
+
+    await expect(
+      new GoogleDriveService().getFileMetadata('file'),
+    ).resolves.toEqual(metadata);
+
+    expect(mockGet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: 'file',
+        supportsAllDrives: true,
+        fields: expect.stringMatching(/id.*mimeType.*parents.*trashed/),
+      }),
+    );
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'id',
+      { mimeType: 'application/pdf', parents: ['source'], trashed: false },
+    ],
+    ['mimeType', { id: 'file', parents: ['source'], trashed: false }],
+  ])(
+    'rejects malformed metadata missing %s without mutating Drive',
+    async (_field, data) => {
+      mockGet.mockResolvedValue({ data });
+
+      await expect(
+        new GoogleDriveService().getFileMetadata('file'),
+      ).resolves.toBeNull();
+
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockDelete).not.toHaveBeenCalled();
+    },
+  );
+
+  it('returns null for missing metadata and propagates other metadata failures', async () => {
+    mockGet.mockRejectedValueOnce({ status: 404 });
+    const service = new GoogleDriveService();
+    await expect(service.getFileMetadata('missing')).resolves.toBeNull();
+    const error = new Error('Drive unavailable');
+    mockGet.mockRejectedValueOnce(error);
+    await expect(service.getFileMetadata('file')).rejects.toBe(error);
+  });
+
+  it('does not follow a trashed ancestor when resolving scope', async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        id: 'trashed-folder',
+        mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+        parents: ['project-folder'],
+        trashed: true,
+      },
+    });
+
+    await expect(
+      new GoogleDriveService().findParentIds('trashed-folder'),
+    ).resolves.toBeNull();
+  });
+
+  it('moves a Shared Drive file by adding its destination and removing the validated source parents', async () => {
+    await new GoogleDriveService().moveFile({
+      fileId: 'file',
+      parentIds: ['source-one', 'source-two'],
+      destinationFolderId: 'destination',
+    });
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: 'file',
+        supportsAllDrives: true,
+        addParents: 'destination',
+        removeParents: 'source-one,source-two',
+      }),
+    );
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it('trashes a Shared Drive file through files.update', async () => {
+    await new GoogleDriveService().trashFile('file');
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: 'file',
+        supportsAllDrives: true,
+        requestBody: { trashed: true },
+      }),
+    );
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it.each(['moveFile', 'trashFile'] as const)(
+    'propagates %s failures without attempting permanent deletion',
+    async (operation) => {
+      const error = new Error('Drive unavailable');
+      mockUpdate.mockRejectedValue(error);
+      const service = new GoogleDriveService();
+      const mutation =
+        operation === 'moveFile'
+          ? service.moveFile({
+              fileId: 'file',
+              parentIds: ['source'],
+              destinationFolderId: 'destination',
+            })
+          : service.trashFile('file');
+
+      await expect(mutation).rejects.toBe(error);
+      expect(mockDelete).not.toHaveBeenCalled();
+    },
+  );
 });
