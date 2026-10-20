@@ -64,9 +64,11 @@ describe('UserService.getRoleCounts', () => {
     const { service } = await createService();
 
     await expect(service.getRoleCounts()).resolves.toEqual({
+      [USER_ROLES.FINANCE]: 0,
+      [USER_ROLES.ENGINEER]: 0,
+      [USER_ROLES.INSTALLER]: 0,
       [USER_ROLES.SECRETARY]: 2,
       [USER_ROLES.SYSTEM_ADMIN]: 0,
-      [USER_ROLES.LEAD_INSTALLER]: 0,
       [USER_ROLES.PROJECT_MANAGER]: 0,
     });
   });

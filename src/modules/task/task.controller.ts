@@ -57,7 +57,7 @@ export class TaskController {
     return this.taskService.getCounts({ ...filter, assigneeId: user.id });
   }
   @Patch(':id/claim')
-  @UserRoles(ROLE_PERMISSIONS.UPDATE_TASK_STATUS)
+  @UserRoles(ROLE_PERMISSIONS.CLAIM_TASKS)
   claim(
     @Param('id', ParseUUIDPipe) id: string,
     @AuthenticatedUser() user: IUser,
