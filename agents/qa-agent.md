@@ -76,17 +76,21 @@ the publishable test commit. A content or revision change afterward requires ano
 Automation PRs are test deliverables: their own review and test evidence precede publication; they
 do not recursively invoke another QA agent to test the QA agent.
 
-### 3. Run the Feature and Regression Suite
+### 3. Run Targeted Feature QA
 
 Verify both app HEADs and working-tree state before startup. Start the documented isolated stack
 against those exact revisions, or verify preview deployment revisions. Do not reuse an existing
-server unless its identity is verified. Run the targeted feature specs and then the **full existing
-regression suite**; record commands, exit codes, counts, retries, and artifact locations.
+server unless its identity is verified. Run the targeted feature specs and relevant unit checks,
+including affected regression paths; record commands, exit codes, counts, retries, and artifact locations. Maintain Automation coverage
+for every new feature. Do not run the full suite during feature development; full Playwright
+regression belongs only to dev → test. For workflow/documentation-only changes, execute focused
+contract checks and explain why application browser tests are inapplicable.
 
 Record the tested Automation commit or dirty-diff fingerprint too. Recheck all three revisions and
 working-tree fingerprints after execution. A changed revision invalidates the result and requires
 a rerun. A nonzero exit, unexpected failure, flaky/retried failure, skipped required criterion,
-interrupted run, or infrastructure error is **FAILED**. A subset passing is not a full pass.
+interrupted run, or infrastructure error is **FAILED**. A targeted pass verifies only its declared
+coverage; never describe it as a full-suite pass.
 
 The feature runs above are owned by the QA agent and happen before feature PR publication.
 They are not GitHub Actions runs. For frontend features, the developer supplies an isolated
@@ -95,12 +99,13 @@ checkout. Merge required backend dependencies into backend `dev` first and resol
 revision to a SHA. Recheck frontend candidate/base, backend and Automation revisions before feature
 merge; changed revisions require renewed QA verification. Never reuse a stale passing report.
 
-GitHub Actions separately runs full regression only for frontend `dev` → `test` and `test` → `main`,
-paired with backend `test` and `main`, respectively. It does not run on feature → `dev`, backend
-PRs, Automation PRs, unrelated pushes or standalone dispatches. Promotion PRs use that GitHub gate
-without a duplicate feature-QA run. Both promotion checks, full regression and backend compatibility,
-must pass before merge. The lightweight backend notifier refreshes only promotion gates after
-backend `test`/`main` advances; it never starts feature → `dev` automation.
+GitHub Actions runs full Playwright regression only for frontend `dev` → `test`, paired with
+backend `test`. That promotion requires full regression and backend compatibility, without a
+second QA-agent run. Backend `test` pushes refresh only this gate. Feature → `dev` uses review,
+relevant unit checks and maintained targeted QA; backend and Automation PRs do not trigger the
+suite. Test → `main` runs no automated QA, full suite, smoke checks or backend compatibility gate.
+Do not add a fallback production check or trigger a suite from backend `main`. Normal application
+deployment is unchanged.
 
 When coverage changes, the developer updates both frontend workflow pins to the reviewed Automation
 commit. Keep isolated seeded data, faked integrations and sanitized artifacts for all browser runs.
@@ -113,9 +118,9 @@ actual behavior, sanitized error/stack, and trace/screenshot/log paths. Classify
 
 - **Application bug:** the development agent fixes the app branch, reruns its verification and the
   code review until clean, then calls QA again with the new refs. The QA agent never patches it.
-- **Test bug:** fix only Automation, review the fix, and rerun the targeted and full suites.
+- **Test bug:** fix only Automation, review the fix, and rerun the affected targeted checks.
 - **Infrastructure/unknown:** report what failed and what is needed; keep the gate closed until a
-  complete rerun proves success. Do not label an environment failure an application defect.
+  complete targeted rerun proves success. Do not label an environment failure an application defect.
 
 Keep the original failure report and the later passing report linked so the loop is auditable.
 A previous failure is not erased by a changed test or a retry.
@@ -146,7 +151,7 @@ APP_WORKING_TREES: <clean or per-repository diff fingerprint>
 ENVIRONMENT: <isolated local stack or verified preview; mocked integrations>
 CODE_REVIEW: <clean result and reviewed revisions>
 COVERAGE: <criterion -> flow -> spec:test or justified static check>
-RUNS: <targeted and full commands, exit codes, passed/failed/skipped/flaky counts>
+RUNS: <targeted/unit commands, exit codes, passed/failed/skipped/flaky counts; full suite not run at feature stage>
 AUTOMATION_PR: <URL or existing coverage justification>
 FEATURE_LINKS: <PR URLs or real branch compares pending backfill>
 ARTIFACTS: <sanitized report, trace, screenshot, and log locations>
@@ -160,7 +165,7 @@ LIMITATIONS: <untested integrations, missing inputs, or none>
 NEXT_STEP: <developer fix and re-review, QA test fix, or proof and feature PR>
 ```
 
-**PASSED** means every applicable criterion is verified, targeted and full runs are clean, test
+**PASSED** means every applicable criterion is verified, targeted and relevant unit checks are clean, test
 changes passed review, tested revisions are unchanged, and the required Automation PR exists.
 No unchecked requirement may hide behind the word "passed".
 
@@ -176,7 +181,7 @@ Check every item and return **FAILED** for each unmet item:
 5. **Quality:** Automation formatter, typecheck, and code review pass for the submitted test diff.
 6. **Isolation:** database and identities are disposable; generated evidence/auth data is outside
    workspaces; no production credentials or files are accessed.
-7. **Execution:** targeted and full regression commands completed successfully without unexpected,
+7. **Execution:** targeted QA and relevant unit commands completed successfully without unexpected,
    skipped-required, or flaky failures; counts and commands are recorded, not inferred.
 8. **Identity:** app and Automation refs/fingerprints before and after match the report; otherwise
    invalidate it and rerun against the new revisions.
