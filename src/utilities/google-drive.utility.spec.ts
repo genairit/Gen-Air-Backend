@@ -2,6 +2,7 @@ import {
   toDriveItem,
   buildChildrenQuery,
   isDriveNotFoundError,
+  buildProjectFolderQuery,
   buildChildrenOfAnyQuery,
   buildChildFolderByNameQuery,
 } from './google-drive.utility';
@@ -19,6 +20,19 @@ describe('Drive queries', () => {
     expect(buildChildrenOfAnyQuery(['a1', "b'2"])).toBe(
       "('a1' in parents or 'b\\'2' in parents) and trashed = false",
     );
+  });
+
+  it('finds only live project folders by stable identity within the configured root', () => {
+    expect(buildProjectFolderQuery('project-1', 'root')).toBe(
+      "'root' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder' and appProperties has { key='genairProjectId' and value='project-1' }",
+    );
+  });
+
+  it('escapes project identities and root ids in property queries', () => {
+    const query = buildProjectFolderQuery("project'1", "root'1");
+
+    expect(query).toContain(String.raw`'root\'1' in parents`);
+    expect(query).toContain(String.raw`value='project\'1'`);
   });
 
   it('escapes quotes and backslashes in folder names', () => {

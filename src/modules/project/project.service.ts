@@ -168,16 +168,7 @@ export class ProjectService {
       { members: project.members, creator },
     );
 
-    const projectCreated: IProjectCreatedEvent = {
-      projectId: createdProjectId,
-    };
-
-    await this.eventEmitter.emitAsync(
-      DOMAIN_EVENTS.PROJECT_CREATED,
-      projectCreated,
-    );
-
-    return this.getById(createdProjectId);
+    return this.completeProjectCreation(createdProjectId);
   }
 
   async createApartment(
@@ -203,7 +194,7 @@ export class ProjectService {
       creator,
     });
 
-    return this.getById(apartmentId);
+    return this.completeProjectCreation(apartmentId);
   }
 
   async getApartments(
@@ -302,6 +293,15 @@ export class ProjectService {
     if (!isDeleted) {
       throw new NotFoundException(`Project ${id} was not found`);
     }
+  }
+
+  private async completeProjectCreation(projectId: string): Promise<IProject> {
+    const projectCreated: IProjectCreatedEvent = { projectId };
+    await this.eventEmitter.emitAsync(
+      DOMAIN_EVENTS.PROJECT_CREATED,
+      projectCreated,
+    );
+    return this.getById(projectId);
   }
 
   private async getStoredById(id: string): Promise<IProject> {

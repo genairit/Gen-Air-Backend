@@ -1,5 +1,6 @@
 export const GOOGLE_DRIVE = {
   PAGE_SIZE: 1000,
+  PROJECT_PROPERTY: 'genairProjectId',
   PARENTS_PER_QUERY: 40,
   ORDER_BY: 'folder,name',
   TREE_FIELDS: 'id, mimeType, parents',
