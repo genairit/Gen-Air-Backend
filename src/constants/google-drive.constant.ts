@@ -1,5 +1,7 @@
 export const GOOGLE_DRIVE = {
   PAGE_SIZE: 1000,
+  FILE_METADATA_FIELDS: 'id,mimeType,parents,trashed',
+  SHORTCUT_MIME_TYPE: 'application/vnd.google-apps.shortcut',
   PROJECT_PROPERTY: 'genairProjectId',
   PARENTS_PER_QUERY: 40,
   ORDER_BY: 'folder,name',

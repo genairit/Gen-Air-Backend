@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  NotFoundException,
   BadGatewayException,
   BadRequestException,
   ServiceUnavailableException,
@@ -16,7 +17,9 @@ import { Test } from '@nestjs/testing';
 import { Readable } from 'node:stream';
 import { mkdtemp, writeFile, access } from 'node:fs/promises';
 import { ProjectDriveService } from './project-drive.service';
+import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { ProjectService } from '@Modules/project/project.service';
+import { IDriveFileMetadata } from '@Interfaces/google-drive.interface';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
 import { DriveTemplateFolderService } from '@Modules/drive-template-folder/drive-template-folder.service';
 
@@ -48,6 +51,16 @@ const createService = async () => {
     ensureFolder: jest.fn((name: string) => Promise.resolve(`id:${name}`)),
     findParentIds: jest.fn().mockResolvedValue([]),
     listChildren: jest.fn().mockResolvedValue([]),
+    getFileMetadata: jest.fn((id: string): Promise<IDriveFileMetadata | null> =>
+      Promise.resolve({
+        id,
+        mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+        parents: [],
+        trashed: false,
+      }),
+    ),
+    moveFile: jest.fn(async (): Promise<void> => {}),
+    trashFile: jest.fn(async (): Promise<void> => {}),
     countDescendantFiles: jest.fn().mockResolvedValue(new Map()),
     uploadFile: jest.fn().mockResolvedValue({ id: 'uploaded' }),
   };
@@ -596,5 +609,253 @@ describe('ProjectDriveService.upload', () => {
     expect(projectService.getById).not.toHaveBeenCalled();
     await expect(access(good)).rejects.toThrow();
     await expect(access(bad)).rejects.toThrow();
+  });
+});
+
+describe('ProjectDriveService file management', () => {
+  const fileId = 'plan-file';
+  const sourceFolderId = 'source-folder';
+  const destinationFolderId = 'destination-folder';
+  const createFileService = async () => {
+    const context = await createService();
+    context.projectService.getById.mockResolvedValue({
+      ...PROJECT,
+      driveFolderId: PROJECT_FOLDER_ID,
+    });
+    context.googleDriveService.getFileMetadata.mockImplementation(
+      async (id: string) => ({
+        id,
+        trashed: false,
+        mimeType:
+          id === fileId ? 'application/pdf' : GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+        parents: id === fileId ? [sourceFolderId] : [PROJECT_FOLDER_ID],
+      }),
+    );
+    context.googleDriveService.findParentIds.mockImplementation(
+      async (id: string) =>
+        id === sourceFolderId || id === destinationFolderId
+          ? [PROJECT_FOLDER_ID]
+          : [],
+    );
+    return context;
+  };
+
+  it('moves a project file between validated nested folders', async () => {
+    const { service, googleDriveService } = await createFileService();
+
+    await service.moveFile(PROJECT.id, fileId, {
+      folderId: destinationFolderId,
+    });
+
+    expect(googleDriveService.moveFile).toHaveBeenCalledWith({
+      fileId,
+      parentIds: [sourceFolderId],
+      destinationFolderId,
+    });
+    expect(googleDriveService.trashFile).not.toHaveBeenCalled();
+  });
+
+  it('moves a nested file back to the project root when no folder is supplied', async () => {
+    const { service, googleDriveService } = await createFileService();
+
+    await service.moveFile(PROJECT.id, fileId, {});
+
+    expect(googleDriveService.moveFile).toHaveBeenCalledWith({
+      fileId,
+      parentIds: [sourceFolderId],
+      destinationFolderId: PROJECT_FOLDER_ID,
+    });
+  });
+
+  it('does not mutate a file already in its destination folder', async () => {
+    const { service, googleDriveService } = await createFileService();
+
+    await service.moveFile(PROJECT.id, fileId, { folderId: sourceFolderId });
+
+    expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+  });
+
+  it('trashes a file only after verifying its project scope', async () => {
+    const { service, googleDriveService } = await createFileService();
+
+    await service.trashFile(PROJECT.id, fileId);
+
+    expect(googleDriveService.trashFile).toHaveBeenCalledWith(fileId);
+    expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing', null],
+    [
+      'trashed',
+      { mimeType: 'application/pdf', trashed: true, parents: [sourceFolderId] },
+    ],
+    [
+      'folder',
+      {
+        mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+        trashed: false,
+        parents: [sourceFolderId],
+      },
+    ],
+    [
+      'shortcut',
+      {
+        mimeType: 'application/vnd.google-apps.shortcut',
+        trashed: false,
+        parents: [sourceFolderId],
+      },
+    ],
+    [
+      'unparented',
+      { mimeType: 'application/pdf', trashed: false, parents: [] },
+    ],
+    [
+      'foreign',
+      {
+        mimeType: 'application/pdf',
+        trashed: false,
+        parents: ['foreign-folder'],
+      },
+    ],
+    [
+      'mixed project parents',
+      {
+        mimeType: 'application/pdf',
+        trashed: false,
+        parents: [sourceFolderId, 'foreign-folder'],
+      },
+    ],
+  ])('rejects a %s source before either operation', async (_name, metadata) => {
+    const { service, googleDriveService } = await createFileService();
+    const defaultMetadata =
+      googleDriveService.getFileMetadata.getMockImplementation()!;
+    googleDriveService.getFileMetadata.mockImplementation(async (id: string) =>
+      id === fileId ? metadata && { id, ...metadata } : defaultMetadata(id),
+    );
+
+    const expectedError =
+      !metadata || metadata.trashed ? NotFoundException : BadRequestException;
+    await expect(service.moveFile(PROJECT.id, fileId, {})).rejects.toThrow(
+      expectedError,
+    );
+    await expect(service.trashFile(PROJECT.id, fileId)).rejects.toThrow(
+      expectedError,
+    );
+
+    expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+    expect(googleDriveService.trashFile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing', null],
+    ['trashed', { mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE, trashed: true }],
+    ['file', { mimeType: 'application/pdf', trashed: false }],
+    [
+      'shortcut',
+      { mimeType: 'application/vnd.google-apps.shortcut', trashed: false },
+    ],
+  ])('rejects a %s destination before moving', async (_name, metadata) => {
+    const { service, googleDriveService } = await createFileService();
+    const defaultMetadata =
+      googleDriveService.getFileMetadata.getMockImplementation()!;
+    googleDriveService.getFileMetadata.mockImplementation(async (id: string) =>
+      id === destinationFolderId
+        ? metadata && { id, parents: [PROJECT_FOLDER_ID], ...metadata }
+        : defaultMetadata(id),
+    );
+
+    await expect(
+      service.moveFile(PROJECT.id, fileId, { folderId: destinationFolderId }),
+    ).rejects.toThrow(
+      !metadata || metadata.trashed ? NotFoundException : BadRequestException,
+    );
+
+    expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+  });
+
+  it('rejects a foreign destination without moving the valid source', async () => {
+    const { service, googleDriveService } = await createFileService();
+
+    await expect(
+      service.moveFile(PROJECT.id, fileId, { folderId: 'foreign-folder' }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+  });
+
+  it.each(['moveFile', 'trashFile'] as const)(
+    'does not mutate through %s when Drive is unconfigured or the project is unprovisioned',
+    async (operation) => {
+      const { service, googleDriveService, projectService } =
+        await createFileService();
+      googleDriveService.isConfigured.mockReturnValue(false);
+      const mutate = () =>
+        operation === 'moveFile'
+          ? service.moveFile(PROJECT.id, fileId, {})
+          : service.trashFile(PROJECT.id, fileId);
+
+      await expect(mutate()).rejects.toThrow(ServiceUnavailableException);
+      googleDriveService.isConfigured.mockReturnValue(true);
+      projectService.getById.mockResolvedValue(PROJECT);
+      await expect(mutate()).rejects.toThrow(ConflictException);
+
+      expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+      expect(googleDriveService.trashFile).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['moveFile', 'trashFile'] as const)(
+    'reports %s provider failures as a bad gateway',
+    async (operation) => {
+      const { service, googleDriveService } = await createFileService();
+      googleDriveService[operation].mockRejectedValue(
+        new Error('Drive unavailable'),
+      );
+      const mutation =
+        operation === 'moveFile'
+          ? service.moveFile(PROJECT.id, fileId, {})
+          : service.trashFile(PROJECT.id, fileId);
+
+      await expect(mutation).rejects.toThrow(BadGatewayException);
+    },
+  );
+
+  it.each(['moveFile', 'trashFile'] as const)(
+    'rejects %s when the linked project root is trashed',
+    async (operation) => {
+      const { service, googleDriveService } = await createFileService();
+      const defaultMetadata =
+        googleDriveService.getFileMetadata.getMockImplementation()!;
+      googleDriveService.getFileMetadata.mockImplementation(
+        async (id: string) =>
+          id === PROJECT_FOLDER_ID
+            ? {
+                id,
+                parents: [],
+                trashed: true,
+                mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+              }
+            : defaultMetadata(id),
+      );
+      const mutation =
+        operation === 'moveFile'
+          ? service.moveFile(PROJECT.id, fileId, {})
+          : service.trashFile(PROJECT.id, fileId);
+
+      await expect(mutation).rejects.toThrow(NotFoundException);
+      expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+      expect(googleDriveService.trashFile).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a source whose parent is unavailable or trashed', async () => {
+    const { service, googleDriveService } = await createFileService();
+    googleDriveService.findParentIds.mockResolvedValue(null);
+
+    await expect(service.trashFile(PROJECT.id, fileId)).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(googleDriveService.trashFile).not.toHaveBeenCalled();
   });
 });

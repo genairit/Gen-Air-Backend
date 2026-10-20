@@ -27,3 +27,16 @@ export interface IDriveTreeLevel {
 export interface IDriveTreeWalk extends IDriveTreeLevel {
   depthLeft: number;
 }
+
+export interface IDriveFileMetadata {
+  id: string;
+  trashed: boolean;
+  mimeType: string;
+  parents: string[];
+}
+
+export interface IDriveFileMove {
+  fileId: string;
+  parentIds: string[];
+  destinationFolderId: string;
+}
