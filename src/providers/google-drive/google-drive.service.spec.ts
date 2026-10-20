@@ -8,8 +8,12 @@ import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { EnvironmentManager } from '@Utilities/environment-manager.utility';
 
 const mockGet = jest.fn();
+const mockList = jest.fn();
+const mockCreate = jest.fn();
 jest.mock('@googleapis/drive', () => ({
-  drive: () => ({ files: { get: mockGet } }),
+  drive: () => ({
+    files: { get: mockGet, list: mockList, create: mockCreate },
+  }),
   auth: { GoogleAuth: jest.fn() },
 }));
 const folder = {
@@ -122,5 +126,94 @@ describe('Google Drive read-only readiness', () => {
     expect((await new GoogleDriveService().checkConnection()).status).toBe(
       'unavailable',
     );
+  });
+});
+
+describe('Google Drive project folder identity', () => {
+  beforeEach(() => {
+    mockList.mockReset();
+    mockCreate.mockReset();
+  });
+
+  it('reuses the marked project folder after its display name changes', async () => {
+    const existingFolder = {
+      id: 'project-folder',
+      name: 'Original project name',
+      mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+    };
+    mockList
+      .mockResolvedValueOnce({ data: { files: [] } })
+      .mockResolvedValueOnce({ data: { files: [{ id: existingFolder.id }] } });
+    mockCreate.mockResolvedValue({ data: existingFolder });
+    const service = new GoogleDriveService();
+
+    await expect(
+      service.ensureFolder('Original project name', 'root', 'project-1'),
+    ).resolves.toBe(existingFolder.id);
+    await expect(
+      service.ensureFolder('Renamed project', 'root', 'project-1'),
+    ).resolves.toBe(existingFolder.id);
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody: expect.objectContaining({
+          name: 'Original project name',
+          parents: ['root'],
+          appProperties: { genairProjectId: 'project-1' },
+        }),
+      }),
+    );
+    const firstQuery = mockList.mock.calls[0][0].q;
+    const retryQuery = mockList.mock.calls[1][0].q;
+    expect(retryQuery).toBe(firstQuery);
+    expect(retryQuery).toContain("'root' in parents");
+    expect(retryQuery).toContain(
+      "appProperties has { key='genairProjectId' and value='project-1' }",
+    );
+    expect(retryQuery).not.toContain('name =');
+  });
+
+  it('keeps template folders matched by name without project metadata', async () => {
+    mockList.mockResolvedValue({ data: { files: [] } });
+    mockCreate.mockResolvedValue({
+      data: {
+        id: 'template-folder',
+        name: 'CAD',
+        mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+      },
+    });
+
+    await expect(
+      new GoogleDriveService().ensureFolder('CAD', 'project-folder'),
+    ).resolves.toBe('template-folder');
+
+    expect(mockList).toHaveBeenCalledWith(
+      expect.objectContaining({ q: expect.stringContaining("name = 'CAD'") }),
+    );
+    expect(mockCreate.mock.calls[0][0].requestBody.appProperties).toBeFalsy();
+  });
+
+  it('propagates failed folder creation so the project remains retryable', async () => {
+    mockList.mockResolvedValue({ data: { files: [] } });
+    mockCreate
+      .mockRejectedValueOnce(new Error('Drive unavailable'))
+      .mockResolvedValueOnce({
+        data: {
+          id: 'recovered-folder',
+          name: 'New name',
+          mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+        },
+      });
+    const service = new GoogleDriveService();
+
+    await expect(
+      service.ensureFolder('Old name', 'root', 'project-1'),
+    ).rejects.toThrow('Drive unavailable');
+    await expect(
+      service.ensureFolder('New name', 'root', 'project-1'),
+    ).resolves.toBe('recovered-folder');
+
+    expect(mockList.mock.calls[0][0].q).toBe(mockList.mock.calls[1][0].q);
   });
 });
