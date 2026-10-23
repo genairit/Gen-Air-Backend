@@ -182,6 +182,48 @@ describe('Google Drive project folder identity', () => {
     expect(retryQuery).not.toContain('name =');
   });
 
+  it('creates separate folders for projects with the same display name', async () => {
+    const name = 'בדיקת פרויקט ראשונה';
+    mockList.mockResolvedValue({ data: { files: [] } });
+    mockCreate
+      .mockResolvedValueOnce({
+        data: { id: 'folder-1', name, mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE },
+      })
+      .mockResolvedValueOnce({
+        data: { id: 'folder-2', name, mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE },
+      });
+    const service = new GoogleDriveService();
+
+    await expect(service.ensureFolder(name, 'root', 'project-1')).resolves.toBe(
+      'folder-1',
+    );
+    await expect(service.ensureFolder(name, 'root', 'project-2')).resolves.toBe(
+      'folder-2',
+    );
+
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockCreate).toHaveBeenNthCalledWith(1, {
+      supportsAllDrives: true,
+      fields: GOOGLE_DRIVE.ITEM_FIELDS,
+      requestBody: {
+        name,
+        parents: ['root'],
+        appProperties: { genairProjectId: 'project-1' },
+        mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+      },
+    });
+    expect(mockCreate).toHaveBeenNthCalledWith(2, {
+      supportsAllDrives: true,
+      fields: GOOGLE_DRIVE.ITEM_FIELDS,
+      requestBody: {
+        name,
+        parents: ['root'],
+        appProperties: { genairProjectId: 'project-2' },
+        mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+      },
+    });
+  });
+
   it('keeps template folders matched by name without project metadata', async () => {
     mockList.mockResolvedValue({ data: { files: [] } });
     mockCreate.mockResolvedValue({
