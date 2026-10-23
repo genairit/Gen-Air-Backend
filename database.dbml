@@ -198,8 +198,8 @@ Enum task_status {
 
 Table tasks {
   id            uuid           [pk, default: `gen_random_uuid()`]
-  project_id    uuid           [not null]
-  customer_id   uuid           [not null]
+  project_id    uuid           [note: 'Set for project tasks; a project task reads its customer through the project']
+  customer_id   uuid           [note: 'Set for customer tasks; legacy project tasks may also keep it. chk_tasks_has_link: project_id or customer_id is not null']
   assignee_id   uuid           [note: 'Nullable until a manager assigns the task']
   created_by_id uuid           [not null]
   title         varchar(200)   [not null, note: 'Must contain non-whitespace text']
@@ -216,6 +216,7 @@ Table tasks {
   indexes {
     (assignee_id, status) [name: 'idx_tasks_assignee_id_status', note: 'Partial index: WHERE deleted_at IS NULL']
     project_id [name: 'idx_tasks_project_id', note: 'Partial index: WHERE deleted_at IS NULL']
+    customer_id [name: 'idx_tasks_customer_id', note: 'Partial index: WHERE deleted_at IS NULL']
     (is_urgent, due_date, id) [name: 'idx_tasks_urgency_due_date', note: 'Urgency DESC, due date ASC NULLS LAST, id ASC; active rows only']
   }
 }

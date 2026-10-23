@@ -8,11 +8,19 @@ import {
 
 import {
   ITask,
+  TTaskLink,
   ITaskCounts,
   ITaskFilter,
+  TTaskLinkInput,
   ITaskUrgentEvent,
   TTaskUpdateAttributes,
 } from './interfaces/task.interface';
+
+import {
+  toTaskLink,
+  isTaskLinkRequested,
+  resolveTaskCustomerId,
+} from './utilities/task-link.utility';
 
 import { Transaction } from 'sequelize';
 import { TaskRepository } from './task.repository';
@@ -119,18 +127,18 @@ export class TaskService {
     this.assertManager(creator);
     this.assertDueDateNotPast(input.dueDate);
 
-    await this.validateRelations(
-      input.projectId,
-      input.customerId,
-      input.assigneeId ?? null,
-    );
+    const link = this.requireTaskLink(input);
+
+    await Promise.all([
+      this.assertLinkExists(link),
+      this.assertAssignableEngineer(input.assigneeId ?? null),
+    ]);
 
     const createdId = await this.transactions.run(async (transaction) => {
       const created = await this.taskRepository.create(
         {
           title: input.title.trim(),
-          projectId: input.projectId,
-          customerId: input.customerId,
+          ...link,
           createdById: creator.id,
           assigneeId: input.assigneeId ?? null,
           description: input.description.trim(),
@@ -158,18 +166,19 @@ export class TaskService {
   async update(id: string, input: UpdateTaskDto, user: IUser): Promise<ITask> {
     this.assertManager(user);
     this.assertDueDateNotPast(input.dueDate ?? null);
+    const link = isTaskLinkRequested(input)
+      ? this.requireTaskLink(input)
+      : null;
 
     return this.transactions.run(async (transaction) => {
       const task = await this.requireTask(id, transaction);
-      await this.validateRelations(
-        input.projectId ?? task.projectId,
-        input.customerId ?? task.customerId,
-        findChangedAssigneeId(task, input),
-      );
+      await Promise.all([
+        this.assertLinkExists(link),
+        this.assertAssignableEngineer(findChangedAssigneeId(task, input)),
+      ]);
       const attributes: TTaskUpdateAttributes = {
         ...('title' in input && { title: input.title?.trim() }),
-        ...('projectId' in input && { projectId: input.projectId }),
-        ...('customerId' in input && { customerId: input.customerId }),
+        ...link,
         ...('assigneeId' in input && { assigneeId: input.assigneeId ?? null }),
         ...(input.description && { description: input.description.trim() }),
         ...(input.dueDate && { dueDate: new Date(input.dueDate) }),
@@ -241,7 +250,7 @@ export class TaskService {
       const event: ITaskUrgentEvent = {
         taskId: result.task.id,
         projectId: result.task.projectId,
-        customerId: result.task.customerId,
+        customerId: resolveTaskCustomerId(result.task),
         assigneeId: result.task.assigneeId,
         changedById: user.id,
       };
@@ -304,20 +313,26 @@ export class TaskService {
     }
   }
 
-  private async validateRelations(
-    projectId: string,
-    customerId: string,
-    assigneeId: string | null,
-  ): Promise<void> {
-    const [project] = await Promise.all([
-      this.projectService.getById(projectId),
-      this.customerService.getById(customerId),
-      this.assertAssignableEngineer(assigneeId),
-    ]);
-    if (project.customerId && project.customerId !== customerId) {
+  private requireTaskLink(input: TTaskLinkInput): TTaskLink {
+    const link = toTaskLink(input);
+
+    if (!link) {
       throw new BadRequestException(
-        'Task customer must match the project customer',
+        'A task must be linked to exactly one of a project or a customer',
       );
+    }
+
+    return link;
+  }
+
+  private async assertLinkExists(link: TTaskLink | null): Promise<void> {
+    if (link?.projectId) {
+      await this.projectService.getById(link.projectId);
+      return;
+    }
+
+    if (link?.customerId) {
+      await this.customerService.getById(link.customerId);
     }
   }
 

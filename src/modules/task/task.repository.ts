@@ -12,7 +12,9 @@ import {
 
 import {
   TASK_SEARCH_COLUMNS,
+  TASK_COUNT_INCLUDES,
   TASK_DETAIL_INCLUDES,
+  TASK_PROJECT_CUSTOMER_COLUMNS,
 } from './constants/task-include.constant';
 
 import { Injectable } from '@nestjs/common';
@@ -60,6 +62,7 @@ export class TaskRepository {
   async countByFilter(filter: ITaskFilter): Promise<ITaskCountRow[]> {
     const rows = await Task.count({
       where: { [Op.and]: this.buildFilterWhere(filter) },
+      include: TASK_COUNT_INCLUDES,
       group: ['status', 'isUrgent'],
     });
     return rows.flatMap((row) => {
@@ -101,10 +104,23 @@ export class TaskRepository {
       })),
       ...whereWhenPresent(filter.assigneeId, (assigneeId) => ({ assigneeId })),
       ...whereWhenPresent(filter.projectId, (projectId) => ({ projectId })),
-      ...whereWhenPresent(filter.customerId, (customerId) => ({ customerId })),
+      ...whereWhenPresent(filter.customerId, (customerId) =>
+        this.buildCustomerWhere(customerId),
+      ),
       ...whereWhenPresent(filter.status, (status) => ({ status })),
       ...whereWhenPresent(filter.isUrgent, (isUrgent) => ({ isUrgent })),
     ];
+  }
+
+  private buildCustomerWhere(customerId: string): WhereOptions<Task> {
+    return {
+      [Op.or]: [
+        { customerId },
+        ...TASK_PROJECT_CUSTOMER_COLUMNS.map((column) => ({
+          [column]: customerId,
+        })),
+      ],
+    };
   }
 
   private buildSearchWhere(search: string): WhereOptions<Task> {
