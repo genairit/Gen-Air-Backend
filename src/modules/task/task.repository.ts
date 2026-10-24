@@ -12,14 +12,16 @@ import {
 
 import {
   TASK_SEARCH_COLUMNS,
+  TASK_COUNT_INCLUDES,
   TASK_DETAIL_INCLUDES,
+  TASK_CUSTOMER_PRECEDENCE_COLUMNS,
 } from './constants/task-include.constant';
 
 import { Injectable } from '@nestjs/common';
 import { Task } from './entities/task.entity';
-import { Op, Transaction, WhereOptions } from 'sequelize';
 import { TASK_ORDER } from './constants/task-order.constant';
 import { isTaskStatus } from './utilities/task-status.utility';
+import { Op, fn, col, where, Transaction, WhereOptions } from 'sequelize';
 import { ICursorBatch, ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
 
@@ -60,6 +62,7 @@ export class TaskRepository {
   async countByFilter(filter: ITaskFilter): Promise<ITaskCountRow[]> {
     const rows = await Task.count({
       where: { [Op.and]: this.buildFilterWhere(filter) },
+      include: TASK_COUNT_INCLUDES,
       group: ['status', 'isUrgent'],
     });
     return rows.flatMap((row) => {
@@ -101,10 +104,21 @@ export class TaskRepository {
       })),
       ...whereWhenPresent(filter.assigneeId, (assigneeId) => ({ assigneeId })),
       ...whereWhenPresent(filter.projectId, (projectId) => ({ projectId })),
-      ...whereWhenPresent(filter.customerId, (customerId) => ({ customerId })),
+      ...whereWhenPresent(filter.customerId, (customerId) =>
+        this.buildCustomerWhere(customerId),
+      ),
       ...whereWhenPresent(filter.status, (status) => ({ status })),
       ...whereWhenPresent(filter.isUrgent, (isUrgent) => ({ isUrgent })),
     ];
+  }
+
+  private buildCustomerWhere(customerId: string): WhereOptions<Task> {
+    const resolvedCustomerId = fn(
+      'COALESCE',
+      ...TASK_CUSTOMER_PRECEDENCE_COLUMNS.map((column) => col(column)),
+    );
+
+    return where(resolvedCustomerId, customerId);
   }
 
   private buildSearchWhere(search: string): WhereOptions<Task> {

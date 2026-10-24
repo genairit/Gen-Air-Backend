@@ -2,25 +2,33 @@ import { IUser } from '@Modules/user/interfaces/user.interface';
 import { TaskStatusType } from '../constants/task-status.constant';
 import { IProject } from '@Modules/project/interfaces/project.interface';
 import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
+import { TaskProjectAttributeType } from '../constants/task-include.constant';
+import { CustomerReferenceAttributeType } from '@Modules/customer/constants/customer-reference.constant';
 
-export type TTaskProject = Pick<IProject, 'id' | 'code' | 'name'>;
+export type TTaskCustomer = Pick<ICustomer, CustomerReferenceAttributeType>;
 
-export type TTaskCustomer = Pick<ICustomer, 'id' | 'name'>;
+export type TTaskParentProject = Pick<IProject, TaskProjectAttributeType> & {
+  customer?: TTaskCustomer | null;
+};
+
+export type TTaskProject = TTaskParentProject & {
+  parentProject?: TTaskParentProject | null;
+};
 
 export interface ITask {
   id: string;
   title: string;
   createdAt: Date;
   updatedAt: Date;
-  projectId: string;
   isUrgent: boolean;
-  customerId: string;
   createdById: string;
   dueDate: Date | null;
   status: TaskStatusType;
   deletedAt: Date | null;
   assignee?: IUser | null;
+  projectId: string | null;
   createdBy?: IUser | null;
+  customerId: string | null;
   assigneeId: string | null;
   description: string | null;
   urgencyMarkedAt: Date | null;
@@ -59,11 +67,15 @@ export type TTaskUpdateAttributes = Partial<
 >;
 export interface ITaskUrgentEvent {
   taskId: string;
-  projectId: string;
-  customerId: string;
   changedById: string;
+  projectId: string | null;
+  customerId: string | null;
   assigneeId: string | null;
 }
+
+export type TTaskLink = Pick<ITask, 'projectId' | 'customerId'>;
+
+export type TTaskLinkInput = Partial<TTaskLink>;
 
 export type TTaskStatusCounts = Record<TaskStatusType, number>;
 

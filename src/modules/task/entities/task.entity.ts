@@ -47,6 +47,11 @@ import { ITask, TTaskCreationAttributes } from '../interfaces/task.interface';
       fields: ['project_id'],
       where: { deleted_at: null },
     },
+    {
+      name: 'idx_tasks_customer_id',
+      fields: ['customer_id'],
+      where: { deleted_at: null },
+    },
   ],
 })
 export class Task
@@ -60,11 +65,11 @@ export class Task
   @Column({ allowNull: false, type: DataType.STRING(FIELD_LENGTHS.TASK_TITLE) })
   declare title: string;
   @ForeignKey(() => Project)
-  @Column({ allowNull: false, type: DataType.UUID })
-  declare projectId: string;
+  @Column(DataType.UUID)
+  declare projectId: string | null;
   @ForeignKey(() => Customer)
-  @Column({ allowNull: false, type: DataType.UUID })
-  declare customerId: string;
+  @Column(DataType.UUID)
+  declare customerId: string | null;
   @ForeignKey(() => User)
   @Column({ allowNull: false, type: DataType.UUID })
   declare createdById: string;
