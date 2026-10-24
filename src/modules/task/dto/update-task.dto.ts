@@ -11,12 +11,12 @@ import {
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 
 export class UpdateTaskDto {
-  @ValidateIf((object) => 'projectId' in object)
+  @IsOptional()
   @IsUUID()
-  declare projectId?: string;
-  @ValidateIf((object) => 'customerId' in object)
+  declare projectId?: string | null;
+  @IsOptional()
   @IsUUID()
-  declare customerId?: string;
+  declare customerId?: string | null;
   @ValidateIf((object) => 'title' in object)
   @IsString()
   @MaxLength(FIELD_LENGTHS.TASK_TITLE)

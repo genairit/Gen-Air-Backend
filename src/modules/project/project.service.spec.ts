@@ -882,14 +882,17 @@ const BUILDING = {
   id: BUILDING_ID,
   code: 'GA-84811',
   projectTypeId: 'type-building',
-  projectType: { name: 'בנייה רוויה', canHaveApartments: true },
+  projectType: {
+    name: 'בנייה רוויה',
+    canHaveApartments: true,
+    detailFieldSet: PROJECT_DETAIL_FIELD_SETS.COMPANY,
+  },
 };
 
 const NEW_APARTMENT = {
-  ...CONTACT,
+  customerId: CUSTOMER_ID,
   customerFloor: 3,
   customerApartment: '12',
-  customerName: 'משפחת כהן',
 };
 
 const STORED_APARTMENT = {
@@ -912,7 +915,11 @@ describe('ProjectService.createApartment', () => {
     const [attributes] = projectRepository.create.mock.calls[0];
 
     expect(attributes).toMatchObject({
-      ...CONTACT,
+      contactName: null,
+      contactPhone: null,
+      contactRole: null,
+      hasOwnTeam: false,
+      customerId: CUSTOMER_ID,
       address: null,
       name: 'דירה 12',
       customerFloor: 3,
@@ -922,7 +929,7 @@ describe('ProjectService.createApartment', () => {
       customerApartment: '12',
       stageId: QUOTE_STAGE_ID,
       customerPhone: null,
-      customerName: 'משפחת כהן',
+      customerName: null,
       parentProjectId: BUILDING_ID,
       projectTypeId: 'type-building',
     });
@@ -982,6 +989,175 @@ describe('ProjectService.createApartment', () => {
       service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
     ).rejects.toThrow(ConflictException);
     expect(projectRepository.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService apartment customer, creation terms and team', () => {
+  it('validates and stores the chosen existing customer', async () => {
+    const { service, projectRepository, customerService } =
+      await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR);
+    expect(customerService.findById).toHaveBeenCalledWith(CUSTOMER_ID);
+    expect(projectRepository.create.mock.calls[0][0].customerId).toBe(
+      CUSTOMER_ID,
+    );
+  });
+
+  it('rejects a missing selected customer before persistence', async () => {
+    const { service, projectRepository, customerService } =
+      await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    customerService.findById.mockResolvedValue(null);
+    await expect(
+      service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
+    ).rejects.toThrow('Customer customer-1 was not found');
+    expect(projectRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a selected customer with failed Priority sync', async () => {
+    const { service, projectRepository, customerService } =
+      await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    customerService.findById.mockResolvedValue({
+      ...LINKED_CUSTOMER,
+      prioritySyncStatus: 'failed',
+    });
+    await expect(
+      service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
+    ).rejects.toThrow('has not reached Priority yet');
+    expect(projectRepository.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['pending', 'synced'])(
+    'allows a linkable customer with %s sync status',
+    async (prioritySyncStatus) => {
+      const { service, projectRepository, customerService } =
+        await createService();
+      projectRepository.findById.mockResolvedValueOnce(BUILDING);
+      customerService.findById.mockResolvedValue({
+        ...LINKED_CUSTOMER,
+        prioritySyncStatus,
+      });
+      await service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR);
+      expect(projectRepository.create).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('distinguishes inheritance from an explicitly empty own team', async () => {
+    const inherited = await createService();
+    inherited.projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await inherited.service.createApartment(
+      BUILDING_ID,
+      NEW_APARTMENT,
+      CREATOR,
+    );
+    expect(inherited.projectRepository.create.mock.calls[0][0].hasOwnTeam).toBe(
+      false,
+    );
+    const own = await createService();
+    own.projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await own.service.createApartment(
+      BUILDING_ID,
+      { ...NEW_APARTMENT, members: [] },
+      CREATOR,
+    );
+    expect(own.projectRepository.create.mock.calls[0][0].hasOwnTeam).toBe(true);
+    expect(own.projectMemberService.replaceForProject).toHaveBeenCalledWith(
+      PROJECT_ID,
+      [],
+      TRANSACTION,
+    );
+  });
+
+  it('persists a creation-time team override and validates its assignments', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    const members = [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }];
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await service.createApartment(
+      BUILDING_ID,
+      { ...NEW_APARTMENT, members },
+      CREATOR,
+    );
+    expect(projectMemberService.validateAssignments).toHaveBeenCalledWith(
+      members,
+    );
+    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+      PROJECT_ID,
+      members,
+      TRANSACTION,
+    );
+    expect(projectRepository.create.mock.calls[0][0].hasOwnTeam).toBe(true);
+  });
+
+  it('stores valid creation payment terms without changing the building', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await service.createApartment(
+      BUILDING_ID,
+      {
+        ...NEW_APARTMENT,
+        paymentTerms: PAYMENT_TERMS.OTHER,
+        paymentTermsNote: 'תשלום מלא במסירה',
+      },
+      CREATOR,
+    );
+    expect(projectRepository.create.mock.calls[0][0]).toMatchObject({
+      paymentTerms: PAYMENT_TERMS.OTHER,
+      paymentTermsNote: 'תשלום מלא במסירה',
+    });
+    expect(projectRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects creation payment terms not allowed for the building type', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await expect(
+      service.createApartment(
+        BUILDING_ID,
+        { ...NEW_APARTMENT, paymentTerms: PAYMENT_TERMS.PREPAID },
+        CREATOR,
+      ),
+    ).rejects.toThrow('not available for this project type');
+    expect(projectRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('requires a note for custom creation payment terms', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await expect(
+      service.createApartment(
+        BUILDING_ID,
+        { ...NEW_APARTMENT, paymentTerms: PAYMENT_TERMS.OTHER },
+        CREATOR,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(projectRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a creation terms note without an override', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await expect(
+      service.createApartment(
+        BUILDING_ID,
+        { ...NEW_APARTMENT, paymentTermsNote: 'הערה ללא תנאים' },
+        CREATOR,
+      ),
+    ).rejects.toThrow('Choose payment terms');
+    expect(projectRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('reports the duplicate apartment number with the Hebrew design message', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    projectRepository.findLiveApartmentByNumber.mockResolvedValue({
+      code: 'old-apartment',
+    });
+    await expect(
+      service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
+    ).rejects.toThrow('דירה 12 כבר קיימת בבניין');
   });
 });
 
@@ -1313,14 +1489,10 @@ describe('ProjectService.getApartmentStageCounts', () => {
 });
 
 describe('ProjectService apartment contact', () => {
-  it('creates an apartment whose contact has no role', async () => {
+  it('creates a linked apartment without persisting duplicated contact text', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.findById.mockResolvedValueOnce(BUILDING);
-    await service.createApartment(
-      BUILDING_ID,
-      { ...NEW_APARTMENT, contactRole: null },
-      CREATOR,
-    );
+    await service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR);
 
     expect(projectRepository.create.mock.calls[0][0].contactRole).toBeNull();
   });
@@ -1333,4 +1505,110 @@ describe('ProjectService apartment contact', () => {
       service.update(STORED_APARTMENT.id, { contactPhone: null }, CREATOR),
     ).rejects.toThrow('contactPhone');
   });
+});
+
+describe('ProjectService apartment team changes', () => {
+  it('starts an own team when members are assigned', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    const members = [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }];
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    await service.update(STORED_APARTMENT.id, { members }, CREATOR);
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      hasOwnTeam: true,
+    });
+    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+      STORED_APARTMENT.id,
+      members,
+      TRANSACTION,
+    );
+  });
+
+  it('keeps an explicitly empty own team distinct from inheritance', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    await service.update(
+      STORED_APARTMENT.id,
+      { hasOwnTeam: true, members: [] },
+      CREATOR,
+    );
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      hasOwnTeam: true,
+    });
+    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+      STORED_APARTMENT.id,
+      [],
+      TRANSACTION,
+    );
+  });
+
+  it('clears stored members when returning to the building team', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...STORED_APARTMENT,
+      hasOwnTeam: true,
+    });
+    await service.update(STORED_APARTMENT.id, { hasOwnTeam: false }, CREATOR);
+    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
+      hasOwnTeam: false,
+    });
+    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+      STORED_APARTMENT.id,
+      [],
+      TRANSACTION,
+    );
+  });
+
+  it('rejects conflicting inherited-team and own-member changes atomically', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    await expect(
+      service.update(
+        STORED_APARTMENT.id,
+        {
+          hasOwnTeam: false,
+          members: [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }],
+        },
+        CREATOR,
+      ),
+    ).rejects.toThrow('cannot also provide its own members');
+    expect(projectRepository.update).not.toHaveBeenCalled();
+    expect(projectMemberService.replaceForProject).not.toHaveBeenCalled();
+  });
+
+  it('does not replace the team when only apartment notes change', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    await service.update(STORED_APARTMENT.id, { notes: 'הערה לדירה' }, CREATOR);
+    expect(projectRepository.update.mock.calls[0][1]).not.toHaveProperty(
+      'hasOwnTeam',
+    );
+    expect(projectMemberService.replaceForProject).not.toHaveBeenCalled();
+  });
+
+  it('rejects inheritance changes on a standalone project', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    await expect(
+      service.update(PROJECT_ID, { hasOwnTeam: false }, CREATOR),
+    ).rejects.toThrow('only be changed for apartments');
+    expect(projectRepository.update).not.toHaveBeenCalled();
+    expect(projectMemberService.replaceForProject).not.toHaveBeenCalled();
+  });
+
+  it.each(['א24', '24/1', '24אב'])(
+    'rejects malformed updated apartment number %s',
+    async (customerApartment) => {
+      const { service, projectRepository } = await createService();
+      projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+      await expect(
+        service.update(STORED_APARTMENT.id, { customerApartment }, CREATOR),
+      ).rejects.toThrow('Apartment number must be digits');
+      expect(projectRepository.update).not.toHaveBeenCalled();
+    },
+  );
 });

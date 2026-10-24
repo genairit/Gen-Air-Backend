@@ -20,6 +20,7 @@ export const renderDriveFolderName = (
   project: TProjectNaming,
 ): string =>
   Object.entries(TAG_RESOLVERS).reduce(
-    (name, [tag, resolveTag]) => name.replaceAll(tag, resolveTag(project)),
+    (name, [tag, resolveTag]) =>
+      name.replaceAll(tag, () => resolveTag(project)),
     template,
   );

@@ -2,6 +2,7 @@ import {
   IsUUID,
   IsArray,
   IsString,
+  IsBoolean,
   MaxLength,
   IsNotEmpty,
   IsOptional,
@@ -42,6 +43,10 @@ export class UpdateProjectDto extends IntersectionType(
   @IsOptional()
   @IsUUID()
   declare stageId?: string;
+
+  @ValidateIf((changes: object) => 'hasOwnTeam' in changes)
+  @IsBoolean()
+  declare hasOwnTeam?: boolean;
 
   @IsOptional()
   @IsArray()

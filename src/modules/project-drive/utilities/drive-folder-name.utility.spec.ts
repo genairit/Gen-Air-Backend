@@ -4,9 +4,9 @@ import { PROJECT_ROOT_FOLDER_NAME } from '../constants/project-drive.constant';
 const PROJECT = { code: 'אכ-48213', name: 'מגדל פארק בבלי C' };
 
 describe('renderDriveFolderName', () => {
-  it('names the project root folder from its code and name', () => {
+  it('names the project root folder from only its name', () => {
     expect(renderDriveFolderName(PROJECT_ROOT_FOLDER_NAME, PROJECT)).toBe(
-      'אכ-48213_מגדל פארק בבלי C',
+      'מגדל פארק בבלי C',
     );
   });
 
