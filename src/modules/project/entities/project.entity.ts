@@ -98,6 +98,10 @@ export class Project
   @Column(DataType.UUID)
   declare parentProjectId: string | null;
 
+  @Default(false)
+  @Column({ allowNull: false, type: DataType.BOOLEAN })
+  declare hasOwnTeam: boolean;
+
   @Column(DataType.STRING(FIELD_LENGTHS.DRIVE_ID))
   declare driveFolderId: string | null;
 
