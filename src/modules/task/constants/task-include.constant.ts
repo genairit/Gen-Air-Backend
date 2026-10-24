@@ -1,17 +1,11 @@
 import { Includeable } from 'sequelize';
 import { User } from '@Modules/user/entities/user.entity';
 import { Project } from '@Modules/project/entities/project.entity';
-import { Customer } from '@Modules/customer/entities/customer.entity';
-import { CUSTOMER_REFERENCE_ATTRIBUTES } from '@Modules/customer/constants/customer-reference.constant';
+import { buildCustomerReferenceInclude } from '@Modules/customer/constants/customer-reference.constant';
 
-const TASK_PROJECT_ATTRIBUTES = ['id', 'code', 'name'];
+export const TASK_PROJECT_ATTRIBUTES = ['id', 'code', 'name'] as const;
 
-// Sequelize normalizes include objects in place, so each nesting level needs its own instance.
-const buildCustomerInclude = (): Includeable => ({
-  model: Customer,
-  paranoid: false,
-  attributes: CUSTOMER_REFERENCE_ATTRIBUTES,
-});
+export type TaskProjectAttributeType = (typeof TASK_PROJECT_ATTRIBUTES)[number];
 
 export const TASK_DETAIL_INCLUDES: Includeable[] = [
   { model: User, as: 'assignee', paranoid: false },
@@ -20,24 +14,25 @@ export const TASK_DETAIL_INCLUDES: Includeable[] = [
   {
     model: Project,
     paranoid: false,
-    attributes: TASK_PROJECT_ATTRIBUTES,
+    attributes: [...TASK_PROJECT_ATTRIBUTES],
     include: [
-      buildCustomerInclude(),
+      buildCustomerReferenceInclude(),
       {
         model: Project,
         paranoid: false,
         as: 'parentProject',
-        attributes: TASK_PROJECT_ATTRIBUTES,
-        include: [buildCustomerInclude()],
+        attributes: [...TASK_PROJECT_ATTRIBUTES],
+        include: [buildCustomerReferenceInclude()],
       },
     ],
   },
-  buildCustomerInclude(),
+  buildCustomerReferenceInclude(),
 ];
 
-export const TASK_PROJECT_CUSTOMER_COLUMNS = [
-  '$project.customer_id$',
-  '$project.parentProject.customer_id$',
+export const TASK_CUSTOMER_PRECEDENCE_COLUMNS = [
+  'project.customer_id',
+  'project->parentProject.customer_id',
+  'Task.customer_id',
 ] as const;
 
 export const TASK_COUNT_INCLUDES: Includeable[] = [

@@ -33,7 +33,7 @@ import { ProjectType } from '@Modules/project-type/entities/project-type.entity'
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
 import { BUILDING_INHERITANCE_ATTRIBUTES } from './constants/project-inheritance.constant';
-import { CUSTOMER_REFERENCE_ATTRIBUTES } from '@Modules/customer/constants/customer-reference.constant';
+import { buildCustomerReferenceInclude } from '@Modules/customer/constants/customer-reference.constant';
 
 @Injectable()
 export class ProjectRepository {
@@ -47,13 +47,7 @@ export class ProjectRepository {
           model: Project,
           as: 'parentProject',
           attributes: BUILDING_INHERITANCE_ATTRIBUTES,
-          include: [
-            {
-              model: Customer,
-              paranoid: false,
-              attributes: CUSTOMER_REFERENCE_ATTRIBUTES,
-            },
-          ],
+          include: [buildCustomerReferenceInclude()],
         },
       ],
     });

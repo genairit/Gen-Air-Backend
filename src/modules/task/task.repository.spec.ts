@@ -3,8 +3,8 @@ import {
   TASK_SEARCH_COLUMNS,
 } from './constants/task-include.constant';
 
-import { Op } from 'sequelize';
 import { Task } from './entities/task.entity';
+import { Op, fn, col, where } from 'sequelize';
 import { TaskRepository } from './task.repository';
 import { ITaskFilter } from './interfaces/task.interface';
 
@@ -18,20 +18,22 @@ const EMPTY_FILTER: ITaskFilter = {
   customerId: null,
   unassigned: null,
 };
-const CUSTOMER_WHERE = {
-  [Op.or]: [
-    { customerId: CUSTOMER_ID },
-    { '$project.customer_id$': CUSTOMER_ID },
-    { '$project.parentProject.customer_id$': CUSTOMER_ID },
-  ],
-};
+const CUSTOMER_WHERE = where(
+  fn(
+    'COALESCE',
+    col('project.customer_id'),
+    col('project->parentProject.customer_id'),
+    col('Task.customer_id'),
+  ),
+  CUSTOMER_ID,
+);
 
 describe('task repository link queries', () => {
   const repository = new TaskRepository();
 
   afterEach(() => jest.restoreAllMocks());
 
-  it('matches the customer filter on the task, project or parent building customer', async () => {
+  it('matches the customer filter on the project, then parent building, then task customer', async () => {
     const findAll = jest.spyOn(Task, 'findAll').mockResolvedValue([]);
 
     await repository.findByFilter(

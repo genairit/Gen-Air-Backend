@@ -48,7 +48,7 @@ describe('task link contract', () => {
     expect(resolveTaskCustomerId(projectTask)).toBe(OTHER_CUSTOMER_ID);
     expect(
       resolveTaskCustomerId({ ...projectTask, customerId: CUSTOMER_ID }),
-    ).toBe(CUSTOMER_ID);
+    ).toBe(OTHER_CUSTOMER_ID);
     expect(resolveTaskCustomerId({ customerId: null, project })).toBeNull();
     expect(
       resolveTaskCustomerId({
@@ -57,6 +57,22 @@ describe('task link contract', () => {
           ...project,
           customer: null,
           parentProject: { ...project, customer: projectCustomer },
+        },
+      }),
+    ).toBe(OTHER_CUSTOMER_ID);
+  });
+
+  it('resolves a legacy apartment task through its building, not its stored customer', () => {
+    const project = { id: PROJECT_ID, code: 'P', name: 'P' };
+    const buildingCustomer = { id: OTHER_CUSTOMER_ID, name: 'Owner' };
+
+    expect(
+      resolveTaskCustomerId({
+        customerId: CUSTOMER_ID,
+        project: {
+          ...project,
+          customer: null,
+          parentProject: { ...project, customer: buildingCustomer },
         },
       }),
     ).toBe(OTHER_CUSTOMER_ID);

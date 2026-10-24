@@ -2,10 +2,12 @@ import { IUser } from '@Modules/user/interfaces/user.interface';
 import { TaskStatusType } from '../constants/task-status.constant';
 import { IProject } from '@Modules/project/interfaces/project.interface';
 import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
+import { TaskProjectAttributeType } from '../constants/task-include.constant';
+import { CustomerReferenceAttributeType } from '@Modules/customer/constants/customer-reference.constant';
 
-export type TTaskCustomer = Pick<ICustomer, 'id' | 'name'>;
+export type TTaskCustomer = Pick<ICustomer, CustomerReferenceAttributeType>;
 
-export type TTaskParentProject = Pick<IProject, 'id' | 'code' | 'name'> & {
+export type TTaskParentProject = Pick<IProject, TaskProjectAttributeType> & {
   customer?: TTaskCustomer | null;
 };
 

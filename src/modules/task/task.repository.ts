@@ -14,14 +14,14 @@ import {
   TASK_SEARCH_COLUMNS,
   TASK_COUNT_INCLUDES,
   TASK_DETAIL_INCLUDES,
-  TASK_PROJECT_CUSTOMER_COLUMNS,
+  TASK_CUSTOMER_PRECEDENCE_COLUMNS,
 } from './constants/task-include.constant';
 
 import { Injectable } from '@nestjs/common';
 import { Task } from './entities/task.entity';
-import { Op, Transaction, WhereOptions } from 'sequelize';
 import { TASK_ORDER } from './constants/task-order.constant';
 import { isTaskStatus } from './utilities/task-status.utility';
+import { Op, fn, col, where, Transaction, WhereOptions } from 'sequelize';
 import { ICursorBatch, ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
 
@@ -113,14 +113,12 @@ export class TaskRepository {
   }
 
   private buildCustomerWhere(customerId: string): WhereOptions<Task> {
-    return {
-      [Op.or]: [
-        { customerId },
-        ...TASK_PROJECT_CUSTOMER_COLUMNS.map((column) => ({
-          [column]: customerId,
-        })),
-      ],
-    };
+    const resolvedCustomerId = fn(
+      'COALESCE',
+      ...TASK_CUSTOMER_PRECEDENCE_COLUMNS.map((column) => col(column)),
+    );
+
+    return where(resolvedCustomerId, customerId);
   }
 
   private buildSearchWhere(search: string): WhereOptions<Task> {

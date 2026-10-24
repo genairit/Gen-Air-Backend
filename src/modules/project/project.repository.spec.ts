@@ -1,7 +1,6 @@
 import { Project } from './entities/project.entity';
 import { ProjectRepository } from './project.repository';
-import { Customer } from '@Modules/customer/entities/customer.entity';
-import { CUSTOMER_REFERENCE_ATTRIBUTES } from '@Modules/customer/constants/customer-reference.constant';
+import { buildCustomerReferenceInclude } from '@Modules/customer/constants/customer-reference.constant';
 
 const PROJECT_ID = '00000000-0000-4000-8000-000000000002';
 
@@ -20,13 +19,7 @@ describe('project repository detail query', () => {
     expect(findByPk.mock.calls[0]?.[1]?.include).toContainEqual(
       expect.objectContaining({
         as: 'parentProject',
-        include: [
-          {
-            model: Customer,
-            paranoid: false,
-            attributes: CUSTOMER_REFERENCE_ATTRIBUTES,
-          },
-        ],
+        include: [buildCustomerReferenceInclude()],
       }),
     );
   });
