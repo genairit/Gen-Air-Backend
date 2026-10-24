@@ -14,6 +14,7 @@ export const BUILDING_INHERITANCE_ATTRIBUTES = [
   'code',
   'name',
   'notes',
+  'customerId',
   ...ADDRESS_INHERITED_FIELDS,
   ...PAYMENT_TERMS_INHERITED_FIELDS,
 ];

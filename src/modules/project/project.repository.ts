@@ -47,7 +47,7 @@ export class ProjectRepository {
           model: Project,
           as: 'parentProject',
           attributes: BUILDING_INHERITANCE_ATTRIBUTES,
-          include: [buildCustomerReferenceInclude()],
+          include: [buildCustomerReferenceInclude(), this.buildMemberInclude()],
         },
       ],
     });
@@ -83,6 +83,9 @@ export class ProjectRepository {
     batch: ICursorBatch,
   ): Promise<ICursorPage<IProject>> {
     const direction = batch.direction ?? CURSOR_DIRECTIONS.NEWEST_FIRST;
+    const customerInclude: Includeable = filter.parentProjectId
+      ? { model: Customer, paranoid: false }
+      : CUSTOMER_SEARCH_INCLUDE;
     const rows = await Project.findAll({
       where: {
         [Op.and]: [
@@ -90,7 +93,7 @@ export class ProjectRepository {
           ...buildCursorWhere(batch.batchCursor, direction),
         ],
       },
-      include: [...this.buildCardIncludes(), CUSTOMER_SEARCH_INCLUDE],
+      include: [...this.buildCardIncludes(), customerInclude],
       attributes: { include: [this.buildApartmentCountAttribute()] },
       order: CURSOR_ORDER_BY_DIRECTION[direction],
       limit: batch.batchSize + 1,
@@ -179,12 +182,16 @@ export class ProjectRepository {
     return [
       { model: ProjectType },
       { model: ProjectStage, paranoid: false },
-      {
-        model: ProjectMember,
-        separate: true,
-        include: [{ model: User, paranoid: false }],
-      },
+      this.buildMemberInclude(),
     ];
+  }
+
+  private buildMemberInclude(): Includeable {
+    return {
+      model: ProjectMember,
+      separate: true,
+      include: [{ model: User, paranoid: false }],
+    };
   }
 
   private buildApartmentCountAttribute(): [Literal, string] {

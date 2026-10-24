@@ -27,8 +27,22 @@ export const resolveApartment = <TApartment extends TApartmentInheritanceInput>(
     ? []
     : PAYMENT_TERMS_INHERITED_FIELDS;
 
+  const customerDetails = apartment.customer
+    ? {
+        customerName: apartment.customer.name,
+        customerPhone: apartment.customer.phone,
+        contactName: apartment.customer.contactName,
+        contactPhone: apartment.customer.phone,
+        contactRole: null,
+      }
+    : {};
+
   return {
     ...apartment,
+    ...customerDetails,
+    members: apartment.hasOwnTeam
+      ? (apartment.members ?? [])
+      : (building.members ?? []),
     ...pickPaymentTerms(paymentTermsSource),
     address: building.address,
     parentNotes: building.notes,

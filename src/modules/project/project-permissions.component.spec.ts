@@ -17,6 +17,7 @@ import { INestApplication, UnauthorizedException } from '@nestjs/common';
 
 const PROJECT_ID = '00000000-0000-4000-8000-000000000001';
 const STAGE_ID = '00000000-0000-4000-8000-000000000002';
+const CUSTOMER_ID = '00000000-0000-4000-8000-000000000003';
 
 const PROJECT_EDITORS: UserRoleType[] = [
   USER_ROLES.SECRETARY,
@@ -32,6 +33,7 @@ describe('Project HTTP permission boundaries', () => {
   const server = () => application.app!.getHttpServer();
   const projectService = {
     create: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
+    createApartment: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
     move: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
     update: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
     delete: jest.fn(() => Promise.resolve()),
@@ -128,4 +130,56 @@ describe('Project HTTP permission boundaries', () => {
       expect(projectService.update).not.toHaveBeenCalled();
     },
   );
+
+  it.each(PROJECT_EDITORS)(
+    'lets %s create apartments and change apartment teams',
+    async (role) => {
+      await request(server())
+        .post(`/project/${PROJECT_ID}/apartments`)
+        .auth(role, { type: 'bearer' })
+        .send({
+          customerFloor: 3,
+          customerApartment: '24א',
+          customerId: CUSTOMER_ID,
+        })
+        .expect(201);
+      await request(server())
+        .patch(`/project/${PROJECT_ID}`)
+        .auth(role, { type: 'bearer' })
+        .send({ hasOwnTeam: true, members: [] })
+        .expect(200);
+      expect(projectService.createApartment).toHaveBeenCalledTimes(1);
+      expect(projectService.update).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(rolesExcept(PROJECT_EDITORS))(
+    'denies %s apartment creation and team changes',
+    async (role) => {
+      await request(server())
+        .post(`/project/${PROJECT_ID}/apartments`)
+        .auth(role, { type: 'bearer' })
+        .send({
+          customerFloor: 3,
+          customerApartment: '24א',
+          customerId: CUSTOMER_ID,
+        })
+        .expect(403);
+      await request(server())
+        .patch(`/project/${PROJECT_ID}`)
+        .auth(role, { type: 'bearer' })
+        .send({ hasOwnTeam: false })
+        .expect(403);
+      expect(projectService.createApartment).not.toHaveBeenCalled();
+      expect(projectService.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('requires authentication before apartment creation', async () => {
+    await request(server())
+      .post(`/project/${PROJECT_ID}/apartments`)
+      .send({})
+      .expect(401);
+    expect(projectService.createApartment).not.toHaveBeenCalled();
+  });
 });

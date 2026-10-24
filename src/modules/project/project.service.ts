@@ -181,6 +181,7 @@ export class ProjectService {
       this.getStoredById(buildingId),
       this.projectStageService.getInitialStage(),
       this.projectMemberService.validateAssignments(members),
+      this.assertLinkableCustomer(apartment.customerId),
     ]);
 
     const attributes = await this.projectApartmentService.resolveNewApartment({
@@ -222,7 +223,7 @@ export class ProjectService {
 
       await this.replaceMembersWhenProvided(
         id,
-        changes.members ?? null,
+        changes.hasOwnTeam === false ? [] : (changes.members ?? null),
         transaction,
       );
 
@@ -364,6 +365,12 @@ export class ProjectService {
     project: IProject,
     changes: UpdateProjectDto,
   ): Promise<TProjectUpdateAttributes> {
+    if ('hasOwnTeam' in changes) {
+      throw new BadRequestException(
+        'Team inheritance can only be changed for apartments',
+      );
+    }
+
     const isTypeChanging = isProjectTypeChanging(project, changes);
     const [fieldSet] = await Promise.all([
       this.findTargetFieldSet(project, changes),
