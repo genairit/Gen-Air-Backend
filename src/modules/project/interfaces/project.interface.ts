@@ -72,6 +72,7 @@ export interface IProject extends IProjectCustomerDetails, TProjectIntake {
   createdById: string;
   notes: string | null;
   customer?: ICustomer;
+  hasOwnTeam?: boolean;
   stage?: IProjectStage;
   projectTypeId: string;
   deletedAt: Date | null;
@@ -99,14 +100,21 @@ export type TProjectCreationAttributes = IProjectCustomerDetails &
     IProject,
     'code' | 'name' | 'projectTypeId' | 'stageId' | 'createdById'
   > &
-  Partial<Pick<IProject, 'customerId' | 'parentProjectId' | 'notes'>>;
+  Partial<
+    Pick<IProject, 'customerId' | 'parentProjectId' | 'hasOwnTeam' | 'notes'>
+  >;
 
 export type TProjectUpdateAttributes = Partial<
   IProjectCustomerDetails &
     TProjectIntake &
     Pick<
       IProject,
-      'name' | 'projectTypeId' | 'stageId' | 'customerId' | 'notes'
+      | 'name'
+      | 'projectTypeId'
+      | 'stageId'
+      | 'customerId'
+      | 'hasOwnTeam'
+      | 'notes'
     >
 >;
 
@@ -126,15 +134,20 @@ export type TInheritedProjectField = keyof Pick<
 
 export type TBuildingInheritance = Pick<
   IProject,
-  TInheritedProjectField | 'notes'
+  TInheritedProjectField | 'notes' | 'members'
 >;
 
 export interface IApartmentInheritance {
+  members: IProjectMember[];
   parentNotes: string | null;
   inheritedFields: TInheritedProjectField[];
 }
 
-export type TApartmentInheritanceInput = Pick<IProject, TInheritedProjectField>;
+export type TApartmentInheritanceInput = Pick<
+  IProject,
+  TInheritedProjectField | 'hasOwnTeam' | 'members'
+> &
+  Partial<Pick<IProject, 'customer'>>;
 
 export type TResolvedApartment = IProject & IApartmentInheritance;
 

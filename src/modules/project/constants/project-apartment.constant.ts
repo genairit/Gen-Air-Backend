@@ -3,6 +3,7 @@ import { IProjectContact } from '../interfaces/project.interface';
 
 export const APARTMENT = {
   PAGE_SIZE: 25,
+  NUMBER_PATTERN: /^\d+[א-ת]?$/,
   NAME_PREFIX: 'דירה',
   CODE_SEQUENCE_DIGITS: 2,
 } as const;
@@ -12,6 +13,7 @@ export const APARTMENT_EDITABLE_FIELDS: readonly (keyof UpdateProjectDto)[] = [
   'notes',
   'stageId',
   'members',
+  'hasOwnTeam',
   'paymentTerms',
   'paymentTermsNote',
   'contactName',

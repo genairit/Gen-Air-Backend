@@ -24,6 +24,11 @@ import {
 } from './utilities/project-intake.utility';
 
 import {
+  EMPTY_CONTACT,
+  EMPTY_PAYMENT_TERMS,
+} from './constants/project-intake.constant';
+
+import {
   formatApartmentCode,
   formatApartmentName,
 } from './utilities/project-apartment.utility';
@@ -41,7 +46,6 @@ import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { ProjectIntakeService } from './project-intake.service';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
-import { EMPTY_PAYMENT_TERMS } from './constants/project-intake.constant';
 import { resolveApartment } from './utilities/project-inheritance.utility';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
 import { toProjectStageCounts } from './utilities/project-stage-counts.utility';
@@ -75,11 +79,7 @@ export class ProjectApartmentService {
   }: INewApartmentRequest): Promise<TProjectCreationAttributes> {
     this.assertCanHoldApartments(building);
 
-    const contact = {
-      contactName: apartment.contactName,
-      contactPhone: apartment.contactPhone,
-      contactRole: apartment.contactRole ?? null,
-    };
+    const paymentTerms = this.resolveNewPaymentTerms(building, apartment);
     const [, sequence] = await Promise.all([
       this.assertApartmentNumberFree(building.id, apartment.customerApartment),
       this.projectRepository.countApartmentsEverCreated(building.id),
@@ -87,8 +87,10 @@ export class ProjectApartmentService {
 
     return {
       ...EMPTY_CUSTOMER_DETAILS,
-      ...EMPTY_PAYMENT_TERMS,
-      ...contact,
+      ...paymentTerms,
+      ...EMPTY_CONTACT,
+      customerId: apartment.customerId,
+      hasOwnTeam: apartment.members != null,
       stageId,
       address: null,
       addressCity: null,
@@ -97,8 +99,6 @@ export class ProjectApartmentService {
       parentProjectId: building.id,
       projectTypeId: building.projectTypeId,
       customerFloor: apartment.customerFloor,
-      customerName: apartment.customerName ?? null,
-      customerPhone: apartment.customerPhone ?? null,
       customerApartment: apartment.customerApartment,
       code: formatApartmentCode(building.code, sequence + 1),
       name: formatApartmentName(apartment.customerApartment),
@@ -167,6 +167,14 @@ export class ProjectApartmentService {
     this.assertRequiredFieldsKept(changes);
 
     const requestedNumber = changes.customerApartment ?? null;
+    if (
+      requestedNumber !== null &&
+      !APARTMENT.NUMBER_PATTERN.test(requestedNumber)
+    ) {
+      throw new BadRequestException(
+        'Apartment number must be digits followed by an optional Hebrew letter',
+      );
+    }
     const isNumberChanging =
       requestedNumber !== null &&
       requestedNumber !== apartment.customerApartment;
@@ -176,9 +184,11 @@ export class ProjectApartmentService {
     }
 
     const contact = this.resolveContactChanges(apartment, changes);
+    const team = this.resolveTeamChanges(changes);
 
     return {
       ...contact,
+      ...team,
       ...this.resolvePaymentTermsOverride(apartment, changes),
       name: changes.name,
       notes: changes.notes,
@@ -187,6 +197,49 @@ export class ProjectApartmentService {
       customerFloor: changes.customerFloor ?? apartment.customerFloor,
       customerApartment: requestedNumber ?? apartment.customerApartment,
     };
+  }
+
+  private resolveNewPaymentTerms(
+    building: IProject,
+    apartment: CreateApartmentDto,
+  ): IProjectPaymentTerms {
+    const hasNoteWithoutTerms =
+      apartment.paymentTerms == null && Boolean(apartment.paymentTermsNote);
+    if (hasNoteWithoutTerms) {
+      throw new BadRequestException(
+        'Choose payment terms before providing their note',
+      );
+    }
+    if (apartment.paymentTerms == null) {
+      return { ...EMPTY_PAYMENT_TERMS };
+    }
+    const fieldSet = building.projectType?.detailFieldSet ?? null;
+    if (!fieldSet) {
+      throw new BadRequestException(
+        'The building has no payment terms field set',
+      );
+    }
+    return this.projectIntakeService.validatePaymentTerms(
+      {
+        paymentTerms: apartment.paymentTerms,
+        paymentTermsNote: apartment.paymentTermsNote ?? null,
+      },
+      fieldSet,
+    );
+  }
+
+  private resolveTeamChanges(
+    changes: UpdateProjectDto,
+  ): TProjectUpdateAttributes {
+    if (changes.hasOwnTeam === false && (changes.members?.length ?? 0) > 0) {
+      throw new BadRequestException(
+        'An inherited apartment team cannot also provide its own members',
+      );
+    }
+    if (changes.hasOwnTeam != null) {
+      return { hasOwnTeam: changes.hasOwnTeam };
+    }
+    return changes.members != null ? { hasOwnTeam: true } : {};
   }
 
   private resolveContactChanges(
@@ -262,9 +315,7 @@ export class ProjectApartmentService {
     );
 
     if (existing) {
-      throw new ConflictException(
-        `Apartment ${apartmentNumber} already exists in this building (${existing.code})`,
-      );
+      throw new ConflictException(`דירה ${apartmentNumber} כבר קיימת בבניין`);
     }
   }
 
