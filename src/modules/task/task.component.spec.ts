@@ -1,6 +1,7 @@
 import {
   ValidationPipe,
   INestApplication,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 
@@ -70,7 +71,7 @@ const task = (): ITask => ({
 });
 
 describe('Task HTTP permission boundaries', () => {
-  const state = { task: task(), projectCustomerId: CUSTOMER_ID };
+  const state = { task: task() };
   const repository = {
     findById: jest.fn((): Promise<ITask | null> => Promise.resolve(state.task)),
     findDetailedById: jest
@@ -79,7 +80,9 @@ describe('Task HTTP permission boundaries', () => {
     findByFilter: jest.fn(() =>
       Promise.resolve({ items: [state.task], nextCursor: null }),
     ),
-    create: jest.fn(() => Promise.resolve(state.task)),
+    create: jest
+      .fn<Promise<ITask>, [object, object?]>()
+      .mockImplementation(() => Promise.resolve(state.task)),
     update: jest.fn((_id: string, changes: TTaskUpdateAttributes) => {
       state.task = { ...state.task, ...changes };
       return Promise.resolve();
@@ -94,6 +97,12 @@ describe('Task HTTP permission boundaries', () => {
     findByTask: jest.fn(() => Promise.resolve([] as object[])),
   };
   const events = { emitAsync: jest.fn(() => Promise.resolve([])) };
+  const projectService = {
+    getById: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
+  };
+  const customerService = {
+    getById: jest.fn(() => Promise.resolve({ id: CUSTOMER_ID })),
+  };
   const userService = {
     getById: jest.fn((): Promise<IUser> => Promise.resolve(users.employee)),
   };
@@ -101,7 +110,6 @@ describe('Task HTTP permission boundaries', () => {
   const server = () => application.app!.getHttpServer();
   const payload = {
     projectId: PROJECT_ID,
-    customerId: CUSTOMER_ID,
     title: 'New task',
     assigneeId: EMPLOYEE_ID,
     description: 'Required task description',
@@ -114,23 +122,8 @@ describe('Task HTTP permission boundaries', () => {
         TaskService,
         { provide: TaskRepository, useValue: repository },
         { provide: TaskStatusTransitionRepository, useValue: transitions },
-        {
-          provide: ProjectService,
-          useValue: {
-            getById: jest.fn(() =>
-              Promise.resolve({
-                id: PROJECT_ID,
-                customerId: state.projectCustomerId,
-              }),
-            ),
-          },
-        },
-        {
-          provide: CustomerService,
-          useValue: {
-            getById: jest.fn(() => Promise.resolve({ id: CUSTOMER_ID })),
-          },
-        },
+        { provide: ProjectService, useValue: projectService },
+        { provide: CustomerService, useValue: customerService },
         {
           provide: UserService,
           useValue: userService,
@@ -165,7 +158,6 @@ describe('Task HTTP permission boundaries', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     state.task = task();
-    state.projectCustomerId = CUSTOMER_ID;
     userService.getById.mockReset();
     userService.getById.mockImplementation(() =>
       Promise.resolve(users.employee),
@@ -486,14 +478,128 @@ describe('Task HTTP permission boundaries', () => {
       .auth('manager', { type: 'bearer' })
       .expect(404);
   });
-  it('rejects a task customer different from the project customer', async () => {
-    state.projectCustomerId = OTHER_ID;
+  it('creates a project task without storing a customer link', async () => {
     await request(server())
       .post('/task')
       .auth('manager', { type: 'bearer' })
       .send(payload)
+      .expect(201);
+    expect(projectService.getById).toHaveBeenCalledWith(PROJECT_ID);
+    expect(customerService.getById).not.toHaveBeenCalled();
+    expect(repository.create.mock.calls.at(-1)?.[0]).toMatchObject({
+      projectId: PROJECT_ID,
+      customerId: null,
+    });
+  });
+  it('creates a customer task without a project', async () => {
+    await request(server())
+      .post('/task')
+      .auth('manager', { type: 'bearer' })
+      .send({ ...payload, projectId: null, customerId: CUSTOMER_ID })
+      .expect(201);
+    expect(customerService.getById).toHaveBeenCalledWith(CUSTOMER_ID);
+    expect(projectService.getById).not.toHaveBeenCalled();
+    expect(repository.create.mock.calls.at(-1)?.[0]).toMatchObject({
+      projectId: null,
+      customerId: CUSTOMER_ID,
+    });
+  });
+  it.each([
+    ['both links', { customerId: CUSTOMER_ID }],
+    ['no link', { projectId: null }],
+    ['a malformed link', { projectId: 'not-a-uuid' }],
+  ])('rejects a task with %s', async (_case, change) => {
+    await request(server())
+      .post('/task')
+      .auth('manager', { type: 'bearer' })
+      .send({ ...payload, ...change })
       .expect(400);
     expect(repository.create).not.toHaveBeenCalled();
+  });
+  it('rejects a link to a missing customer', async () => {
+    customerService.getById.mockRejectedValueOnce(new NotFoundException());
+    await request(server())
+      .post('/task')
+      .auth('manager', { type: 'bearer' })
+      .send({ ...payload, projectId: null, customerId: CUSTOMER_ID })
+      .expect(404);
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+  it('replaces the link on edit', async () => {
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ customerId: CUSTOMER_ID, projectId: null })
+      .expect(200);
+    expect(state.task).toMatchObject({
+      projectId: null,
+      customerId: CUSTOMER_ID,
+    });
+  });
+  it('rejects both links on edit', async () => {
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ projectId: PROJECT_ID, customerId: CUSTOMER_ID })
+      .expect(400);
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+  it('keeps the link when an edit omits it', async () => {
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ title: 'Renamed' })
+      .expect(200);
+    expect(repository.update.mock.calls.at(-1)?.[1]).toEqual({
+      title: 'Renamed',
+    });
+  });
+  it.each([
+    ['project', projectService, { projectId: PROJECT_ID }],
+    ['customer', customerService, { customerId: CUSTOMER_ID }],
+  ])(
+    'returns 404 when an edit links to a missing %s',
+    async (_kind, service, change) => {
+      service.getById.mockRejectedValueOnce(new NotFoundException());
+      await request(server())
+        .patch(`/task/${TASK_ID}`)
+        .auth('manager', { type: 'bearer' })
+        .send(change)
+        .expect(404);
+      expect(repository.update).not.toHaveBeenCalled();
+    },
+  );
+  it('keeps both links of a legacy task when editing other fields', async () => {
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ title: 'Legacy' })
+      .expect(200);
+    expect(state.task).toMatchObject({
+      projectId: PROJECT_ID,
+      customerId: CUSTOMER_ID,
+    });
+  });
+  it('reports the project customer on urgency events for project tasks', async () => {
+    state.task = {
+      ...task(),
+      customerId: null,
+      project: {
+        id: PROJECT_ID,
+        code: 'P-1',
+        name: 'Project',
+        customer: { id: OTHER_ID, name: 'Owner' },
+      },
+    };
+    await request(server())
+      .patch(`/task/${TASK_ID}/urgency`)
+      .auth('manager', { type: 'bearer' })
+      .send({ isUrgent: true })
+      .expect(200);
+    expect(events.emitAsync).toHaveBeenCalledWith(
+      DOMAIN_EVENTS.TASK_BECAME_URGENT,
+      expect.objectContaining({ projectId: PROJECT_ID, customerId: OTHER_ID }),
+    );
   });
   it('does not emit urgency events when the database transaction fails', async () => {
     const transactions = application.app!.get(DatabaseTransactionService);

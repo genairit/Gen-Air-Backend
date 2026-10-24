@@ -111,7 +111,8 @@ Table projects {
   name            varchar(200) [not null]
   project_type_id uuid         [not null, ref: > project_types.id]
   stage_id        uuid         [not null, ref: > project_stages.id, default: '6502a045-2a7d-4bc8-8ba1-36eaedc49a01', note: 'Insert/assignment trigger rejects archived status IDs']
-  customer_id     uuid         [ref: > customers.id, note: 'Customer of a building or a standalone project; always null on an apartment']
+  customer_id     uuid         [ref: > customers.id, note: 'Linked customer for a project or apartment; legacy apartments retain inline customer/contact fields']
+  has_own_team boolean [not null, default: false, note: 'Apartments inherit the building team unless explicitly overridden, including an empty override']
   parent_project_id uuid       [ref: > projects.id, note: 'The building an apartment belongs to; one level only (trigger trg_projects_single_level_nesting)']
   created_by_id   uuid         [not null, ref: > users.id]
   drive_folder_id varchar(128) [note: 'Root project folder; subfolders are read live from Drive']
@@ -198,8 +199,8 @@ Enum task_status {
 
 Table tasks {
   id            uuid           [pk, default: `gen_random_uuid()`]
-  project_id    uuid           [not null]
-  customer_id   uuid           [not null]
+  project_id    uuid           [note: 'Set for project tasks; a project task reads its customer through the project']
+  customer_id   uuid           [note: 'Set for customer tasks; legacy project tasks may also keep it. chk_tasks_has_link: project_id or customer_id is not null']
   assignee_id   uuid           [note: 'Nullable until a manager assigns the task']
   created_by_id uuid           [not null]
   title         varchar(200)   [not null, note: 'Must contain non-whitespace text']
@@ -216,6 +217,7 @@ Table tasks {
   indexes {
     (assignee_id, status) [name: 'idx_tasks_assignee_id_status', note: 'Partial index: WHERE deleted_at IS NULL']
     project_id [name: 'idx_tasks_project_id', note: 'Partial index: WHERE deleted_at IS NULL']
+    customer_id [name: 'idx_tasks_customer_id', note: 'Partial index: WHERE deleted_at IS NULL']
     (is_urgent, due_date, id) [name: 'idx_tasks_urgency_due_date', note: 'Urgency DESC, due date ASC NULLS LAST, id ASC; active rows only']
   }
 }

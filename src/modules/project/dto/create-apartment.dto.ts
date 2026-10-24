@@ -2,7 +2,7 @@ import {
   Max,
   Min,
   IsInt,
-  Length,
+  IsUUID,
   IsArray,
   Matches,
   IsString,
@@ -12,16 +12,18 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-import {
-  CUSTOMER_FLOOR_RANGE,
-  FIELD_VALIDATION_REGEX,
-} from '@Constants/field-validation.constant';
-
 import { Type } from 'class-transformer';
+import { PickType } from '@nestjs/swagger';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
+import { APARTMENT } from '../constants/project-apartment.constant';
+import { ProjectIntakeDetailsDto } from './project-intake-details.dto';
+import { CUSTOMER_FLOOR_RANGE } from '@Constants/field-validation.constant';
 import { AssignProjectMemberDto } from '@Modules/project-member/dto/assign-project-member.dto';
 
-export class CreateApartmentDto {
+export class CreateApartmentDto extends PickType(ProjectIntakeDetailsDto, [
+  'paymentTerms',
+  'paymentTermsNote',
+] as const) {
   @IsNotEmpty()
   @IsInt()
   @Min(CUSTOMER_FLOOR_RANGE.MIN)
@@ -31,38 +33,12 @@ export class CreateApartmentDto {
   @IsNotEmpty()
   @IsString()
   @MaxLength(FIELD_LENGTHS.APARTMENT)
+  @Matches(APARTMENT.NUMBER_PATTERN)
   declare customerApartment: string;
 
   @IsNotEmpty()
-  @IsString()
-  @Length(FIELD_LENGTHS.CONTACT_NAME_MIN, FIELD_LENGTHS.CONTACT_NAME)
-  declare contactName: string;
-
-  @IsNotEmpty()
-  @IsString()
-  @Matches(FIELD_VALIDATION_REGEX.ISRAELI_MOBILE_PHONE, {
-    message: 'contactPhone must be an Israeli mobile number, e.g. 052-1234567',
-  })
-  declare contactPhone: string;
-
-  @IsOptional()
-  @IsNotEmpty()
-  @IsString()
-  @MaxLength(FIELD_LENGTHS.CONTACT_ROLE)
-  declare contactRole?: string | null;
-
-  @IsOptional()
-  @IsNotEmpty()
-  @IsString()
-  @MaxLength(FIELD_LENGTHS.CUSTOMER_NAME)
-  declare customerName?: string | null;
-
-  @IsOptional()
-  @IsString()
-  @Matches(FIELD_VALIDATION_REGEX.ISRAELI_PHONE, {
-    message: 'customerPhone must be an Israeli phone number, e.g. 052-1234567',
-  })
-  declare customerPhone?: string | null;
+  @IsUUID()
+  declare customerId: string;
 
   @IsOptional()
   @IsArray()

@@ -119,23 +119,45 @@ describe('ProjectDriveService.provision', () => {
     await service.provision(PROJECT.id);
 
     expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
-      'אכ-48213_מגדל בבלי',
+      'מגדל בבלי',
       ROOT_ID,
       PROJECT.id,
     );
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       PROJECT.id,
-      'id:אכ-48213_מגדל בבלי',
+      'id:מגדל בבלי',
     );
     expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
       '01_אכ-48213',
-      'id:אכ-48213_מגדל בבלי',
+      'id:מגדל בבלי',
     );
     expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
       'CAD',
       'id:01_אכ-48213',
     );
   });
+
+  it.each([
+    'בדיקת פרויקט ראשונה',
+    'פרויקט _ 30270 / A & B',
+    'Project {Project_ID} $&',
+  ])(
+    'preserves the exact project name %s when creating its root folder',
+    async (name) => {
+      const { service, projectService, googleDriveService } =
+        await createService();
+      projectService.getById.mockResolvedValue({ ...PROJECT, name });
+
+      await service.provision(PROJECT.id);
+
+      expect(googleDriveService.ensureFolder).toHaveBeenNthCalledWith(
+        1,
+        name,
+        ROOT_ID,
+        PROJECT.id,
+      );
+    },
+  );
 
   it('does not link a partially created template and retries the existing folders', async () => {
     const { service, projectService, googleDriveService } =
@@ -162,15 +184,15 @@ describe('ProjectDriveService.provision', () => {
     expect(projectService.setDriveFolderId).toHaveBeenCalledTimes(1);
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       PROJECT.id,
-      'id:אכ-48213_מגדל בבלי',
+      'id:מגדל בבלי',
     );
     expect(
       googleDriveService.ensureFolder.mock.calls.map(([name]) => name),
     ).toEqual([
-      'אכ-48213_מגדל בבלי',
+      'מגדל בבלי',
       '01_אכ-48213',
       'CAD',
-      'אכ-48213_מגדל בבלי',
+      'מגדל בבלי',
       '01_אכ-48213',
       'CAD',
     ]);
@@ -196,12 +218,12 @@ describe('ProjectDriveService.provision', () => {
     await service.provision(PROJECT.id);
 
     expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
-      'אכ-48213_מגדל בבלי',
+      'מגדל בבלי',
       ROOT_ID,
       PROJECT.id,
     );
     expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
-      'אכ-48213_Renamed project',
+      'Renamed project',
       ROOT_ID,
       PROJECT.id,
     );
@@ -343,7 +365,7 @@ describe('ProjectDriveService.provision', () => {
     },
   );
 
-  it('reuses an existing project folder when retried', async () => {
+  it('reuses an existing linked folder without renaming or replacing it', async () => {
     const { service, projectService, googleDriveService } =
       await createService();
     projectService.getById.mockResolvedValue({
@@ -354,6 +376,11 @@ describe('ProjectDriveService.provision', () => {
     await service.provision(PROJECT.id);
 
     expect(projectService.setDriveFolderId).not.toHaveBeenCalled();
+    expect(googleDriveService.ensureFolder).not.toHaveBeenCalledWith(
+      PROJECT.name,
+      ROOT_ID,
+      PROJECT.id,
+    );
     expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
       '01_אכ-48213',
       PROJECT_FOLDER_ID,

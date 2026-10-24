@@ -11,12 +11,12 @@ import {
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 
 export class CreateTaskDto {
-  @IsNotEmpty()
+  @IsOptional()
   @IsUUID()
-  declare projectId: string;
-  @IsNotEmpty()
+  declare projectId?: string | null;
+  @IsOptional()
   @IsUUID()
-  declare customerId: string;
+  declare customerId?: string | null;
   @IsNotEmpty()
   @IsString()
   @MaxLength(FIELD_LENGTHS.TASK_TITLE)

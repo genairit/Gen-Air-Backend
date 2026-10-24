@@ -3,7 +3,7 @@ import { BYTE_UNITS } from '@Constants/size.constant';
 import { DRIVE_TEMPLATE_TAGS } from '@Constants/drive-template.constant';
 import { MulterOptions } from '@nestjs/platform-express/multer/interfaces/multer-options.interface';
 
-export const PROJECT_ROOT_FOLDER_NAME = `${DRIVE_TEMPLATE_TAGS.PROJECT_ID}_${DRIVE_TEMPLATE_TAGS.PROJECT_NAME}`;
+export const PROJECT_ROOT_FOLDER_NAME = DRIVE_TEMPLATE_TAGS.PROJECT_NAME;
 
 export const MAX_FOLDER_DEPTH = 10;
 
