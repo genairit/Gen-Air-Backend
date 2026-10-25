@@ -41,6 +41,7 @@ import { ProjectRepository } from './project.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { ProjectIntakeService } from './project-intake.service';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
@@ -48,10 +49,12 @@ import { toCursorBatch } from '@Utilities/cursor-batch.utility';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { GetProjectsByFilterDto } from './dto/get-by-filter.dto';
 import { PROJECT_CODE } from './constants/project-code.constant';
+import { assertPermissions } from '@Utilities/permission.utility';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
 import { generateProjectCode } from './utilities/project-code.utility';
+import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { GetProjectCountsByFilterDto } from './dto/get-counts-by-filter.dto';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
@@ -205,6 +208,19 @@ export class ProjectService {
     const building = await this.getStoredById(buildingId);
 
     return this.projectApartmentService.findByBuilding(building, filter);
+  }
+
+  updateForActor(
+    id: string,
+    input: UpdateProjectDto,
+    actor: IAuthorizedUser,
+  ): Promise<IProject> {
+    assertPermissions(actor, PERMISSIONS.PROJECTS_UPDATE);
+    if ('stageId' in input) {
+      assertPermissions(actor, PERMISSIONS.PROJECTS_STATUS_CHANGE);
+    }
+
+    return this.update(id, input, actor);
   }
 
   async update(

@@ -6,10 +6,12 @@ import { User } from '@Modules/user/entities/user.entity';
 import { Sequelize, SequelizeOptions } from 'sequelize-typescript';
 import { Project } from '@Modules/project/entities/project.entity';
 import { Customer } from '@Modules/customer/entities/customer.entity';
+import { Permission } from '@Modules/permission/entities/permission.entity';
 import { EnvironmentManager } from '../../utilities/environment-manager.utility';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
+import { RolePermission } from '@Modules/role-permission/entities/role-permission.entity';
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
@@ -66,6 +68,8 @@ export const DatabaseProvider: Provider = {
     const sequelize = new Sequelize(buildSequelizeOptions());
 
     sequelize.addModels([
+      Permission,
+      RolePermission,
       Task,
       TaskStatusTransition,
       User,

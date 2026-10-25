@@ -17,10 +17,13 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthService } from '@Modules/auth/auth.service';
 import { UserService } from '@Modules/user/user.service';
 import { USER_ROLES } from '@Constants/user-role.constant';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { CustomerService } from '@Modules/customer/customer.service';
+import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
+import { baselinePermissions } from '../../testing/authorization.fixture';
 import { ITask, TTaskUpdateAttributes } from './interfaces/task.interface';
 import { TaskStatusTransitionRepository } from './task-status-transition.repository';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
@@ -31,7 +34,8 @@ const CUSTOMER_ID = '00000000-0000-4000-8000-000000000003';
 const EMPLOYEE_ID = '00000000-0000-4000-8000-000000000004';
 const OTHER_ID = '00000000-0000-4000-8000-000000000005';
 const MANAGER_ID = '00000000-0000-4000-8000-000000000006';
-const makeUser = (id: string, role: IUser['role']): IUser => ({
+const makeUser = (id: string, role: IUser['role']): IAuthorizedUser => ({
+  permissions: baselinePermissions(role),
   id,
   role,
   email: `${id}@test.invalid`,
@@ -158,6 +162,9 @@ describe('Task HTTP permission boundaries', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     state.task = task();
+    for (const actor of Object.values(users)) {
+      actor.permissions = baselinePermissions(actor.role);
+    }
     userService.getById.mockReset();
     userService.getById.mockImplementation(() =>
       Promise.resolve(users.employee),
@@ -165,6 +172,81 @@ describe('Task HTTP permission boundaries', () => {
   });
   afterAll(async () => {
     await application.app?.close();
+  });
+
+  it('authorizes a granted feature for an engineer without relying on the role name', async () => {
+    users.employee.permissions = [
+      PERMISSIONS.TASKS_CREATE,
+      PERMISSIONS.TASKS_ASSIGN,
+    ];
+
+    await request(server())
+      .post('/task')
+      .auth('employee', { type: 'bearer' })
+      .send(payload)
+      .expect(201);
+  });
+
+  it('requires assignment permission independently when creating an assigned task', async () => {
+    users.manager.permissions = [PERMISSIONS.TASKS_CREATE];
+    await request(server())
+      .post('/task')
+      .auth('manager', { type: 'bearer' })
+      .send(payload)
+      .expect(403);
+    expect(repository.create).not.toHaveBeenCalled();
+
+    await request(server())
+      .post('/task')
+      .auth('manager', { type: 'bearer' })
+      .send({ ...payload, assigneeId: null })
+      .expect(201);
+  });
+
+  it('does not allow an assignee field to bypass a content-only edit grant', async () => {
+    users.manager.permissions = [PERMISSIONS.TASKS_UPDATE];
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ assigneeId: null })
+      .expect(403);
+    expect(repository.update).not.toHaveBeenCalled();
+
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ title: 'Content-only change' })
+      .expect(200);
+  });
+
+  it('requires urgency permission independently of content editing', async () => {
+    users.manager.permissions = [PERMISSIONS.TASKS_UPDATE];
+    await request(server())
+      .patch(`/task/${TASK_ID}/urgency`)
+      .auth('manager', { type: 'bearer' })
+      .send({ isUrgent: true })
+      .expect(403);
+    expect(repository.update).not.toHaveBeenCalled();
+    users.manager.permissions = [PERMISSIONS.TASKS_URGENCY_CHANGE];
+
+    await request(server())
+      .patch(`/task/${TASK_ID}/urgency`)
+      .auth('manager', { type: 'bearer' })
+      .send({ isUrgent: true })
+      .expect(200);
+  });
+
+  it('does not let a claim grant bypass engineering assignee eligibility', async () => {
+    state.task.assigneeId = null;
+    users.secretary.permissions = [PERMISSIONS.TASKS_CLAIM];
+    userService.getById.mockResolvedValueOnce(users.secretary);
+
+    await request(server())
+      .patch(`/task/${TASK_ID}/claim`)
+      .auth('secretary', { type: 'bearer' })
+      .expect(400);
+
+    expect(repository.update).not.toHaveBeenCalled();
   });
 
   it('requires authentication', async () => {

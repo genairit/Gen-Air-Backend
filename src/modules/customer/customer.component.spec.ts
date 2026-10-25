@@ -9,6 +9,7 @@ import { CustomerController } from './customer.controller';
 import { CustomerRepository } from './customer.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { baselinePermissions } from '../../testing/authorization.fixture';
 import { PRIORITY_SYNC_STATUSES } from './constants/priority-sync-status.constant';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 
@@ -48,7 +49,11 @@ describe('CRM-only customer creation API', () => {
           provide: AuthService,
           useValue: {
             authenticate: (role: string) =>
-              Promise.resolve({ role, id: 'trusted-user' }),
+              Promise.resolve({
+                role,
+                id: 'trusted-user',
+                permissions: baselinePermissions(role),
+              }),
           },
         },
       ],
