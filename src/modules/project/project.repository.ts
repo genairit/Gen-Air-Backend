@@ -37,8 +37,12 @@ import { buildCustomerReferenceInclude } from '@Modules/customer/constants/custo
 
 @Injectable()
 export class ProjectRepository {
-  async findById(id: string): Promise<IProject | null> {
+  async findById(
+    id: string,
+    transaction?: Transaction,
+  ): Promise<IProject | null> {
     const project = await Project.findByPk(id, {
+      transaction,
       include: [
         ...this.buildCardIncludes(),
         { model: Customer, paranoid: false },
@@ -55,11 +59,17 @@ export class ProjectRepository {
     return project?.get({ plain: true }) ?? null;
   }
 
+  lockForImport(id: string, transaction: Transaction): Promise<Project | null> {
+    return Project.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+  }
+
   findLiveApartmentByNumber(
     buildingId: string,
     apartmentNumber: string,
+    transaction?: Transaction,
   ): Promise<Project | null> {
     return Project.findOne({
+      transaction,
       where: {
         parentProjectId: buildingId,
         customerApartment: apartmentNumber,
@@ -71,8 +81,12 @@ export class ProjectRepository {
     return Project.count({ where: { parentProjectId: buildingId } });
   }
 
-  countApartmentsEverCreated(buildingId: string): Promise<number> {
+  countApartmentsEverCreated(
+    buildingId: string,
+    transaction?: Transaction,
+  ): Promise<number> {
     return Project.count({
+      transaction,
       where: { parentProjectId: buildingId },
       paranoid: false,
     });

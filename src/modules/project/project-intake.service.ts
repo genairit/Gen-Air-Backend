@@ -23,6 +23,7 @@ import {
 } from './utilities/project-intake.utility';
 
 import {
+  EMPTY_CONTACT,
   PAYMENT_TERMS_BY_FIELD_SET,
   ADDRESS_CITY_REQUIRED_BY_FIELD_SET,
 } from './constants/project-intake.constant';
@@ -40,7 +41,7 @@ export class ProjectIntakeService {
     intake: TProjectIntakeInput,
     fieldSet: ProjectDetailFieldSetType,
   ): Promise<TProjectIntake> {
-    const contact = this.resolveContact(intake);
+    const contact = { ...EMPTY_CONTACT };
     const paymentTerms = this.validatePaymentTerms(
       mergePaymentTerms({}, intake),
       fieldSet,

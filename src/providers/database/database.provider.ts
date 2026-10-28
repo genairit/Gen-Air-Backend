@@ -13,6 +13,7 @@ import { ProjectStage } from '@Modules/project-stage/entities/project-stage.enti
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
 import { RolePermission } from '@Modules/role-permission/entities/role-permission.entity';
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
+import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
 
@@ -75,6 +76,7 @@ export const DatabaseProvider: Provider = {
       User,
       Project,
       Customer,
+      CustomerContact,
       ProjectType,
       ProjectStage,
       ProjectMember,

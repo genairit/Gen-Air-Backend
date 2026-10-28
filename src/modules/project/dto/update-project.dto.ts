@@ -15,11 +15,12 @@ import { IntersectionType } from '@nestjs/swagger';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { ProjectIntakeDetailsDto } from './project-intake-details.dto';
 import { ProjectCustomerDetailsDto } from './project-customer-details.dto';
+import { ApartmentCommercialDetailsDto } from './apartment-commercial-details.dto';
 import { AssignProjectMemberDto } from '@Modules/project-member/dto/assign-project-member.dto';
 
 export class UpdateProjectDto extends IntersectionType(
-  ProjectCustomerDetailsDto,
-  ProjectIntakeDetailsDto,
+  IntersectionType(ProjectCustomerDetailsDto, ProjectIntakeDetailsDto),
+  ApartmentCommercialDetailsDto,
 ) {
   @IsOptional()
   @IsNotEmpty()

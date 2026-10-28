@@ -18,17 +18,25 @@ import { Op, Transaction, WhereOptions } from 'sequelize';
 import { ICursorPage, ICursorBatch } from '@Interfaces/cursor-page.interface';
 import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
 import { isPrioritySyncStatus } from './utilities/priority-sync-status.utility';
+import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 
 @Injectable()
 export class CustomerRepository {
   findById(id: string): Promise<Customer | null> {
     return Customer.findByPk(id, {
-      include: [{ model: User, paranoid: false }],
+      include: [{ model: User, paranoid: false }, { model: CustomerContact }],
     });
   }
 
-  findByTaxId(taxId: string): Promise<Customer | null> {
-    return Customer.findOne({ where: { taxId } });
+  findByTaxId(
+    taxId: string,
+    transaction?: Transaction,
+  ): Promise<Customer | null> {
+    return Customer.findOne({
+      where: { taxId },
+      transaction,
+      lock: transaction != null,
+    });
   }
 
   async findByFilter(

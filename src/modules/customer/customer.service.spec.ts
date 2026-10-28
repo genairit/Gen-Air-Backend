@@ -10,6 +10,7 @@ import { CustomerRepository } from './customer.repository';
 import { ICustomer } from './interfaces/customer.interface';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
+import { createCustomerDependencyFixtures } from '@Modules/customer-contact/testing/customer-dependencies.fixture';
 
 const CUSTOMER: ICustomer = {
   id: 'customer-1',
@@ -32,6 +33,7 @@ const CUSTOMER: ICustomer = {
 };
 
 const createService = async () => {
+  const dependencies = createCustomerDependencyFixtures();
   const customerRepository = {
     create: jest.fn().mockResolvedValue(CUSTOMER),
     update: jest.fn().mockResolvedValue(true),
@@ -49,11 +51,16 @@ const createService = async () => {
   const moduleRef = await Test.createTestingModule({
     providers: [
       CustomerService,
+      ...dependencies.providers,
       { provide: CustomerRepository, useValue: customerRepository },
     ],
   }).compile();
 
-  return { service: moduleRef.get(CustomerService), customerRepository };
+  return {
+    service: moduleRef.get(CustomerService),
+    customerRepository,
+    dependencies,
+  };
 };
 
 describe('CustomerService.getById', () => {
@@ -142,16 +149,38 @@ describe('CustomerService.create', () => {
   };
 
   it('persists only creation fields with the authenticated creator and returns the stored customer', async () => {
-    const { service, customerRepository } = await createService();
+    const { service, customerRepository, dependencies } = await createService();
 
     await expect(service.create(input, 'trusted-user')).resolves.toEqual(
       CUSTOMER,
     );
-    expect(customerRepository.create).toHaveBeenCalledWith({
-      ...input,
-      createdById: 'trusted-user',
-    });
+    expect(customerRepository.create).toHaveBeenCalledWith(
+      {
+        ...input,
+        createdById: 'trusted-user',
+      },
+      dependencies.transaction,
+    );
+    expect(dependencies.contacts.resolveForImport).toHaveBeenCalledWith(
+      {
+        customerId: CUSTOMER.id,
+        createdById: 'trusted-user',
+        name: input.contactName,
+        phone: input.phone,
+        email: input.email,
+        role: null,
+      },
+      dependencies.transaction,
+    );
     expect(customerRepository.findById).toHaveBeenCalledWith(CUSTOMER.id);
+  });
+
+  it('propagates initial-contact failure to roll back customer creation', async () => {
+    const { service, customerRepository, dependencies } = await createService();
+    const failure = new Error('contact failed');
+    dependencies.contacts.resolveForImport.mockRejectedValueOnce(failure);
+    await expect(service.create(input, 'trusted-user')).rejects.toBe(failure);
+    expect(customerRepository.findById).not.toHaveBeenCalled();
   });
 
   it('rejects an existing registration number before writing', async () => {

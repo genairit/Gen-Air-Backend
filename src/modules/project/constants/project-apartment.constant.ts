@@ -9,6 +9,8 @@ export const APARTMENT = {
 } as const;
 
 export const APARTMENT_EDITABLE_FIELDS: readonly (keyof UpdateProjectDto)[] = [
+  'apartmentOwnership',
+  'apartmentCredit',
   'name',
   'notes',
   'stageId',

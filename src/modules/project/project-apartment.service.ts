@@ -40,6 +40,7 @@ import {
   APARTMENT_REQUIRED_CONTACT_FIELDS,
 } from './constants/project-apartment.constant';
 
+import { Transaction } from 'sequelize';
 import { ProjectRepository } from './project.repository';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { CreateApartmentDto } from './dto/create-apartment.dto';
@@ -61,6 +62,7 @@ interface INewApartmentRequest {
   creator: IUser;
   stageId: string;
   building: IProject;
+  transaction?: Transaction;
   apartment: CreateApartmentDto;
 }
 
@@ -76,13 +78,21 @@ export class ProjectApartmentService {
     stageId,
     building,
     apartment,
+    transaction,
   }: INewApartmentRequest): Promise<TProjectCreationAttributes> {
     this.assertCanHoldApartments(building);
 
     const paymentTerms = this.resolveNewPaymentTerms(building, apartment);
     const [, sequence] = await Promise.all([
-      this.assertApartmentNumberFree(building.id, apartment.customerApartment),
-      this.projectRepository.countApartmentsEverCreated(building.id),
+      this.assertApartmentNumberFree(
+        building.id,
+        apartment.customerApartment,
+        transaction,
+      ),
+      this.projectRepository.countApartmentsEverCreated(
+        building.id,
+        transaction,
+      ),
     ]);
 
     return {
@@ -90,6 +100,8 @@ export class ProjectApartmentService {
       ...paymentTerms,
       ...EMPTY_CONTACT,
       customerId: apartment.customerId,
+      apartmentOwnership: apartment.apartmentOwnership ?? null,
+      apartmentCredit: apartment.apartmentCredit ?? null,
       hasOwnTeam: apartment.members != null,
       stageId,
       address: null,
@@ -191,6 +203,8 @@ export class ProjectApartmentService {
       ...team,
       ...this.resolvePaymentTermsOverride(apartment, changes),
       name: changes.name,
+      apartmentOwnership: changes.apartmentOwnership,
+      apartmentCredit: changes.apartmentCredit,
       notes: changes.notes,
       customerName: changes.customerName,
       customerPhone: changes.customerPhone,
@@ -308,10 +322,12 @@ export class ProjectApartmentService {
   private async assertApartmentNumberFree(
     buildingId: string,
     apartmentNumber: string,
+    transaction?: Transaction,
   ): Promise<void> {
     const existing = await this.projectRepository.findLiveApartmentByNumber(
       buildingId,
       apartmentNumber,
+      transaction,
     );
 
     if (existing) {

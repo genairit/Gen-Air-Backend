@@ -9,6 +9,7 @@ import {
   TCustomerSyncStatusCounts,
 } from './interfaces/customer.interface';
 
+import { Transaction } from 'sequelize';
 import { TypedLogger } from '@Logger/logger.service';
 import { CustomerRepository } from './customer.repository';
 import { CreateCustomerDto } from './dto/create-customer.dto';
@@ -17,12 +18,18 @@ import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toCursorBatch } from '@Utilities/cursor-batch.utility';
 import { GetCustomersByFilterDto } from './dto/get-by-filter.dto';
 import { isCustomerTaxIdConflict } from './utilities/customer-tax-id.utility';
+import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
+import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { EMPTY_CUSTOMER_SYNC_STATUS_COUNTS } from './constants/priority-sync-status.constant';
 
 @Injectable()
 export class CustomerService {
   private readonly logger = new TypedLogger(CustomerService.name);
-  constructor(private readonly customerRepository: CustomerRepository) {}
+  constructor(
+    private readonly customerRepository: CustomerRepository,
+    private readonly contacts: CustomerContactService,
+    private readonly transactions: DatabaseTransactionService,
+  ) {}
 
   async getById(id: string): Promise<ICustomer> {
     const customer = await this.customerRepository.findById(id);
@@ -36,6 +43,35 @@ export class CustomerService {
 
   findById(id: string): Promise<ICustomer | null> {
     return this.customerRepository.findById(id);
+  }
+
+  findByTaxId(
+    taxId: string,
+    transaction?: Transaction,
+  ): Promise<ICustomer | null> {
+    return this.customerRepository.findByTaxId(taxId, transaction);
+  }
+
+  createForImport(
+    customer: CreateCustomerDto,
+    createdById: string,
+    transaction: Transaction,
+  ): Promise<ICustomer> {
+    const { name, taxId, phone, email, address, contactName, customerType } =
+      customer;
+    return this.customerRepository.create(
+      {
+        name,
+        taxId,
+        phone,
+        email,
+        address,
+        contactName,
+        customerType,
+        createdById,
+      },
+      transaction,
+    );
   }
 
   getByFilter(
@@ -67,20 +103,27 @@ export class CustomerService {
     createdById: string,
   ): Promise<ICustomer> {
     await this.assertTaxIdAvailable(customer.taxId);
-    const { name, taxId, phone, email, address, contactName, customerType } =
-      customer;
     try {
-      const created = await this.customerRepository.create({
-        name,
-        taxId,
-        phone,
-        email,
-        address,
-        contactName,
-        customerType,
-        createdById,
+      const createdId = await this.transactions.run(async (transaction) => {
+        const created = await this.createForImport(
+          customer,
+          createdById,
+          transaction,
+        );
+        await this.contacts.resolveForImport(
+          {
+            createdById,
+            customerId: created.id,
+            name: customer.contactName,
+            phone: customer.phone,
+            email: customer.email,
+            role: null,
+          },
+          transaction,
+        );
+        return created.id;
       });
-      return this.getById(created.id);
+      return this.getById(createdId);
     } catch (error) {
       if (isCustomerTaxIdConflict(error)) {
         this.logger.warn({ message: 'Duplicate customer tax ID rejected' });

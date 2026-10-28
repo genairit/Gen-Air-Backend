@@ -2,6 +2,7 @@ import {
   Table,
   Model,
   Column,
+  HasMany,
   Default,
   DataType,
   BelongsTo,
@@ -30,6 +31,7 @@ import {
 
 import { User } from '@Modules/user/entities/user.entity';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
+import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 
 @Table({
   tableName: 'customers',
@@ -130,6 +132,9 @@ export class Customer
 
   @DeletedAt
   declare deletedAt: Date | null;
+
+  @HasMany(() => CustomerContact, 'customerId')
+  declare contacts?: CustomerContact[];
 
   @BelongsTo(() => User, 'createdById')
   declare createdBy?: User;

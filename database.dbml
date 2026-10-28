@@ -78,6 +78,27 @@ Table customers {
   }
 }
 
+Table customer_contacts {
+  Note: 'Customer-owned contacts; no automatic main contact. Legacy project ownership remains unresolved and old fields are preserved.'
+  id uuid [pk, default: `gen_random_uuid()`]
+  customer_id uuid [not null, ref: > customers.id]
+  name varchar(200) [not null]
+  phone varchar(20)
+  email varchar(254)
+  role varchar(60)
+  created_by_id uuid [not null, ref: > users.id]
+  legacy_source_customer_id uuid [unique, ref: > customers.id, note: 'Traceable original customer contact tuple; read-only provenance']
+  created_at timestamptz(3) [not null, default: `now()`]
+  updated_at timestamptz(3) [not null, default: `now()`]
+  deleted_at timestamptz(3)
+
+  indexes {
+    customer_id
+    created_by_id
+    (customer_id, name, `coalesce(phone, '')`, `coalesce(email, '')`, `coalesce(role, '')`) [unique, name: 'uq_customer_contacts_active_tuple', note: 'Active rows only: deleted_at IS NULL']
+  }
+}
+
 Table project_stages {
   Note: 'Fixed active catalog: ממתין, בעבודה, להמתין, הסתיים, positions 1–4. Definition writes blocked by project_stages_readonly trigger. Retired rows retained for historical transitions.'
   id          uuid         [pk, default: `gen_random_uuid()`]
@@ -126,6 +147,8 @@ Table projects {
   customer_phone              varchar(20)
   customer_email              varchar(254)
   customer_floor              smallint     [note: 'Private, luxury and institutional projects; negative for underground floors']
+  apartment_ownership enum_projects_apartment_ownership [note: 'Optional apartment classification: landowner or buyer']
+  apartment_credit numeric [note: 'Optional nonnegative ILS amount; at most 2 decimal places; blank remains null']
   customer_apartment          varchar(10)  [note: 'Private and luxury projects']
   customer_unit               varchar(60)  [note: 'Institutional projects: unit or wing']
   payment_terms               payment_terms [note: 'Legal options per project type are a module-layer rule']
@@ -267,4 +290,9 @@ Table role_permissions {
     (role, permission_key) [pk]
     permission_key [name: 'idx_role_permissions_permission_key']
   }
+}
+
+Enum enum_projects_apartment_ownership {
+  landowner
+  buyer
 }
