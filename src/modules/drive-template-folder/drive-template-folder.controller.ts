@@ -17,9 +17,9 @@ import {
 } from './interfaces/drive-template-folder.interface';
 
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { UserRoles } from '@Decorators/user-roles.decorator';
-import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { DriveTemplateFolderService } from './drive-template-folder.service';
+import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 import { CreateDriveTemplateFolderDto } from './dto/create-drive-template-folder.dto';
 import { UpdateDriveTemplateFolderDto } from './dto/update-drive-template-folder.dto';
 
@@ -32,12 +32,13 @@ export class DriveTemplateFolderController {
   ) {}
 
   @Get()
+  @RequirePermissions(PERMISSIONS.DRIVE_TEMPLATES_READ)
   getTree(): Promise<IDriveTemplateFolderNode[]> {
     return this.driveTemplateFolderService.getTree();
   }
 
   @Post()
-  @UserRoles(ROLE_PERMISSIONS.MANAGE_SETTINGS)
+  @RequirePermissions(PERMISSIONS.DRIVE_TEMPLATES_CREATE)
   create(
     @Body() folder: CreateDriveTemplateFolderDto,
   ): Promise<IDriveTemplateFolder> {
@@ -45,7 +46,7 @@ export class DriveTemplateFolderController {
   }
 
   @Patch(':id')
-  @UserRoles(ROLE_PERMISSIONS.MANAGE_SETTINGS)
+  @RequirePermissions(PERMISSIONS.DRIVE_TEMPLATES_UPDATE)
   rename(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() changes: UpdateDriveTemplateFolderDto,
@@ -55,7 +56,7 @@ export class DriveTemplateFolderController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UserRoles(ROLE_PERMISSIONS.MANAGE_SETTINGS)
+  @RequirePermissions(PERMISSIONS.DRIVE_TEMPLATES_DELETE)
   delete(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.driveTemplateFolderService.delete(id);
   }

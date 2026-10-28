@@ -1,20 +1,41 @@
-import { USER_ROLES, UserRoleType } from './user-role.constant';
+export const PERMISSIONS = {
+  PROJECTS_READ: 'projects.read',
+  PROJECTS_CREATE: 'projects.create',
+  PROJECTS_UPDATE: 'projects.update',
+  PROJECTS_DELETE: 'projects.delete',
+  PROJECTS_STATUS_CHANGE: 'projects.status.change',
+  APARTMENTS_CREATE: 'apartments.create',
+  CUSTOMERS_READ: 'customers.read',
+  CUSTOMERS_CREATE: 'customers.create',
+  CUSTOMERS_UPDATE: 'customers.update',
+  CUSTOMERS_DELETE: 'customers.delete',
+  TASKS_READ: 'tasks.read',
+  TASKS_CREATE: 'tasks.create',
+  TASKS_UPDATE: 'tasks.update',
+  TASKS_DELETE: 'tasks.delete',
+  TASKS_ASSIGN: 'tasks.assign',
+  TASKS_URGENCY_CHANGE: 'tasks.urgency.change',
+  TASKS_CLAIM: 'tasks.claim',
+  TASKS_STATUS_UPDATE: 'tasks.status.update',
+  EMPLOYEES_READ: 'employees.read',
+  EMPLOYEES_CREATE: 'employees.create',
+  EMPLOYEES_UPDATE: 'employees.update',
+  EMPLOYEES_DELETE: 'employees.delete',
+  EMPLOYEES_ROLES_ASSIGN: 'employees.roles.assign',
+  DRIVE_READ: 'drive.read',
+  DRIVE_UPLOAD: 'drive.upload',
+  DRIVE_MOVE: 'drive.move',
+  DRIVE_DELETE: 'drive.delete',
+  DRIVE_PROVISION: 'drive.provision',
+  DRIVE_CONNECTION_CHECK: 'drive.connection.check',
+  DRIVE_TEMPLATES_READ: 'drive_templates.read',
+  DRIVE_TEMPLATES_CREATE: 'drive_templates.create',
+  DRIVE_TEMPLATES_UPDATE: 'drive_templates.update',
+  DRIVE_TEMPLATES_DELETE: 'drive_templates.delete',
+  ADDRESSES_LOOKUP: 'addresses.lookup',
+} as const;
 
-const PROJECT_EDITOR_ROLES = [
-  USER_ROLES.SECRETARY,
-  USER_ROLES.SYSTEM_ADMIN,
-  USER_ROLES.PROJECT_MANAGER,
-];
+export type PermissionType = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
-export const ROLE_PERMISSIONS = {
-  CLAIM_TASKS: [USER_ROLES.ENGINEER],
-  MANAGE_TASKS: [USER_ROLES.SYSTEM_ADMIN],
-  MANAGE_USERS: [USER_ROLES.SYSTEM_ADMIN],
-  EDIT_PROJECTS: PROJECT_EDITOR_ROLES,
-  MANAGE_SETTINGS: [USER_ROLES.SYSTEM_ADMIN],
-  CREATE_PROJECTS: [USER_ROLES.SYSTEM_ADMIN],
-  DELETE_PROJECTS: [USER_ROLES.SYSTEM_ADMIN],
-  MANAGE_CUSTOMERS: [USER_ROLES.SYSTEM_ADMIN],
-  MOVE_PROJECT_STAGE: PROJECT_EDITOR_ROLES,
-  UPDATE_TASK_STATUS: [USER_ROLES.SYSTEM_ADMIN, USER_ROLES.ENGINEER],
-} as const satisfies Record<string, readonly UserRoleType[]>;
+export const PERMISSION_VALUES: readonly PermissionType[] =
+  Object.values(PERMISSIONS);

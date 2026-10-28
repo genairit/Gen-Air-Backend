@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
-  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 
@@ -33,14 +32,15 @@ import { GetTasksByFilterDto } from './dto/get-by-filter.dto';
 import { isDueDateBeforeToday } from '@Utilities/date.utility';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toCursorBatch } from '@Utilities/cursor-batch.utility';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { TaskStatusType } from './constants/task-status.constant';
-import type { IUser } from '@Modules/user/interfaces/user.interface';
+import { assertPermissions } from '@Utilities/permission.utility';
 import { CustomerService } from '@Modules/customer/customer.service';
-import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
 import { findChangedAssigneeId } from './utilities/task-assignee.utility';
 import { EMPTY_TASK_STATUS_COUNTS } from './constants/task-status.constant';
+import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { TaskStatusTransitionRepository } from './task-status-transition.repository';
 import { ITaskStatusTransition } from './interfaces/task-status-transition.interface';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
@@ -79,12 +79,14 @@ export class TaskService {
 
   getMyTasks(
     filter: GetTasksByFilterDto,
-    user: IUser,
+    user: IAuthorizedUser,
   ): Promise<ICursorPage<ITask>> {
     return this.getByFilter({ ...filter, assigneeId: user.id });
   }
 
-  async claim(id: string, user: IUser): Promise<ITask> {
+  async claim(id: string, user: IAuthorizedUser): Promise<ITask> {
+    assertPermissions(user, PERMISSIONS.TASKS_CLAIM);
+    await this.assertAssignableEngineer(user.id);
     return this.transactions.run(async (transaction) => {
       const task = await this.requireTask(id, transaction);
       if (task.assigneeId !== null) {
@@ -123,8 +125,12 @@ export class TaskService {
     );
   }
 
-  async create(input: CreateTaskDto, creator: IUser): Promise<ITask> {
-    this.assertManager(creator);
+  async create(input: CreateTaskDto, creator: IAuthorizedUser): Promise<ITask> {
+    assertPermissions(creator, PERMISSIONS.TASKS_CREATE);
+    if (input.assigneeId != null) {
+      assertPermissions(creator, PERMISSIONS.TASKS_ASSIGN);
+    }
+
     this.assertDueDateNotPast(input.dueDate);
 
     const link = this.requireTaskLink(input);
@@ -163,8 +169,16 @@ export class TaskService {
     return this.requireDetailedTask(createdId);
   }
 
-  async update(id: string, input: UpdateTaskDto, user: IUser): Promise<ITask> {
-    this.assertManager(user);
+  async update(
+    id: string,
+    input: UpdateTaskDto,
+    user: IAuthorizedUser,
+  ): Promise<ITask> {
+    assertPermissions(user, PERMISSIONS.TASKS_UPDATE);
+    if ('assigneeId' in input) {
+      assertPermissions(user, PERMISSIONS.TASKS_ASSIGN);
+    }
+
     this.assertDueDateNotPast(input.dueDate ?? null);
     const link = isTaskLinkRequested(input)
       ? this.requireTaskLink(input)
@@ -192,8 +206,10 @@ export class TaskService {
   async updateStatus(
     id: string,
     status: TaskStatusType,
-    user: IUser,
+    user: IAuthorizedUser,
   ): Promise<ITask> {
+    assertPermissions(user, PERMISSIONS.TASKS_STATUS_UPDATE);
+
     return this.transactions.run(async (transaction) => {
       const task = await this.requireTask(id, transaction);
 
@@ -225,9 +241,9 @@ export class TaskService {
   async updateUrgency(
     id: string,
     isUrgent: boolean,
-    user: IUser,
+    user: IAuthorizedUser,
   ): Promise<ITask> {
-    this.assertManager(user);
+    assertPermissions(user, PERMISSIONS.TASKS_URGENCY_CHANGE);
     const result = await this.transactions.run(async (transaction) => {
       const previous = await this.requireTask(id, transaction);
       const becameUrgent = !previous.isUrgent && isUrgent;
@@ -259,8 +275,8 @@ export class TaskService {
     return result.task;
   }
 
-  async delete(id: string, user: IUser): Promise<void> {
-    this.assertManager(user);
+  async delete(id: string, user: IAuthorizedUser): Promise<void> {
+    assertPermissions(user, PERMISSIONS.TASKS_DELETE);
     await this.transactions.run(async (transaction) => {
       await this.requireTask(id, transaction);
       await this.taskRepository.softDelete(id, transaction);
@@ -300,16 +316,6 @@ export class TaskService {
 
     if (isDueDateBeforeToday(dueDate)) {
       throw new BadRequestException('Task due date cannot be in the past');
-    }
-  }
-
-  private canManage(user: IUser): boolean {
-    return ROLE_PERMISSIONS.MANAGE_TASKS.some((role) => role === user.role);
-  }
-
-  private assertManager(user: IUser): void {
-    if (!this.canManage(user)) {
-      throw new ForbiddenException('Only managers can manage tasks');
     }
   }
 

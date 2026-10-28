@@ -9,8 +9,10 @@ import {
 import { Reflector } from '@nestjs/core';
 import { METADATA_KEYS } from '@Constants/metadata-keys';
 import { AuthService } from '@Modules/auth/auth.service';
-import { UserRoleType } from '@Constants/user-role.constant';
+import { hasPermission } from '@Utilities/permission.utility';
+import { PermissionType } from '@Constants/authorization.constant';
 import { BEARER_PREFIX } from '@Modules/auth/constants/auth.constant';
+import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { IAuthenticatedRequest } from '@Interfaces/authenticated-request.interface';
 
 const extractBearerToken = (authorization?: string): string | null => {
@@ -42,8 +44,10 @@ export class AuthGuard implements CanActivate {
 
     request.user = await this.authService.authenticate(token);
 
-    if (!this.isRoleAllowed(context, request.user.role)) {
-      throw new ForbiddenException('Your role cannot perform this action');
+    if (!this.isPermissionAllowed(context, request.user)) {
+      throw new ForbiddenException(
+        'You do not have permission to perform this action',
+      );
     }
 
     return true;
@@ -58,18 +62,27 @@ export class AuthGuard implements CanActivate {
     return isPublic ?? false;
   }
 
-  private isRoleAllowed(
+  private isPermissionAllowed(
     context: ExecutionContext,
-    role: UserRoleType,
+    user: IAuthorizedUser,
   ): boolean {
-    const allowedRoles = this.reflector.getAllAndOverride<
-      readonly UserRoleType[] | null
-    >(METADATA_KEYS.USER_ROLES, [context.getHandler(), context.getClass()]);
+    const targets = [context.getHandler(), context.getClass()];
+    const permissions = this.reflector.getAllAndOverride<
+      readonly PermissionType[] | null
+    >(METADATA_KEYS.PERMISSIONS, targets);
 
-    if (!allowedRoles) {
-      return true;
+    if (permissions) {
+      return (
+        permissions.length > 0 &&
+        permissions.every((permission) => hasPermission(user, permission))
+      );
     }
 
-    return allowedRoles.includes(role);
+    return (
+      this.reflector.getAllAndOverride<boolean | null>(
+        METADATA_KEYS.AUTHENTICATED_ONLY,
+        targets,
+      ) ?? false
+    );
   }
 }

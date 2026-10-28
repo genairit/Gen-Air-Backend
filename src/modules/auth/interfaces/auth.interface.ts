@@ -1,10 +1,10 @@
-import { IUser } from '@Modules/user/interfaces/user.interface';
+import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 
 export interface ITokenPayload {
   sub: string;
 }
 
 export interface ILoginResponse {
-  user: IUser;
   accessToken: string;
+  user: IAuthorizedUser;
 }

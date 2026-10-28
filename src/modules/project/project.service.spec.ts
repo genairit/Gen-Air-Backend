@@ -12,15 +12,18 @@ import {
 
 import { Test } from '@nestjs/testing';
 import { ProjectService } from './project.service';
+import { ForbiddenException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ProjectRepository } from './project.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectIntakeService } from './project-intake.service';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { AddressService } from '@Modules/address/address.service';
 import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
+import { authorizedUser } from '../../testing/authorization.fixture';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
@@ -1611,4 +1614,70 @@ describe('ProjectService apartment team changes', () => {
       expect(projectRepository.update).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('ProjectService feature-specific update permissions', () => {
+  it('delegates ordinary edits with the original actor and payload', async () => {
+    const { service } = await createService();
+    const project = await service.getById(PROJECT_ID);
+    const update = jest.spyOn(service, 'update').mockResolvedValue(project);
+    const actor = authorizedUser([PERMISSIONS.PROJECTS_UPDATE]);
+    const changes = { name: 'Feature-permitted project edit' };
+
+    await expect(
+      service.updateForActor(PROJECT_ID, changes, actor),
+    ).resolves.toBe(project);
+    expect(update).toHaveBeenCalledWith(PROJECT_ID, changes, actor);
+  });
+
+  it('rejects status hidden inside a generic update without a status-change grant', async () => {
+    const { service } = await createService();
+    const project = await service.getById(PROJECT_ID);
+    const update = jest.spyOn(service, 'update').mockResolvedValue(project);
+    const actor = authorizedUser([PERMISSIONS.PROJECTS_UPDATE]);
+
+    expect(() =>
+      service.updateForActor(PROJECT_ID, { stageId: ORDER_STAGE_ID }, actor),
+    ).toThrow(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('delegates a status update only with both update and status-change grants', async () => {
+    const { service } = await createService();
+    const project = await service.getById(PROJECT_ID);
+    const update = jest.spyOn(service, 'update').mockResolvedValue(project);
+    const actor = authorizedUser([
+      PERMISSIONS.PROJECTS_UPDATE,
+      PERMISSIONS.PROJECTS_STATUS_CHANGE,
+    ]);
+    const changes = { stageId: ORDER_STAGE_ID };
+
+    await expect(
+      service.updateForActor(PROJECT_ID, changes, actor),
+    ).resolves.toBe(project);
+    expect(update).toHaveBeenCalledWith(PROJECT_ID, changes, actor);
+  });
+
+  it('requires the generic update grant even when status-change permission exists', async () => {
+    const { service } = await createService();
+    const project = await service.getById(PROJECT_ID);
+    const update = jest.spyOn(service, 'update').mockResolvedValue(project);
+    const actor = authorizedUser([PERMISSIONS.PROJECTS_STATUS_CHANGE]);
+
+    expect(() =>
+      service.updateForActor(PROJECT_ID, { stageId: ORDER_STAGE_ID }, actor),
+    ).toThrow(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('does not infer update rights from an administrator account role', async () => {
+    const { service } = await createService();
+    const project = await service.getById(PROJECT_ID);
+    const update = jest.spyOn(service, 'update').mockResolvedValue(project);
+
+    expect(() =>
+      service.updateForActor(PROJECT_ID, { name: 'Denied' }, authorizedUser()),
+    ).toThrow(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
 });

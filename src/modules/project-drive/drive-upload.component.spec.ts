@@ -5,10 +5,12 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from '@Guards/auth.guard';
 import { AuthService } from '@Modules/auth/auth.service';
 import { ProjectDriveService } from './project-drive.service';
+import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ProjectDriveController } from './project-drive.controller';
 import { DRIVE_UPLOAD_POLICY } from '@Constants/drive-upload.constant';
+import { baselinePermissions } from '../../testing/authorization.fixture';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
 import { DriveTemplateFolderService } from '@Modules/drive-template-folder/drive-template-folder.service';
 
@@ -34,13 +36,25 @@ describe('Drive multipart upload enforcement', () => {
         { provide: DriveTemplateFolderService, useValue: {} },
         {
           provide: GoogleDriveService,
-          useValue: { isConfigured: () => true, uploadFile },
+          useValue: {
+            isConfigured: () => true,
+            uploadFile,
+            getFileMetadata: jest.fn().mockResolvedValue({
+              id: 'project-folder',
+              mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+              trashed: false,
+            }),
+          },
         },
         {
           provide: AuthService,
           useValue: {
             authenticate: () =>
-              Promise.resolve({ id: 'fixture', role: 'system_admin' }),
+              Promise.resolve({
+                id: 'fixture',
+                role: 'system_admin',
+                permissions: baselinePermissions('system_admin'),
+              }),
           },
         },
         { provide: APP_GUARD, useClass: AuthGuard },

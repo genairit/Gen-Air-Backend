@@ -252,3 +252,19 @@ Table project_stage_reset_snapshots {
   migrated_at timestamptz(3) [not null, default: `now()`]
   Note: 'One-time recovery snapshot for the 2026-10-16 fixed-status migration. Includes all pre-existing projects, including apartments and soft-deleted records; not a user-generated transition.'
 }
+
+Table permissions {
+  key text [pk, note: 'Registered feature.action permission; catalog maintained by migrations']
+  feature text [not null]
+  action text [not null]
+  indexes { (feature, action) [unique, name: 'uq_permissions_feature_action'] }
+}
+
+Table role_permissions {
+  role user_role [not null]
+  permission_key text [not null, ref: > permissions.key]
+  indexes {
+    (role, permission_key) [pk]
+    permission_key [name: 'idx_role_permissions_permission_key']
+  }
+}

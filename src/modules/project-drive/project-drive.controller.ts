@@ -21,15 +21,15 @@ import {
 
 import { DriveFolderDto } from './dto/drive-folder.dto';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { UserRoles } from '@Decorators/user-roles.decorator';
 import { ProjectDriveService } from './project-drive.service';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { DriveFileParamsDto } from './dto/drive-file-params.dto';
 import type { IDriveItem } from '@Interfaces/google-drive.interface';
-import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
 import { ApiTags, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
 import { DRIVE_UPLOAD_POLICY } from '@Constants/drive-upload.constant';
 import { IProjectDriveContents } from './interfaces/project-drive.interface';
 import type { IProject } from '@Modules/project/interfaces/project.interface';
+import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 import { UploadCleanupInterceptor } from '../../interceptors/upload-cleanup.interceptor';
 import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
 
@@ -40,17 +40,19 @@ export class ProjectDriveController {
   constructor(private readonly projectDriveService: ProjectDriveService) {}
 
   @Get('upload-policy')
+  @RequirePermissions(PERMISSIONS.DRIVE_READ)
   getUploadPolicy() {
     return DRIVE_UPLOAD_POLICY;
   }
 
   @Get('connection')
-  @UserRoles(ROLE_PERMISSIONS.MANAGE_SETTINGS)
+  @RequirePermissions(PERMISSIONS.DRIVE_CONNECTION_CHECK)
   checkConnection(): Promise<IDriveConnectionResult> {
     return this.projectDriveService.checkConnection();
   }
 
   @Get(':projectId/contents')
+  @RequirePermissions(PERMISSIONS.DRIVE_READ)
   getContents(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Query() folder: DriveFolderDto,
@@ -68,6 +70,7 @@ export class ProjectDriveController {
     ),
     UploadCleanupInterceptor,
   )
+  @RequirePermissions(PERMISSIONS.DRIVE_UPLOAD)
   upload(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Query() folder: DriveFolderDto,
@@ -78,7 +81,7 @@ export class ProjectDriveController {
 
   @Patch(':projectId/files/:fileId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UserRoles(ROLE_PERMISSIONS.EDIT_PROJECTS)
+  @RequirePermissions(PERMISSIONS.DRIVE_MOVE)
   moveFile(
     @Param() params: DriveFileParamsDto,
     @Body() folder: DriveFolderDto,
@@ -92,13 +95,13 @@ export class ProjectDriveController {
 
   @Delete(':projectId/files/:fileId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UserRoles(ROLE_PERMISSIONS.EDIT_PROJECTS)
+  @RequirePermissions(PERMISSIONS.DRIVE_DELETE)
   trashFile(@Param() params: DriveFileParamsDto): Promise<void> {
     return this.projectDriveService.trashFile(params.projectId, params.fileId);
   }
 
   @Post(':projectId/provision')
-  @UserRoles(ROLE_PERMISSIONS.EDIT_PROJECTS)
+  @RequirePermissions(PERMISSIONS.DRIVE_PROVISION)
   provision(
     @Param('projectId', ParseUUIDPipe) projectId: string,
   ): Promise<IProject> {
