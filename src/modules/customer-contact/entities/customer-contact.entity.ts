@@ -29,11 +29,6 @@ import { Customer } from '@Modules/customer/entities/customer.entity';
     { name: 'idx_customer_contacts_customer_id', fields: ['customer_id'] },
     { name: 'idx_customer_contacts_created_by_id', fields: ['created_by_id'] },
     {
-      name: 'uq_customer_contacts_legacy_source',
-      unique: true,
-      fields: ['legacy_source_customer_id'],
-    },
-    {
       name: 'uq_customer_contacts_active_tuple',
       unique: true,
       fields: [
@@ -78,9 +73,6 @@ export class CustomerContact
   @ForeignKey(() => User)
   @Column({ allowNull: false, type: DataType.UUID })
   declare createdById: string;
-
-  @Column(DataType.UUID)
-  declare legacySourceCustomerId: string | null;
 
   @CreatedAt
   declare createdAt: Date;

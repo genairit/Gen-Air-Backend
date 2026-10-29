@@ -152,7 +152,7 @@ describe('customer-owned contacts API', () => {
     { ...CONTACT_INPUT, email: 'bad' },
     { ...CONTACT_INPUT, role: 'א'.repeat(61) },
     { ...CONTACT_INPUT, customerId: CONTACT_TEST_IDS.OTHER_CUSTOMER },
-    { ...CONTACT_INPUT, legacySourceCustomerId: CONTACT_TEST_IDS.CUSTOMER },
+    { ...CONTACT_INPUT, createdById: CONTACT_TEST_IDS.USER },
   ])('rejects invalid or forged fields %#', async (input) => {
     await request(state.app!.getHttpServer())
       .post(endpoint)

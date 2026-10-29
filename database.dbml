@@ -79,7 +79,7 @@ Table customers {
 }
 
 Table customer_contacts {
-  Note: 'Customer-owned contacts; no automatic main contact. Legacy project ownership remains unresolved and old fields are preserved.'
+  Note: 'Customer-owned contacts; no automatic main contact or old-contact backfill. Created through the API or apartment import.'
   id uuid [pk, default: `gen_random_uuid()`]
   customer_id uuid [not null, ref: > customers.id]
   name varchar(200) [not null]
@@ -87,7 +87,6 @@ Table customer_contacts {
   email varchar(254)
   role varchar(60)
   created_by_id uuid [not null, ref: > users.id]
-  legacy_source_customer_id uuid [unique, ref: > customers.id, note: 'Traceable original customer contact tuple; read-only provenance']
   created_at timestamptz(3) [not null, default: `now()`]
   updated_at timestamptz(3) [not null, default: `now()`]
   deleted_at timestamptz(3)

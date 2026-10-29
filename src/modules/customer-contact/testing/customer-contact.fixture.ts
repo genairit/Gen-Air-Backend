@@ -22,5 +22,4 @@ export const STORED_CONTACT: ICustomerContact = {
   createdAt: new Date('2026-10-28T00:00:00Z'),
   updatedAt: new Date('2026-10-28T00:00:00Z'),
   deletedAt: null,
-  legacySourceCustomerId: null,
 };

@@ -12,7 +12,6 @@ export interface ICustomerContact {
   email: string | null;
   customer?: ICustomer;
   deletedAt: Date | null;
-  legacySourceCustomerId: string | null;
 }
 
 export interface ICustomerContactValues {
