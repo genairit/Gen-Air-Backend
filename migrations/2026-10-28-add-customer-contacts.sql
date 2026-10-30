@@ -22,4 +22,16 @@ CREATE UNIQUE INDEX uq_customer_contacts_active_tuple ON customer_contacts
   (customer_id, name, COALESCE(phone, ''), COALESCE(email, ''), COALESCE(role, ''))
   WHERE deleted_at IS NULL;
 
+ALTER TABLE customer_contacts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON customer_contacts FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON customer_contacts FROM anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON customer_contacts FROM authenticated;
+  END IF;
+END $$;
+
 COMMIT;

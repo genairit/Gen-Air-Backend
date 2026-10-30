@@ -79,7 +79,7 @@ Table customers {
 }
 
 Table customer_contacts {
-  Note: 'Customer-owned contacts; no automatic main contact or old-contact backfill. Created through the API or apartment import.'
+  Note: 'Customer-owned contacts; no automatic main contact or old-contact backfill. Backend-only API/import access; RLS enabled and public client privileges revoked.'
   id uuid [pk, default: `gen_random_uuid()`]
   customer_id uuid [not null, ref: > customers.id]
   name varchar(200) [not null]
