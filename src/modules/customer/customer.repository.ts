@@ -11,10 +11,11 @@ import {
   buildCursorWhere,
 } from '@Utilities/cursor-pagination.utility';
 
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Customer } from './entities/customer.entity';
 import { User } from '@Modules/user/entities/user.entity';
-import { Op, Transaction, WhereOptions } from 'sequelize';
+import { ProviderNames } from '@Providers/database/provider-names';
+import { Op, literal, Sequelize, Transaction, WhereOptions } from 'sequelize';
 import { ICursorPage, ICursorBatch } from '@Interfaces/cursor-page.interface';
 import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
 import { isPrioritySyncStatus } from './utilities/priority-sync-status.utility';
@@ -22,6 +23,10 @@ import { CustomerContact } from '@Modules/customer-contact/entities/customer-con
 
 @Injectable()
 export class CustomerRepository {
+  constructor(
+    @Inject(ProviderNames.SEQUELIZE) private readonly sequelize: Sequelize,
+  ) {}
+
   findById(id: string): Promise<Customer | null> {
     return Customer.findByPk(id, {
       include: [{ model: User, paranoid: false }, { model: CustomerContact }],
@@ -44,6 +49,7 @@ export class CustomerRepository {
     batch: ICursorBatch,
   ): Promise<ICursorPage<Customer>> {
     const rows = await Customer.findAll({
+      bind: { customerContactSearch: toContainsPattern(filter.search ?? '') },
       include: [
         {
           model: CustomerContact,
@@ -123,11 +129,31 @@ export class CustomerRepository {
       [Op.or]: [
         { name: { [Op.iLike]: pattern } },
         { taxId: { [Op.iLike]: pattern } },
-        { contactName: { [Op.iLike]: pattern } },
-        { phone: { [Op.iLike]: pattern } },
-        { email: { [Op.iLike]: pattern } },
+        this.buildContactSearchWhere(),
         { priorityId: { [Op.iLike]: pattern } },
       ],
     };
+  }
+
+  private buildContactSearchWhere() {
+    const queryInterface = this.sequelize.getQueryInterface();
+    const contactTable = CustomerContact.getTableName();
+    const identifiers =
+      typeof contactTable === 'string'
+        ? [contactTable]
+        : [contactTable.schema, contactTable.tableName];
+    const table = identifiers
+      .map((identifier) => queryInterface.quoteIdentifier(identifier))
+      .join('.');
+    return literal(`EXISTS (
+      SELECT 1 FROM ${table} AS "searchContact"
+      WHERE "searchContact"."customer_id" = "Customer"."id"
+        AND "searchContact"."deleted_at" IS NULL
+        AND (
+          "searchContact"."name" ILIKE $customerContactSearch
+          OR "searchContact"."phone" ILIKE $customerContactSearch
+          OR "searchContact"."email" ILIKE $customerContactSearch
+        )
+    )`);
   }
 }
