@@ -43,6 +43,7 @@ import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
 import { ApartmentImportRowError } from './errors/apartment-import-row.error';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { prepareApartmentImportRow } from './utilities/apartment-import-row.utility';
+import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { buildApartmentImportResult } from './utilities/apartment-import-result.utility';
 import { APARTMENT_IMPORT_ROW_STATUS } from './constants/apartment-import-result.constant';
 import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
@@ -63,6 +64,7 @@ export class ProjectApartmentImportService {
     private readonly transitions: ProjectStageTransitionService,
     private readonly transactions: DatabaseTransactionService,
     private readonly events: EventEmitter2,
+    private readonly taskInitialization: ProjectTaskInitializationService,
   ) {}
 
   async template(buildingId: string): Promise<Buffer> {
@@ -218,6 +220,11 @@ export class ProjectApartmentImportService {
             note: null,
             changedBy: creator,
           },
+          transaction,
+        );
+        await this.taskInitialization.ensureForProject(
+          { id: created.id, name: attributes.name },
+          creator,
           transaction,
         );
         return created.id;

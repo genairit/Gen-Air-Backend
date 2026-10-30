@@ -13,9 +13,11 @@ import { ProjectRepository } from './project.repository';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
 import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
+import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { getHttpErrorPayload } from '@Utilities/http-error-payload.utility';
 import { ProjectApartmentImportService } from './project-apartment-import.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
+import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-sync-status.constant';
@@ -49,6 +51,9 @@ const setup = async () => {
     resolveNewApartment: jest.fn().mockResolvedValue({ name: 'דירה1' }),
   };
   const transitions = { record: jest.fn().mockResolvedValue(null) };
+  const taskInitialization = {
+    ensureForProject: jest.fn().mockResolvedValue(null),
+  };
   const events = { emitAsync: jest.fn().mockResolvedValue([]) };
   const transactions = {
     run: jest.fn((work: (value: Transaction) => Promise<unknown>) =>
@@ -59,6 +64,10 @@ const setup = async () => {
   const module = await Test.createTestingModule({
     providers: [
       ProjectApartmentImportService,
+      {
+        provide: ProjectTaskInitializationService,
+        useValue: taskInitialization,
+      },
       { provide: ProjectRepository, useValue: projects },
       { provide: CustomerService, useValue: customers },
       { provide: CustomerContactService, useValue: contacts },
@@ -66,7 +75,9 @@ const setup = async () => {
       {
         provide: ProjectStageService,
         useValue: {
-          getInitialStage: jest.fn().mockResolvedValue({ id: 'stage' }),
+          getInitialStage: jest
+            .fn()
+            .mockResolvedValue({ id: PROJECT_STATUS_IDS.DRAFT }),
         },
       },
       { provide: ProjectStageTransitionService, useValue: transitions },
@@ -81,6 +92,7 @@ const setup = async () => {
     contacts,
     apartments,
     transitions,
+    taskInitialization,
     transactions,
     events,
     transaction,
@@ -132,8 +144,32 @@ describe('transactional apartment importer orchestration', () => {
       expect.any(Object),
       state.transaction,
     );
+    expect(state.taskInitialization.ensureForProject).toHaveBeenCalledWith(
+      { id: 'created', name: 'דירה1' },
+      IMPORT_CREATOR,
+      state.transaction,
+    );
+    expect(state.transitions.record).toHaveBeenCalledWith(
+      expect.objectContaining({ toStageId: PROJECT_STATUS_IDS.DRAFT }),
+      state.transaction,
+    );
     expect(state.events.emitAsync).toHaveBeenCalledTimes(1);
   });
+  it('reports a failed row and does not publish an apartment when mandatory task creation fails', async () => {
+    const state = await setup();
+    state.taskInitialization.ensureForProject.mockRejectedValue(
+      new Error('mandatory task failed'),
+    );
+    const result = await state.service.import(
+      'building',
+      await makeImportFile([IMPORT_ROW]),
+      IMPORT_CREATOR,
+    );
+    expect(result.counts.created).toBe(0);
+    expect(result.counts.error).toBe(1);
+    expect(state.events.emitAsync).not.toHaveBeenCalled();
+  });
+
   it('keeps all building and apartment reads on the transaction and uses refreshed building data', async () => {
     const state = await setup();
     state.projects.findById

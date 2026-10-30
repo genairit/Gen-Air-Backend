@@ -17,6 +17,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthService } from '@Modules/auth/auth.service';
 import { UserService } from '@Modules/user/user.service';
 import { USER_ROLES } from '@Constants/user-role.constant';
+import { TASK_TYPES } from './constants/task-type.constant';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { ProjectService } from '@Modules/project/project.service';
@@ -57,6 +58,7 @@ const users = {
   projectManager: makeUser(OTHER_ID, USER_ROLES.PROJECT_MANAGER),
 };
 const task = (): ITask => ({
+  taskType: TASK_TYPES.GENERAL,
   id: TASK_ID,
   projectId: PROJECT_ID,
   customerId: CUSTOMER_ID,
@@ -493,7 +495,7 @@ describe('Task HTTP permission boundaries', () => {
       .auth('manager', { type: 'bearer' })
       .expect(204);
   });
-  it('keeps the due date and description required on edit', async () => {
+  it('keeps description valid and rejects past or malformed optional edit dates', async () => {
     const reject = (changes: object) =>
       request(server())
         .patch(`/task/${TASK_ID}`)
@@ -501,15 +503,30 @@ describe('Task HTTP permission boundaries', () => {
         .send(changes)
         .expect(400);
 
-    await reject({ dueDate: null });
     await reject({ description: null });
     await reject({ description: '   ' });
     await reject({ dueDate: '2000-01-01' });
-    expect(repository.update).not.toHaveBeenCalledWith(
-      TASK_ID,
-      expect.objectContaining({ dueDate: null }),
-      expect.anything(),
-    );
+    await reject({ dueDate: '' });
+    await reject({ dueDate: 'not-a-date' });
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('clears an optional due date explicitly while preserving it on unrelated edits', async () => {
+    const originalDueDate = new Date('2099-10-15');
+    state.task.dueDate = originalDueDate;
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ title: 'No date change' })
+      .expect(200);
+    expect(state.task.dueDate).toEqual(originalDueDate);
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ dueDate: null })
+      .expect(200);
+    expect(state.task.dueDate).toBeNull();
+    expect(repository.update.mock.calls.at(-1)?.[1]).toEqual({ dueDate: null });
   });
 
   it('passes the search through to the task list but not to the counts', async () => {
@@ -573,18 +590,15 @@ describe('Task HTTP permission boundaries', () => {
       customerId: null,
     });
   });
-  it('creates a customer task without a project', async () => {
+  it('rejects a customer-only task before looking up either relation', async () => {
     await request(server())
       .post('/task')
       .auth('manager', { type: 'bearer' })
       .send({ ...payload, projectId: null, customerId: CUSTOMER_ID })
-      .expect(201);
-    expect(customerService.getById).toHaveBeenCalledWith(CUSTOMER_ID);
+      .expect(400);
+    expect(customerService.getById).not.toHaveBeenCalled();
     expect(projectService.getById).not.toHaveBeenCalled();
-    expect(repository.create.mock.calls.at(-1)?.[0]).toMatchObject({
-      projectId: null,
-      customerId: CUSTOMER_ID,
-    });
+    expect(repository.create).not.toHaveBeenCalled();
   });
   it.each([
     ['both links', { customerId: CUSTOMER_ID }],
@@ -598,25 +612,28 @@ describe('Task HTTP permission boundaries', () => {
       .expect(400);
     expect(repository.create).not.toHaveBeenCalled();
   });
-  it('rejects a link to a missing customer', async () => {
-    customerService.getById.mockRejectedValueOnce(new NotFoundException());
+  it('rejects a link to a missing project', async () => {
+    projectService.getById.mockRejectedValueOnce(new NotFoundException());
     await request(server())
       .post('/task')
       .auth('manager', { type: 'bearer' })
-      .send({ ...payload, projectId: null, customerId: CUSTOMER_ID })
+      .send(payload)
       .expect(404);
     expect(repository.create).not.toHaveBeenCalled();
   });
-  it('replaces the link on edit', async () => {
+  it('relinks a general task only to another existing project', async () => {
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ projectId: OTHER_ID })
+      .expect(200);
+    expect(state.task).toMatchObject({ projectId: OTHER_ID, customerId: null });
     await request(server())
       .patch(`/task/${TASK_ID}`)
       .auth('manager', { type: 'bearer' })
       .send({ customerId: CUSTOMER_ID, projectId: null })
-      .expect(200);
-    expect(state.task).toMatchObject({
-      projectId: null,
-      customerId: CUSTOMER_ID,
-    });
+      .expect(400);
+    expect(state.task).toMatchObject({ projectId: OTHER_ID, customerId: null });
   });
   it('rejects both links on edit', async () => {
     await request(server())
@@ -636,21 +653,38 @@ describe('Task HTTP permission boundaries', () => {
       title: 'Renamed',
     });
   });
-  it.each([
-    ['project', projectService, { projectId: PROJECT_ID }],
-    ['customer', customerService, { customerId: CUSTOMER_ID }],
-  ])(
-    'returns 404 when an edit links to a missing %s',
-    async (_kind, service, change) => {
-      service.getById.mockRejectedValueOnce(new NotFoundException());
-      await request(server())
-        .patch(`/task/${TASK_ID}`)
-        .auth('manager', { type: 'bearer' })
-        .send(change)
-        .expect(404);
-      expect(repository.update).not.toHaveBeenCalled();
-    },
-  );
+  it('returns 404 when editing to a missing project', async () => {
+    projectService.getById.mockRejectedValueOnce(new NotFoundException());
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ projectId: OTHER_ID })
+      .expect(404);
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+  it('keeps a historical customer-only task readable and editable without reassignment', async () => {
+    state.task.projectId = null;
+    await request(server())
+      .get(`/task/${TASK_ID}`)
+      .auth('employee', { type: 'bearer' })
+      .expect(200);
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ title: 'Historical customer-only task', dueDate: null })
+      .expect(200);
+    await request(server())
+      .patch(`/task/${TASK_ID}/status`)
+      .auth('employee', { type: 'bearer' })
+      .send({ status: 'in_progress' })
+      .expect(200);
+    expect(state.task).toMatchObject({
+      id: TASK_ID,
+      projectId: null,
+      customerId: CUSTOMER_ID,
+      taskType: TASK_TYPES.GENERAL,
+    });
+  });
   it('keeps both links of a legacy task when editing other fields', async () => {
     await request(server())
       .patch(`/task/${TASK_ID}`)
@@ -696,11 +730,12 @@ describe('Task HTTP permission boundaries', () => {
     expect(events.emitAsync).not.toHaveBeenCalled();
     failure.mockRestore();
   });
-  it('requires nonblank description and a due date from today onward on create', async () => {
+  it('requires nonblank description and validates a date only when one is supplied', async () => {
     for (const change of [
       { description: null },
       { description: '  ' },
-      { dueDate: null },
+      { dueDate: '' },
+      { dueDate: 'not-a-date' },
       { dueDate: '2000-01-01' },
     ]) {
       await request(server())
@@ -711,6 +746,167 @@ describe('Task HTTP permission boundaries', () => {
     }
     expect(repository.create).not.toHaveBeenCalled();
   });
+
+  it('creates unassigned general tasks with no invented due date', async () => {
+    const withoutDate = Object.fromEntries(
+      Object.entries(payload).filter(([key]) => key !== 'dueDate'),
+    );
+    for (const input of [
+      withoutDate,
+      { ...withoutDate, dueDate: null, taskType: TASK_TYPES.GENERAL },
+    ]) {
+      await request(server())
+        .post('/task')
+        .auth('manager', { type: 'bearer' })
+        .send({ ...input, assigneeId: null, customerId: null })
+        .expect(201);
+      expect(repository.create.mock.calls.at(-1)?.[0]).toMatchObject({
+        taskType: TASK_TYPES.GENERAL,
+        projectId: PROJECT_ID,
+        customerId: null,
+        assigneeId: null,
+        dueDate: null,
+      });
+    }
+  });
+
+  it.each([TASK_TYPES.QUOTATION, TASK_TYPES.PLANNING, 'unknown'])(
+    'rejects manual creation of %s even for an administrator',
+    async (taskType) => {
+      await request(server())
+        .post('/task')
+        .auth('manager', { type: 'bearer' })
+        .send({ ...payload, taskType })
+        .expect(400);
+      expect(repository.create).not.toHaveBeenCalled();
+      expect(transitions.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not allow service callers to bypass protected creation through DTO validation', async () => {
+    const service = application.app!.get(TaskService);
+    await expect(
+      service.create(
+        { ...payload, taskType: TASK_TYPES.QUOTATION },
+        users.manager,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      service.create(
+        { ...payload, taskType: TASK_TYPES.PLANNING },
+        users.manager,
+      ),
+    ).rejects.toThrow();
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it.each([TASK_TYPES.QUOTATION, TASK_TYPES.PLANNING])(
+    'protects the lifetime slot of a %s task',
+    async (taskType) => {
+      state.task = {
+        ...task(),
+        taskType,
+        customerId: null,
+        status: 'proposal_sent',
+      };
+      await request(server())
+        .delete(`/task/${TASK_ID}`)
+        .auth('manager', { type: 'bearer' })
+        .expect(409);
+      await request(server())
+        .patch(`/task/${TASK_ID}`)
+        .auth('manager', { type: 'bearer' })
+        .send({ taskType: TASK_TYPES.GENERAL })
+        .expect(400);
+      await request(server())
+        .patch(`/task/${TASK_ID}`)
+        .auth('manager', { type: 'bearer' })
+        .send({ projectId: OTHER_ID })
+        .expect(409);
+      expect(repository.softDelete).not.toHaveBeenCalled();
+      expect(repository.update).not.toHaveBeenCalled();
+      expect(state.task).toMatchObject({
+        id: TASK_ID,
+        projectId: PROJECT_ID,
+        taskType,
+        status: 'proposal_sent',
+      });
+    },
+  );
+
+  it.each([TASK_TYPES.QUOTATION, TASK_TYPES.PLANNING])(
+    'reopens the same %s task and appends its history',
+    async (taskType) => {
+      state.task = {
+        ...task(),
+        taskType,
+        customerId: null,
+        status: 'in_review',
+      };
+      await request(server())
+        .patch(`/task/${TASK_ID}/status`)
+        .auth('employee', { type: 'bearer' })
+        .send({ status: 'proposal_sent' })
+        .expect(200);
+      await request(server())
+        .patch(`/task/${TASK_ID}/status`)
+        .auth('employee', { type: 'bearer' })
+        .send({ status: 'in_progress' })
+        .expect(200);
+      expect(state.task).toMatchObject({
+        id: TASK_ID,
+        projectId: PROJECT_ID,
+        taskType,
+        status: 'in_progress',
+      });
+      expect(transitions.create.mock.calls.map(([entry]) => entry)).toEqual([
+        {
+          taskId: TASK_ID,
+          fromStatus: 'in_review',
+          toStatus: 'proposal_sent',
+          changedById: EMPLOYEE_ID,
+        },
+        {
+          taskId: TASK_ID,
+          fromStatus: 'proposal_sent',
+          toStatus: 'in_progress',
+          changedById: EMPLOYEE_ID,
+        },
+      ]);
+      expect(repository.create).not.toHaveBeenCalled();
+      expect(repository.softDelete).not.toHaveBeenCalled();
+    },
+  );
+
+  it('blocks promotion of a general task to a protected type', async () => {
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({ taskType: TASK_TYPES.QUOTATION })
+      .expect(400);
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('permits no-op protected type/project fields while editing allowed metadata', async () => {
+    state.task = { ...task(), taskType: TASK_TYPES.PLANNING, customerId: null };
+    await request(server())
+      .patch(`/task/${TASK_ID}`)
+      .auth('manager', { type: 'bearer' })
+      .send({
+        taskType: TASK_TYPES.PLANNING,
+        projectId: PROJECT_ID,
+        title: 'Updated planning instructions',
+        dueDate: null,
+      })
+      .expect(200);
+    expect(state.task).toMatchObject({
+      taskType: TASK_TYPES.PLANNING,
+      projectId: PROJECT_ID,
+      title: 'Updated planning instructions',
+      dueDate: null,
+    });
+  });
+
   it('claims only unassigned tasks as the authenticated caller', async () => {
     state.task.assigneeId = null;
     await request(server())

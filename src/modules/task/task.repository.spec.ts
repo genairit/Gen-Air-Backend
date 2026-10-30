@@ -5,9 +5,12 @@ import {
 
 import { Task } from './entities/task.entity';
 import { Op, fn, col, where } from 'sequelize';
+import { Transaction, Sequelize } from 'sequelize';
 import { TaskRepository } from './task.repository';
 import { ITaskFilter } from './interfaces/task.interface';
+import { PROTECTED_TASK_TYPES } from './constants/task-type.constant';
 
+const PROJECT_ID = '00000000-0000-4000-8000-000000000002';
 const CUSTOMER_ID = '00000000-0000-4000-8000-000000000003';
 const EMPTY_FILTER: ITaskFilter = {
   search: null,
@@ -32,6 +35,23 @@ describe('task repository link queries', () => {
   const repository = new TaskRepository();
 
   afterEach(() => jest.restoreAllMocks());
+
+  it('looks up protected lifetime slots even if a row was archived', async () => {
+    const findAll = jest.spyOn(Task, 'findAll').mockResolvedValue([]);
+    const transaction = new Transaction(
+      new Sequelize({ dialect: 'postgres', logging: false }),
+      {},
+    );
+    await repository.findProtectedForProject(PROJECT_ID, transaction);
+    expect(findAll).toHaveBeenCalledWith({
+      where: {
+        projectId: PROJECT_ID,
+        taskType: { [Op.in]: PROTECTED_TASK_TYPES },
+      },
+      paranoid: false,
+      transaction,
+    });
+  });
 
   it('matches the customer filter on the project, then parent building, then task customer', async () => {
     const findAll = jest.spyOn(Task, 'findAll').mockResolvedValue([]);

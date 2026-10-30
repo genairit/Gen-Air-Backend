@@ -99,7 +99,7 @@ Table customer_contacts {
 }
 
 Table project_stages {
-  Note: 'Fixed active catalog: ממתין, בעבודה, להמתין, הסתיים, positions 1–4. Definition writes blocked by project_stages_readonly trigger. Retired rows retained for historical transitions.'
+  Note: 'Fixed active catalog: טיוטה, ממתין, בעבודה, להמתין, הסתיים, positions 0–4. New projects start Draft; existing projects keep their status. Definition writes blocked by project_stages_readonly trigger. Retired rows retained for historical transitions.'
   id          uuid         [pk, default: `gen_random_uuid()`]
   name        varchar(80)  [not null]
   description varchar(255)
@@ -130,7 +130,7 @@ Table projects {
   code            varchar(12)  [not null, unique, note: 'Generated on save: creator first_name + last_name initials, then a 5-digit random number (e.g. אכ-48213). An apartment adds its sequence in the building: אכ-48213-01']
   name            varchar(200) [not null]
   project_type_id uuid         [not null, ref: > project_types.id]
-  stage_id        uuid         [not null, ref: > project_stages.id, default: '6502a045-2a7d-4bc8-8ba1-36eaedc49a01', note: 'Insert/assignment trigger rejects archived status IDs']
+  stage_id        uuid         [not null, ref: > project_stages.id, default: '6502a045-2a7d-4bc8-8ba1-36eaedc49a00', note: 'Insert/assignment trigger rejects archived status IDs']
   customer_id     uuid         [ref: > customers.id, note: 'Linked customer for a project or apartment; legacy apartments retain inline customer/contact fields']
   has_own_team boolean [not null, default: false, note: 'Apartments inherit the building team unless explicitly overridden, including an empty override']
   parent_project_id uuid       [ref: > projects.id, note: 'The building an apartment belongs to; one level only (trigger trg_projects_single_level_nesting)']
@@ -211,6 +211,12 @@ Table drive_template_folders {
   updated_at timestamptz(3)  [not null, default: `now()`]
 }
 
+Enum task_type {
+  quotation [note: 'הצעת מחיר — automatic mandatory project task, cannot be deleted or relinked']
+  planning  [note: 'תכנון — automatic mandatory project task, cannot be deleted or relinked']
+  general   [note: 'כללי — only manually created type; legacy tasks retain their links']
+}
+
 Enum task_status {
   waiting_for_response [note: 'מחכה לתשובה']
   not_started          [note: 'טרם בעבודה']
@@ -221,11 +227,12 @@ Enum task_status {
 
 Table tasks {
   id            uuid           [pk, default: `gen_random_uuid()`]
-  project_id    uuid           [note: 'Set for project tasks; a project task reads its customer through the project']
-  customer_id   uuid           [note: 'Set for customer tasks; legacy project tasks may also keep it. chk_tasks_has_link: project_id or customer_id is not null']
+  project_id    uuid           [note: 'Required for new tasks. Nullable for retained legacy customer tasks. Customer resolved through project']
+  customer_id   uuid           [note: 'Legacy only; new tasks store NULL. chk_tasks_has_link retained; protected types require a project and NULL customer']
   assignee_id   uuid           [note: 'Nullable until a manager assigns the task']
   created_by_id uuid           [not null]
-  title         varchar(200)   [not null, note: 'Must contain non-whitespace text']
+  task_type     task_type      [not null, default: 'general']
+  title         varchar(212)   [not null, note: 'Manual input remains 200 characters; storage fits the complete 200-character project name and automatic title prefix']
   description   text
   status        task_status    [not null, default: 'not_started']
   is_urgent     boolean        [not null, default: false, note: 'false → true is the became-urgent transition; notification dispatch belongs to the task module']
@@ -237,6 +244,7 @@ Table tasks {
   deleted_at    timestamptz(3)
 
   indexes {
+    (project_id, task_type) [name: 'uq_tasks_project_protected_type', unique, note: 'Partial: quotation/planning only. Completed and deleted rows retain lifetime slots']
     (assignee_id, status) [name: 'idx_tasks_assignee_id_status', note: 'Partial index: WHERE deleted_at IS NULL']
     project_id [name: 'idx_tasks_project_id', note: 'Partial index: WHERE deleted_at IS NULL']
     customer_id [name: 'idx_tasks_customer_id', note: 'Partial index: WHERE deleted_at IS NULL']

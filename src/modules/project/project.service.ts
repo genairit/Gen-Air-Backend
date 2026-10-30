@@ -63,6 +63,7 @@ import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
+import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-sync-status.constant';
 import { IProjectMemberAssignment } from '@Modules/project-member/interfaces/project-member.interface';
@@ -82,6 +83,7 @@ export class ProjectService {
     private readonly projectStageTransitionService: ProjectStageTransitionService,
     @Inject(forwardRef(() => ProjectStageService))
     private readonly projectStageService: ProjectStageService,
+    private readonly taskInitialization: ProjectTaskInitializationService,
   ) {}
 
   async getById(id: string): Promise<IProject> {
@@ -355,6 +357,12 @@ export class ProjectService {
           projectId: created.id,
           toStageId: attributes.stageId,
         },
+        transaction,
+      );
+
+      await this.taskInitialization.ensureForProject(
+        { id: created.id, name: attributes.name },
+        creator,
         transaction,
       );
 
