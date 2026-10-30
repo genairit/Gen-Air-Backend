@@ -7,6 +7,7 @@ import { IUser } from '@Modules/user/interfaces/user.interface';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { PaymentTermsType } from '@Constants/payment-terms.constant';
 import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
+import { ApartmentOwnershipType } from '../constants/apartment-commercial.constant';
 import { IProjectType } from '@Modules/project-type/interfaces/project-type.interface';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
 import { IProjectStage } from '@Modules/project-stage/interfaces/project-stage.interface';
@@ -84,6 +85,8 @@ export interface IProject extends IProjectCustomerDetails, TProjectIntake {
   driveFolderId: string | null;
   prioritySyncedAt: Date | null;
   parentProjectId: string | null;
+  apartmentCredit: string | null;
+  apartmentOwnership: ApartmentOwnershipType | null;
 }
 
 export interface IProjectFilter {
@@ -101,7 +104,15 @@ export type TProjectCreationAttributes = IProjectCustomerDetails &
     'code' | 'name' | 'projectTypeId' | 'stageId' | 'createdById'
   > &
   Partial<
-    Pick<IProject, 'customerId' | 'parentProjectId' | 'hasOwnTeam' | 'notes'>
+    Pick<
+      IProject,
+      | 'customerId'
+      | 'parentProjectId'
+      | 'hasOwnTeam'
+      | 'notes'
+      | 'apartmentCredit'
+      | 'apartmentOwnership'
+    >
   >;
 
 export type TProjectUpdateAttributes = Partial<
@@ -114,6 +125,8 @@ export type TProjectUpdateAttributes = Partial<
       | 'stageId'
       | 'customerId'
       | 'hasOwnTeam'
+      | 'apartmentCredit'
+      | 'apartmentOwnership'
       | 'notes'
     >
 >;

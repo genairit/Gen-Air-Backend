@@ -381,6 +381,12 @@ export class ProjectService {
     project: IProject,
     changes: UpdateProjectDto,
   ): Promise<TProjectUpdateAttributes> {
+    if ('apartmentOwnership' in changes || 'apartmentCredit' in changes) {
+      throw new BadRequestException(
+        'Apartment ownership and credit belong to apartments only',
+      );
+    }
+
     if ('hasOwnTeam' in changes) {
       throw new BadRequestException(
         'Team inheritance can only be changed for apartments',

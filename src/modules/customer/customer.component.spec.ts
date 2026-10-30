@@ -12,6 +12,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { baselinePermissions } from '../../testing/authorization.fixture';
 import { PRIORITY_SYNC_STATUSES } from './constants/priority-sync-status.constant';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
+import { createCustomerDependencyFixtures } from '@Modules/customer-contact/testing/customer-dependencies.fixture';
 
 const CUSTOMER_INPUT = {
   taxId: '514287937',
@@ -31,6 +32,7 @@ const STORED_CUSTOMER = {
 };
 
 describe('CRM-only customer creation API', () => {
+  const dependencies = createCustomerDependencyFixtures();
   const application: { app: INestApplication<Server> | null } = { app: null };
   const customerRepository = {
     create: jest.fn().mockResolvedValue(STORED_CUSTOMER),
@@ -43,6 +45,7 @@ describe('CRM-only customer creation API', () => {
       controllers: [CustomerController],
       providers: [
         CustomerService,
+        ...dependencies.providers,
         { provide: CustomerRepository, useValue: customerRepository },
         { provide: APP_GUARD, useClass: AuthGuard },
         {
@@ -103,10 +106,13 @@ describe('CRM-only customer creation API', () => {
         .send({ ...CUSTOMER_INPUT, name: `  ${CUSTOMER_INPUT.name}  ` })
         .expect(201);
       expect(response.body).toEqual(STORED_CUSTOMER);
-      expect(customerRepository.create).toHaveBeenCalledWith({
-        ...CUSTOMER_INPUT,
-        createdById: 'trusted-user',
-      });
+      expect(customerRepository.create).toHaveBeenCalledWith(
+        {
+          ...CUSTOMER_INPUT,
+          createdById: 'trusted-user',
+        },
+        dependencies.transaction,
+      );
     },
   );
 

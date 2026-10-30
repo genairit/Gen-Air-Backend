@@ -9,7 +9,7 @@ import {
 } from 'class-validator';
 
 import { Type } from 'class-transformer';
-import { IntersectionType } from '@nestjs/swagger';
+import { IntersectionType, OmitType } from '@nestjs/swagger';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { ProjectIntakeDetailsDto } from './project-intake-details.dto';
 import { ProjectCustomerDetailsDto } from './project-customer-details.dto';
@@ -17,7 +17,11 @@ import { AssignProjectMemberDto } from '@Modules/project-member/dto/assign-proje
 
 export class CreateProjectDto extends IntersectionType(
   ProjectCustomerDetailsDto,
-  ProjectIntakeDetailsDto,
+  OmitType(ProjectIntakeDetailsDto, [
+    'contactName',
+    'contactPhone',
+    'contactRole',
+  ] as const),
 ) {
   @IsNotEmpty()
   @IsString()

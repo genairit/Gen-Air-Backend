@@ -1,6 +1,7 @@
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { PrioritySyncStatusType } from '../constants/priority-sync-status.constant';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
+import { ICustomerContact } from '@Modules/customer-contact/interfaces/customer-contact.interface';
 
 export interface ICustomer {
   id: string;
@@ -17,6 +18,7 @@ export interface ICustomer {
   deletedAt: Date | null;
   priorityId: string | null;
   prioritySyncAttempts: number;
+  contacts?: ICustomerContact[];
   prioritySyncedAt: Date | null;
   prioritySyncError: string | null;
   customerType: ProjectDetailFieldSetType;

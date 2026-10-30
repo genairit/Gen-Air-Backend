@@ -26,6 +26,7 @@ import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { authorizedUser } from '../../testing/authorization.fixture';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
+import { APARTMENT_OWNERSHIP } from './constants/apartment-commercial.constant';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
@@ -538,7 +539,7 @@ describe('ProjectService.create intake fields', () => {
     expect(projectRepository.create).not.toHaveBeenCalled();
   };
 
-  it('stores the address Google verified, the contact person and the payment terms', async () => {
+  it('stores verified site address and payment terms without duplicating customer contacts', async () => {
     const { service, projectRepository, addressService } =
       await createService();
 
@@ -550,7 +551,12 @@ describe('ProjectService.create intake fields', () => {
       sessionToken: null,
       placeId: TEL_AVIV_PLACE_ID,
     });
-    expect(createdAttributes).toMatchObject(STORED_COMPANY_INTAKE);
+    expect(createdAttributes).toMatchObject({
+      ...STORED_COMPANY_INTAKE,
+      contactName: null,
+      contactPhone: null,
+      contactRole: null,
+    });
   });
 
   it('rejects a project without an address', async () => {
@@ -590,10 +596,20 @@ describe('ProjectService.create intake fields', () => {
     });
   });
 
-  it('rejects a project without a complete contact person, naming the missing fields', async () => {
-    await expectRejection(
-      { ...PROJECT, contactPhone: null, contactRole: null },
-      'Missing contact person details: contactRole, contactPhone',
+  it('creates a project without inline customer-contact inputs', async () => {
+    const { service, projectRepository } = await createService();
+    const project = { ...PROJECT };
+    ['contactName', 'contactPhone', 'contactRole'].forEach((field) =>
+      Reflect.deleteProperty(project, field),
+    );
+    await service.create(project, CREATOR);
+    expect(projectRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contactName: null,
+        contactPhone: null,
+        contactRole: null,
+      }),
+      TRANSACTION,
     );
   });
 
@@ -1679,5 +1695,55 @@ describe('ProjectService feature-specific update permissions', () => {
       service.updateForActor(PROJECT_ID, { name: 'Denied' }, authorizedUser()),
     ).toThrow(ForbiddenException);
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService apartment commercial fields', () => {
+  it('persists supplied ownership and exact credit on apartment creation', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await service.createApartment(
+      BUILDING_ID,
+      {
+        ...NEW_APARTMENT,
+        apartmentOwnership: APARTMENT_OWNERSHIP.BUYER,
+        apartmentCredit: '120.50',
+      },
+      CREATOR,
+    );
+    expect(projectRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apartmentOwnership: APARTMENT_OWNERSHIP.BUYER,
+        apartmentCredit: '120.50',
+      }),
+      TRANSACTION,
+    );
+  });
+  it.each([
+    { apartmentCredit: '0', apartmentOwnership: APARTMENT_OWNERSHIP.LANDOWNER },
+    { apartmentCredit: null, apartmentOwnership: null },
+  ])(
+    'updates or explicitly clears apartment commercial values',
+    async (changes) => {
+      const { service, projectRepository } = await createService();
+      projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+      await service.update(STORED_APARTMENT.id, changes, CREATOR);
+      expect(projectRepository.update).toHaveBeenCalledWith(
+        STORED_APARTMENT.id,
+        expect.objectContaining(changes),
+        TRANSACTION,
+      );
+    },
+  );
+  it.each([
+    { apartmentCredit: '1' },
+    { apartmentOwnership: APARTMENT_OWNERSHIP.BUYER },
+  ])('rejects apartment-only fields on a root project', async (changes) => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(BUILDING);
+    await expect(
+      service.update(BUILDING_ID, changes, CREATOR),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(projectRepository.update).not.toHaveBeenCalled();
   });
 });

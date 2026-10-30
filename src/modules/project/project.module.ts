@@ -9,7 +9,10 @@ import { DatabaseModule } from '@Providers/database/database.module';
 import { ProjectApartmentService } from './project-apartment.service';
 import { ProjectTypeModule } from '@Modules/project-type/project-type.module';
 import { ProjectStageModule } from '@Modules/project-stage/project-stage.module';
+import { ProjectApartmentImportService } from './project-apartment-import.service';
 import { ProjectMemberModule } from '@Modules/project-member/project-member.module';
+import { ProjectApartmentImportController } from './project-apartment-import.controller';
+import { CustomerContactModule } from '@Modules/customer-contact/customer-contact.module';
 import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/project-stage-transition.module';
 
 @Module({
@@ -17,17 +20,19 @@ import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/
     DatabaseModule,
     AddressModule,
     CustomerModule,
+    CustomerContactModule,
     ProjectTypeModule,
     ProjectMemberModule,
     ProjectStageTransitionModule,
     forwardRef(() => ProjectStageModule),
   ],
-  controllers: [ProjectController],
+  controllers: [ProjectController, ProjectApartmentImportController],
   providers: [
     ProjectService,
     ProjectRepository,
     ProjectIntakeService,
     ProjectApartmentService,
+    ProjectApartmentImportService,
   ],
   exports: [ProjectService],
 })
