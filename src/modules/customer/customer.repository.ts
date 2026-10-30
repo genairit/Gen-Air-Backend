@@ -44,6 +44,16 @@ export class CustomerRepository {
     batch: ICursorBatch,
   ): Promise<ICursorPage<Customer>> {
     const rows = await Customer.findAll({
+      include: [
+        {
+          model: CustomerContact,
+          separate: true,
+          order: [
+            ['createdAt', 'ASC'],
+            ['id', 'ASC'],
+          ],
+        },
+      ],
       where: {
         [Op.and]: [
           ...this.buildFilterWhere(filter),
