@@ -7,16 +7,19 @@ import {
 import request from 'supertest';
 import { Server } from 'node:http';
 import { Test } from '@nestjs/testing';
-import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from '@Guards/auth.guard';
 import { Sequelize, Transaction } from 'sequelize';
 import { AuthService } from '@Modules/auth/auth.service';
+import { APP_GUARD, HttpAdapterHost } from '@nestjs/core';
 import { USER_ROLES } from '@Constants/user-role.constant';
+import { GeneralFilter } from '../../filters/http-error.filter';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { CustomerContactService } from './customer-contact.service';
+import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
 import { baselinePermissions } from '../../testing/authorization.fixture';
 import { CustomerContactController } from './customer-contact.controller';
 import { CustomerContactRepository } from './customer-contact.repository';
+import { HTTP_ERROR_MESSAGES } from '@Constants/http-error-message.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
 const endpoint = `/customer/${CONTACT_TEST_IDS.CUSTOMER}/contacts`;
@@ -74,6 +77,9 @@ describe('customer-owned contacts API', () => {
         forbidNonWhitelisted: true,
       }),
     );
+    state.app.useGlobalFilters(
+      new GeneralFilter(state.app.get(HttpAdapterHost)),
+    );
     await state.app.init();
   });
   beforeEach(() => jest.clearAllMocks());
@@ -114,10 +120,15 @@ describe('customer-owned contacts API', () => {
 
   it('rejects reading contacts for a missing customer', async () => {
     repository.customerExists.mockResolvedValueOnce(false);
-    await request(state.app!.getHttpServer())
+    const response = await request(state.app!.getHttpServer())
       .get(endpoint)
       .auth(USER_ROLES.SYSTEM_ADMIN, { type: 'bearer' })
       .expect(404);
+    expect(response.body).toEqual({
+      statusCode: 404,
+      code: HTTP_ERROR_CODES.CUSTOMER_NOT_FOUND,
+      message: HTTP_ERROR_MESSAGES.CUSTOMER_NOT_FOUND,
+    });
     expect(repository.list).not.toHaveBeenCalled();
   });
 
@@ -204,11 +215,16 @@ describe('customer-owned contacts API', () => {
 
   it('scopes update lookup to the requested customer', async () => {
     repository.findById.mockResolvedValueOnce(null);
-    await request(state.app!.getHttpServer())
+    const response = await request(state.app!.getHttpServer())
       .patch(`${endpoint}/${CONTACT_TEST_IDS.CONTACT}`)
       .auth(USER_ROLES.SYSTEM_ADMIN, { type: 'bearer' })
       .send({ role: 'רוכשת' })
       .expect(404);
+    expect(response.body).toEqual({
+      statusCode: 404,
+      code: HTTP_ERROR_CODES.CUSTOMER_CONTACT_NOT_FOUND,
+      message: HTTP_ERROR_MESSAGES.CUSTOMER_CONTACT_NOT_FOUND,
+    });
     expect(repository.findById).toHaveBeenCalledWith(
       CONTACT_TEST_IDS.CUSTOMER,
       CONTACT_TEST_IDS.CONTACT,
@@ -276,12 +292,57 @@ describe('customer-owned contacts API', () => {
       ...STORED_CONTACT,
       id: 'another-contact',
     });
-    await request(state.app!.getHttpServer())
+    const response = await request(state.app!.getHttpServer())
       .patch(`${endpoint}/${CONTACT_TEST_IDS.CONTACT}`)
       .auth(USER_ROLES.SYSTEM_ADMIN, { type: 'bearer' })
       .send({ role: 'רוכשת' })
       .expect(409);
+    expect(response.body).toEqual({
+      statusCode: 409,
+      code: HTTP_ERROR_CODES.DUPLICATE_CUSTOMER_CONTACT,
+      message: HTTP_ERROR_MESSAGES.DUPLICATE_CUSTOMER_CONTACT,
+    });
     expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('returns a stable validation code when a merged contact becomes invalid', async () => {
+    repository.findById.mockResolvedValueOnce({
+      ...STORED_CONTACT,
+      get: () => ({ ...STORED_CONTACT, name: '' }),
+    });
+    const response = await request(state.app!.getHttpServer())
+      .patch(`${endpoint}/${CONTACT_TEST_IDS.CONTACT}`)
+      .auth(USER_ROLES.SYSTEM_ADMIN, { type: 'bearer' })
+      .send({ role: 'רוכשת' })
+      .expect(400);
+    expect(response.body).toEqual({
+      statusCode: 400,
+      code: HTTP_ERROR_CODES.INVALID_CUSTOMER_CONTACT,
+      message: HTTP_ERROR_MESSAGES.INVALID_CUSTOMER_CONTACT,
+    });
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid import contact input using the same stable contract', async () => {
+    const service = state.app!.get(CustomerContactService);
+    await expect(
+      service.resolveForImport(
+        {
+          ...CONTACT_INPUT,
+          customerId: CONTACT_TEST_IDS.CUSTOMER,
+          createdById: CONTACT_TEST_IDS.USER,
+          name: '',
+        },
+        transaction,
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        code: HTTP_ERROR_CODES.INVALID_CUSTOMER_CONTACT,
+        message: HTTP_ERROR_MESSAGES.INVALID_CUSTOMER_CONTACT,
+      },
+      status: 400,
+    });
+    expect(repository.create).not.toHaveBeenCalled();
   });
 
   it('passes write failure out of the transaction rather than reporting success', async () => {

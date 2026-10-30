@@ -13,7 +13,9 @@ import {
 import { Transaction } from 'sequelize';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
+import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
 import { CustomerContactRepository } from './customer-contact.repository';
+import { getHttpErrorPayload } from '@Utilities/http-error-payload.utility';
 import { CreateCustomerContactDto } from './dto/create-customer-contact.dto';
 import { UpdateCustomerContactDto } from './dto/update-customer-contact.dto';
 import { normalizeCustomerContactValues } from './utilities/customer-contact-values.utility';
@@ -29,7 +31,9 @@ export class CustomerContactService {
   async list(customerId: string): Promise<ICustomerContact[]> {
     const exists = await this.repository.customerExists(customerId);
     if (!exists) {
-      throw new NotFoundException('הלקוח לא נמצא');
+      throw new NotFoundException(
+        getHttpErrorPayload(HTTP_ERROR_CODES.CUSTOMER_NOT_FOUND),
+      );
     }
 
     return this.repository.list(customerId);
@@ -57,7 +61,9 @@ export class CustomerContactService {
       plainToInstance(CreateCustomerContactDto, values),
     );
     if (errors.length > 0) {
-      throw new BadRequestException('פרטי איש הקשר אינם תקינים');
+      throw new BadRequestException(
+        getHttpErrorPayload(HTTP_ERROR_CODES.INVALID_CUSTOMER_CONTACT),
+      );
     }
 
     await this.assertLockedCustomer(input.customerId, transaction);
@@ -93,7 +99,9 @@ export class CustomerContactService {
         transaction,
       );
       if (!contact) {
-        throw new NotFoundException('איש הקשר לא נמצא אצל הלקוח');
+        throw new NotFoundException(
+          getHttpErrorPayload(HTTP_ERROR_CODES.CUSTOMER_CONTACT_NOT_FOUND),
+        );
       }
 
       const values = normalizeCustomerContactValues({
@@ -104,7 +112,9 @@ export class CustomerContactService {
         plainToInstance(CreateCustomerContactDto, values),
       );
       if (errors.length > 0) {
-        throw new BadRequestException('פרטי איש הקשר אינם תקינים');
+        throw new BadRequestException(
+          getHttpErrorPayload(HTTP_ERROR_CODES.INVALID_CUSTOMER_CONTACT),
+        );
       }
 
       const duplicate = await this.repository.findExact(
@@ -113,7 +123,9 @@ export class CustomerContactService {
         transaction,
       );
       if (duplicate && duplicate.id !== id) {
-        throw new ConflictException('איש קשר עם פרטים אלה כבר קיים אצל הלקוח');
+        throw new ConflictException(
+          getHttpErrorPayload(HTTP_ERROR_CODES.DUPLICATE_CUSTOMER_CONTACT),
+        );
       }
 
       await this.repository.update(customerId, id, values, transaction);
@@ -123,7 +135,9 @@ export class CustomerContactService {
         transaction,
       );
       if (!updated) {
-        throw new NotFoundException('איש הקשר לא נמצא אצל הלקוח');
+        throw new NotFoundException(
+          getHttpErrorPayload(HTTP_ERROR_CODES.CUSTOMER_CONTACT_NOT_FOUND),
+        );
       }
 
       return updated;
@@ -136,7 +150,9 @@ export class CustomerContactService {
   ): Promise<void> {
     const found = await this.repository.lockCustomer(customerId, transaction);
     if (!found) {
-      throw new NotFoundException('הלקוח לא נמצא');
+      throw new NotFoundException(
+        getHttpErrorPayload(HTTP_ERROR_CODES.CUSTOMER_NOT_FOUND),
+      );
     }
   }
 }

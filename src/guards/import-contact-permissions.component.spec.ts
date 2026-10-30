@@ -14,6 +14,11 @@ import { CustomerContactController } from '@Modules/customer-contact/customer-co
 import { ProjectApartmentImportService } from '@Modules/project/project-apartment-import.service';
 import { ProjectApartmentImportController } from '@Modules/project/project-apartment-import.controller';
 
+interface IPermissionState {
+  actor: IAuthorizedUser;
+  app: INestApplication<Server> | null;
+}
+
 const REQUIRED_IMPORT_PERMISSIONS = [
   PERMISSIONS.APARTMENTS_CREATE,
   PERMISSIONS.CUSTOMERS_CREATE,
@@ -23,10 +28,6 @@ const SCOPE_ID = '11111111-1111-4111-8111-111111111111';
 const IMPORT_ENDPOINT = `/project/${SCOPE_ID}/apartments/import`;
 const CONTACT_ENDPOINT = `/customer/${SCOPE_ID}/contacts`;
 const TOKEN = 'unchanged-token';
-interface IPermissionState {
-  actor: IAuthorizedUser;
-  app: INestApplication<Server> | null;
-}
 
 describe('import and contact effective-grant boundaries', () => {
   const state: IPermissionState = { actor: authorizedUser(), app: null };

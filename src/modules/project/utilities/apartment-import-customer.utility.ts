@@ -103,7 +103,7 @@ export const compareApartmentImportCustomer = ({
   cells,
   customer,
 }: IApartmentImportCustomerComparison): string[] => {
-  const hasConflict = APARTMENT_IMPORT_CUSTOMER_COMPARISON_FIELDS.some(
+  const conflictingFields = APARTMENT_IMPORT_CUSTOMER_COMPARISON_FIELDS.filter(
     ({ field, mode }) => {
       const input = readApartmentImportField(
         cells,
@@ -120,11 +120,10 @@ export const compareApartmentImportCustomer = ({
       return normalizedInput !== normalizedStored;
     },
   );
-  if (hasConflict) {
-    return ['פרטי הלקוח שסופקו אינם תואמים ללקוח הקיים'];
-  }
-
-  return [];
+  return conflictingFields.map(
+    ({ field }) =>
+      `${getImportFieldHeader(APARTMENT_IMPORT_CUSTOMER_FIELDS[field])}: אינו תואם ללקוח הקיים`,
+  );
 };
 
 const normalizeCustomerComparisonInput = (
@@ -146,7 +145,7 @@ export const mergeApartmentCustomerDeclaration = ({
   previous,
 }: IApartmentCustomerDeclarationInput): IApartmentCustomerDeclaration => {
   const earlier = previous ?? [];
-  const hasConflict = APARTMENT_IMPORT_CUSTOMER_COMPARISON_FIELDS.some(
+  const conflictingFields = APARTMENT_IMPORT_CUSTOMER_COMPARISON_FIELDS.filter(
     ({ field, mode }) => {
       const key = APARTMENT_IMPORT_CUSTOMER_FIELDS[field];
       const before = readApartmentImportField(earlier, key);
@@ -162,10 +161,13 @@ export const mergeApartmentCustomerDeclaration = ({
       return normalizedBefore !== normalizedAfter;
     },
   );
-  if (hasConflict) {
+  if (conflictingFields.length > 0) {
     return {
       cells: [...earlier],
-      errors: ['פרטי הלקוח אינם תואמים להצהרה קודמת בקובץ'],
+      errors: conflictingFields.map(
+        ({ field }) =>
+          `${getImportFieldHeader(APARTMENT_IMPORT_CUSTOMER_FIELDS[field])}: אינו תואם להצהרה קודמת בקובץ`,
+      ),
     };
   }
 

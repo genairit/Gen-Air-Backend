@@ -7,10 +7,13 @@ import {
 
 import { Test } from '@nestjs/testing';
 import { Sequelize, Transaction } from 'sequelize';
+import { BadRequestException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ProjectRepository } from './project.repository';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
+import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
+import { getHttpErrorPayload } from '@Utilities/http-error-payload.utility';
 import { ProjectApartmentImportService } from './project-apartment-import.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
@@ -384,6 +387,66 @@ describe('transactional apartment importer orchestration', () => {
     expect(result.rows[0].reason).not.toContain('private');
     expect(state.events.emitAsync).toHaveBeenCalledTimes(1);
   });
+  it('localizes known contact errors in row reports without exposing English API messages', async () => {
+    const state = await setup();
+    state.contacts.resolveForImport.mockRejectedValueOnce(
+      new BadRequestException(
+        getHttpErrorPayload(HTTP_ERROR_CODES.INVALID_CUSTOMER_CONTACT),
+      ),
+    );
+    const result = await state.service.import(
+      'building',
+      await makeImportFile([IMPORT_ROW]),
+      IMPORT_CREATOR,
+    );
+    expect(result.rows[0].reason).toBe('פרטי איש הקשר אינם תקינים');
+    expect(result.counts.error).toBe(1);
+    expect(state.events.emitAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not expose arbitrary exception messages in row reports', async () => {
+    const state = await setup();
+    state.contacts.resolveForImport.mockRejectedValueOnce(
+      new BadRequestException('private submitted data'),
+    );
+    const result = await state.service.import(
+      'building',
+      await makeImportFile([IMPORT_ROW]),
+      IMPORT_CREATOR,
+    );
+    expect(result.rows[0].reason).toBe(
+      'לא ניתן לשמור את השורה; לא נשמרו שינויים משורה זו',
+    );
+  });
+
+  it('uses stable English API codes for missing files and unavailable or ineligible buildings', async () => {
+    const state = await setup();
+    await expect(
+      state.service.import('building', null, IMPORT_CREATOR),
+    ).rejects.toMatchObject({
+      response: getHttpErrorPayload(
+        HTTP_ERROR_CODES.APARTMENT_IMPORT_FILE_REQUIRED,
+      ),
+      status: 400,
+    });
+    state.projects.findById.mockResolvedValueOnce(null);
+    await expect(state.service.template('missing')).rejects.toMatchObject({
+      response: getHttpErrorPayload(
+        HTTP_ERROR_CODES.APARTMENT_IMPORT_BUILDING_NOT_FOUND,
+      ),
+      status: 404,
+    });
+    state.projects.findById.mockResolvedValueOnce({
+      parentProjectId: 'parent',
+    });
+    await expect(state.service.template('child')).rejects.toMatchObject({
+      response: getHttpErrorPayload(
+        HTTP_ERROR_CODES.APARTMENT_IMPORT_BUILDING_INVALID,
+      ),
+      status: 400,
+    });
+  });
+
   it('reports invalid fields without opening a transaction', async () => {
     const state = await setup();
     const result = await state.service.import(

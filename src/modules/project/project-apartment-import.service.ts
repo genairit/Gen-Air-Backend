@@ -1,5 +1,6 @@
 import {
   Injectable,
+  HttpException,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -36,7 +37,10 @@ import { IUser } from '@Modules/user/interfaces/user.interface';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
+import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
+import { getHttpErrorPayload } from '@Utilities/http-error-payload.utility';
 import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
+import { ApartmentImportRowError } from './errors/apartment-import-row.error';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { prepareApartmentImportRow } from './utilities/apartment-import-row.utility';
 import { buildApartmentImportResult } from './utilities/apartment-import-result.utility';
@@ -72,7 +76,9 @@ export class ProjectApartmentImportService {
     creator: IUser,
   ): Promise<IApartmentImportResult> {
     if (!file) {
-      throw new BadRequestException('יש לבחור קובץ xlsx אחד');
+      throw new BadRequestException(
+        getHttpErrorPayload(HTTP_ERROR_CODES.APARTMENT_IMPORT_FILE_REQUIRED),
+      );
     }
     const input: IApartmentImportFile = {
       name: file.originalname,
@@ -132,11 +138,15 @@ export class ProjectApartmentImportService {
   ): Promise<IProject> {
     const building = await this.projects.findById(id, transaction);
     if (!building) {
-      throw new NotFoundException('הבניין לא נמצא');
+      throw new NotFoundException(
+        getHttpErrorPayload(
+          HTTP_ERROR_CODES.APARTMENT_IMPORT_BUILDING_NOT_FOUND,
+        ),
+      );
     }
     if (building.parentProjectId || !building.projectType?.canHaveApartments) {
       throw new BadRequestException(
-        'ייבוא דירות אפשרי רק מתוך פרויקט בנייה רוויה',
+        getHttpErrorPayload(HTTP_ERROR_CODES.APARTMENT_IMPORT_BUILDING_INVALID),
       );
     }
     return building;
@@ -167,7 +177,7 @@ export class ProjectApartmentImportService {
           transaction,
         );
         if (!lockedBuilding) {
-          throw new BadRequestException('הבניין אינו זמין לייבוא');
+          throw new ApartmentImportRowError(['הבניין אינו זמין לייבוא']);
         }
         const currentBuilding = await this.getBuilding(
           building.id,
@@ -227,10 +237,7 @@ export class ProjectApartmentImportService {
         message: 'Apartment import row rejected',
         rowNumber: row.rowNumber,
       });
-      const message =
-        error instanceof BadRequestException
-          ? this.safeRowMessage(error)
-          : 'לא ניתן לשמור את השורה; לא נשמרו שינויים משורה זו';
+      const message = this.safeRowMessage(error);
       return this.result(row, APARTMENT_IMPORT_ROW_STATUS.ERROR, message);
     }
   }
@@ -250,12 +257,12 @@ export class ProjectApartmentImportService {
       customer: existing,
     });
     if (errors.length > 0) {
-      throw new BadRequestException(errors.join('; '));
+      throw new ApartmentImportRowError(errors);
     }
     if (existing.prioritySyncStatus === PRIORITY_SYNC_STATUSES.FAILED) {
-      throw new BadRequestException(
+      throw new ApartmentImportRowError([
         'לא ניתן לקשר את הלקוח עד לפתרון שגיאת הסנכרון שלו',
-      );
+      ]);
     }
     return existing;
   }
@@ -267,7 +274,7 @@ export class ProjectApartmentImportService {
   ): Promise<ICustomer> {
     const prepared = await prepareApartmentImportCustomer(cells);
     if (!prepared.customer) {
-      throw new BadRequestException(prepared.errors.join('; '));
+      throw new ApartmentImportRowError(prepared.errors);
     }
     return this.customers.createForImport(
       prepared.customer,
@@ -335,13 +342,22 @@ export class ProjectApartmentImportService {
     return new Error(JSON.stringify({ name, code: safeCode }));
   }
 
-  private safeRowMessage(error: BadRequestException): string {
-    const response = error.getResponse();
-    if (typeof response === 'string') {
-      return response;
+  private safeRowMessage(error: unknown): string {
+    if (error instanceof ApartmentImportRowError) {
+      return error.reasons.join('; ');
     }
-    const message: unknown = Reflect.get(response, 'message');
-    return typeof message === 'string' ? message : 'פרטי השורה אינם תקינים';
+
+    const response =
+      error instanceof HttpException ? error.getResponse() : null;
+    const code: unknown =
+      typeof response === 'object' && response !== null
+        ? Reflect.get(response, 'code')
+        : null;
+    if (code === HTTP_ERROR_CODES.INVALID_CUSTOMER_CONTACT) {
+      return 'פרטי איש הקשר אינם תקינים';
+    }
+
+    return 'לא ניתן לשמור את השורה; לא נשמרו שינויים משורה זו';
   }
 
   private result(

@@ -205,9 +205,42 @@ describe('existing apartment customer consistency', () => {
         cells: makeCells(overrides),
         customer: STORED_CUSTOMER,
       });
-      expect(errors).toEqual(['פרטי הלקוח שסופקו אינם תואמים ללקוח הקיים']);
+      const column = APARTMENT_IMPORT_COLUMNS.find(
+        ({ key }) => key in overrides,
+      );
+      expect(errors).toEqual([`${column?.header}: אינו תואם ללקוח הקיים`]);
+      Object.values(overrides).forEach((value) =>
+        expect(errors.join()).not.toContain(value),
+      );
     },
   );
+
+  it('lists every mismatched field label without exposing stored or supplied values', () => {
+    const overrides = {
+      customerName: 'Private changed name',
+      customerEmail: 'secret@example.net',
+      customerPhone: '0529876543',
+      customerAddress: 'Secret changed address',
+    };
+    const errors = compareApartmentImportCustomer({
+      cells: makeCells(overrides),
+      customer: STORED_CUSTOMER,
+    });
+    expect(errors).toEqual([
+      'שם לקוח: אינו תואם ללקוח הקיים',
+      'כתובת לקוח: אינו תואם ללקוח הקיים',
+      'דוא״ל לקוח: אינו תואם ללקוח הקיים',
+      'טלפון לקוח: אינו תואם ללקוח הקיים',
+    ]);
+    [
+      ...Object.values(overrides),
+      STORED_CUSTOMER.name,
+      STORED_CUSTOMER.phone,
+      STORED_CUSTOMER.email,
+      STORED_CUSTOMER.taxId,
+      STORED_CUSTOMER.address,
+    ].forEach((value) => expect(errors.join()).not.toContain(value));
+  });
 
   it('can compare a later workbook row against a previously prepared customer', async () => {
     const prepared = await prepareApartmentImportCustomer(makeCells());
@@ -241,6 +274,21 @@ describe('in-workbook customer declarations', () => {
     expect(next.errors).toHaveLength(1);
     expect(next.cells).toEqual(declaration.cells);
     expect(first).toEqual(snapshot);
+  });
+
+  it('lists all workbook declaration conflicts without private values', () => {
+    const result = mergeApartmentCustomerDeclaration({
+      previous: makeCells(),
+      cells: makeCells({
+        customerName: 'Secret name',
+        customerEmail: 'private@example.net',
+      }),
+    });
+    expect(result.errors).toEqual([
+      'שם לקוח: אינו תואם להצהרה קודמת בקובץ',
+      'דוא״ל לקוח: אינו תואם להצהרה קודמת בקובץ',
+    ]);
+    expect(result.errors.join()).not.toMatch(/Secret name|private@example.net/);
   });
 
   it('merges newly supplied identity so a third conflicting row is rejected', () => {

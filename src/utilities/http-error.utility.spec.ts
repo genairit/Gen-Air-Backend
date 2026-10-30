@@ -23,6 +23,25 @@ describe('public HTTP error code boundary', () => {
       code: HTTP_ERROR_CODES.INVALID_TEMPLATE,
     });
   });
+  it.each(Object.values(HTTP_ERROR_CODES))(
+    'preserves allowlisted code %s through the HTTP boundary',
+    (code) => {
+      expect(
+        getHttpErrorResponse(
+          new BadRequestException({
+            code,
+            message: 'Safe English message',
+            privateValue: 'hidden',
+          }),
+        ),
+      ).toEqual({
+        statusCode: 400,
+        code,
+        message: 'Safe English message',
+      });
+    },
+  );
+
   it('does not expose unapproved or database error codes', () => {
     expect(
       getHttpErrorResponse(

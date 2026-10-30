@@ -13,6 +13,8 @@ import { Readable } from 'node:stream';
 import { Cell, Workbook, Worksheet } from 'exceljs';
 import { TypedLogger } from '@Logger/logger.service';
 import { UnprocessableEntityException } from '@nestjs/common';
+import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
+import { getHttpErrorPayload } from '@Utilities/http-error-payload.utility';
 import { validateArchiveFile } from '@Utilities/drive-upload-archive.utility';
 import { validateApartmentImportContacts } from './apartment-import-contact.utility';
 
@@ -56,8 +58,8 @@ export const createApartmentErrorReport = async (
 
 const invalidTemplate = (message: string): never => {
   throw new UnprocessableEntityException({
+    ...getHttpErrorPayload(HTTP_ERROR_CODES.INVALID_TEMPLATE),
     message,
-    code: APARTMENT_IMPORT.TEMPLATE_ERROR,
   });
 };
 
@@ -73,11 +75,11 @@ const assertImportFile = ({
         (accepted) => accepted === mimeType,
       ))
   ) {
-    invalidTemplate('יש להעלות קובץ xlsx בלבד');
+    invalidTemplate('Only XLSX files are supported');
   }
 
   if (bytes.length === 0 || bytes.length > APARTMENT_IMPORT.MAX_FILE_BYTES) {
-    invalidTemplate('הקובץ ריק או גדול מהמותר (5 MB)');
+    invalidTemplate('File is empty or exceeds the 5 MB limit');
   }
 };
 
@@ -91,7 +93,7 @@ const loadImportWorkbook = async (
     return workbook;
   } catch {
     logger.warn({ message: 'Rejected invalid apartment import workbook' });
-    return invalidTemplate('תוכן הקובץ אינו קובץ xlsx תקין ובטוח');
+    return invalidTemplate('File is not a valid and safe XLSX workbook');
   }
 };
 
@@ -99,16 +101,18 @@ const assertImportSheet: (
   sheet: Worksheet | null,
 ) => asserts sheet is Worksheet = (sheet) => {
   if (!sheet) {
-    return invalidTemplate('חסר גיליון בשם דירות');
+    return invalidTemplate('Required apartment worksheet is missing');
   }
 
   if (sheet.rowCount > APARTMENT_IMPORT.MAX_ROWS + 1) {
-    invalidTemplate(`ניתן לייבא עד ${APARTMENT_IMPORT.MAX_ROWS} שורות בקובץ`);
+    invalidTemplate(
+      `Import supports at most ${APARTMENT_IMPORT.MAX_ROWS} rows per file`,
+    );
   }
 
   if (sheet.columnCount !== APARTMENT_IMPORT_HEADERS.length) {
     invalidTemplate(
-      `נדרשות בדיוק ${APARTMENT_IMPORT_HEADERS.length} עמודות לפי התבנית הרשמית`,
+      `Exactly ${APARTMENT_IMPORT_HEADERS.length} columns are required`,
     );
   }
 
@@ -117,9 +121,7 @@ const assertImportSheet: (
     return typeof cell.value === 'string' && cell.value === header;
   });
   if (!headersMatch) {
-    invalidTemplate(
-      `כותרות העמודות חייבות להיות בסדר הבא: ${APARTMENT_IMPORT_HEADERS.join(', ')}`,
-    );
+    invalidTemplate(`Column headers must match the official template in order`);
   }
 };
 

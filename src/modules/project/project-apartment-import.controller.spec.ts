@@ -126,7 +126,7 @@ describe('apartment import HTTP boundary', () => {
     imports.import.mockRejectedValueOnce(
       new UnprocessableEntityException({
         code: APARTMENT_IMPORT.TEMPLATE_ERROR,
-        message: 'תבנית לא תקינה',
+        message: 'Invalid apartment import template',
       }),
     );
     const result = await request(server())

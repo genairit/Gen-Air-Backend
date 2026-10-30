@@ -102,9 +102,14 @@ describe('apartment workbook boundary', () => {
     async (...headers) => {
       const file = await makeFile([], headers);
       await expect(readApartmentWorkbook(file)).rejects.toMatchObject({
-        response: { code: 'INVALID_TEMPLATE' },
+        response: {
+          code: 'INVALID_TEMPLATE',
+        },
         status: 422,
       });
+      await expect(readApartmentWorkbook(file)).rejects.toThrow(
+        /^[^\u0590-\u05ff]+$/,
+      );
     },
   );
 
