@@ -1,3 +1,4 @@
+import { TaskType } from '../constants/task-type.constant';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { TaskStatusType } from '../constants/task-status.constant';
 import { IProject } from '@Modules/project/interfaces/project.interface';
@@ -21,6 +22,7 @@ export interface ITask {
   createdAt: Date;
   updatedAt: Date;
   isUrgent: boolean;
+  taskType: TaskType;
   createdById: string;
   dueDate: Date | null;
   status: TaskStatusType;
@@ -57,7 +59,8 @@ export type TTaskEditableAttributes = Pick<
   | 'dueDate'
 >;
 export type TTaskCreationAttributes = TTaskEditableAttributes &
-  Pick<ITask, 'createdById'>;
+  Pick<ITask, 'createdById'> &
+  Partial<Pick<ITask, 'taskType'>>;
 export type TTaskStateAttributes = Pick<
   ITask,
   'status' | 'isUrgent' | 'urgencyMarkedById' | 'urgencyMarkedAt'

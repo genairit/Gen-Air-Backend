@@ -26,10 +26,12 @@ import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { authorizedUser } from '../../testing/authorization.fixture';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
+import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { APARTMENT_OWNERSHIP } from './constants/apartment-commercial.constant';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
+import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
@@ -37,6 +39,7 @@ import { ProjectStageTransitionService } from '@Modules/project-stage-transition
 const TRANSACTION = { id: 'transaction' };
 const PROJECT_ID = 'project-1';
 const QUOTE_STAGE_ID = 'stage-quote';
+const DRAFT_STAGE_ID = PROJECT_STATUS_IDS.DRAFT;
 const ORDER_STAGE_ID = 'stage-order';
 const COMPANY_TYPE_ID = 'type-company';
 const PRIVATE_TYPE_ID = 'type-private';
@@ -213,13 +216,16 @@ const createService = async () => {
   };
   const projectStageService = {
     getById: jest.fn().mockResolvedValue({ id: ORDER_STAGE_ID }),
-    getInitialStage: jest.fn().mockResolvedValue({ id: QUOTE_STAGE_ID }),
+    getInitialStage: jest.fn().mockResolvedValue({ id: DRAFT_STAGE_ID }),
   };
   const projectMemberService = {
     replaceForProject: jest.fn().mockResolvedValue(null),
     validateAssignments: jest.fn().mockResolvedValue(null),
   };
   const transitionService = { record: jest.fn().mockResolvedValue(null) };
+  const taskInitialization = {
+    ensureForProject: jest.fn().mockResolvedValue(null),
+  };
   const projectTypeService = {
     getById: jest.fn((id: keyof typeof PROJECT_TYPES) =>
       Promise.resolve(PROJECT_TYPES[id]),
@@ -246,6 +252,10 @@ const createService = async () => {
       ProjectService,
       ProjectIntakeService,
       ProjectApartmentService,
+      {
+        provide: ProjectTaskInitializationService,
+        useValue: taskInitialization,
+      },
       { provide: CustomerService, useValue: customerService },
       { provide: AddressService, useValue: addressService },
       { provide: EventEmitter2, useValue: eventEmitter },
@@ -265,6 +275,7 @@ const createService = async () => {
     addressService,
     projectRepository,
     transitionService,
+    taskInitialization,
     projectTypeService,
     projectMemberService,
   };
@@ -280,12 +291,13 @@ describe('ProjectService.create', () => {
     members: [{ userId: 'user-2', role: USER_ROLES.SECRETARY }],
   };
 
-  it('creates the project in the first stage with its members and an opening timeline entry', async () => {
+  it('creates the project in Draft with its members, mandatory tasks and an opening timeline entry', async () => {
     const {
       service,
       projectRepository,
       projectMemberService,
       transitionService,
+      taskInitialization,
     } = await createService();
 
     await service.create(PROJECT, CREATOR);
@@ -296,7 +308,7 @@ describe('ProjectService.create', () => {
     expect(transaction).toBe(TRANSACTION);
     expect(createdAttributes.code).toMatch(/^אכ-[0-9]{5}$/);
     expect(createdAttributes).toMatchObject({
-      stageId: QUOTE_STAGE_ID,
+      stageId: DRAFT_STAGE_ID,
       createdById: CREATOR.id,
     });
     expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
@@ -305,9 +317,25 @@ describe('ProjectService.create', () => {
       TRANSACTION,
     );
     expect(transitionService.record).toHaveBeenCalledWith(
-      expect.objectContaining({ fromStageId: null, toStageId: QUOTE_STAGE_ID }),
+      expect.objectContaining({ fromStageId: null, toStageId: DRAFT_STAGE_ID }),
       TRANSACTION,
     );
+    expect(taskInitialization.ensureForProject).toHaveBeenCalledWith(
+      { id: PROJECT_ID, name: PROJECT.name },
+      CREATOR,
+      TRANSACTION,
+    );
+  });
+
+  it('does not publish a project when mandatory task initialization fails', async () => {
+    const { service, taskInitialization, eventEmitter } = await createService();
+    taskInitialization.ensureForProject.mockRejectedValue(
+      new Error('task write failed'),
+    );
+    await expect(service.create(PROJECT, CREATOR)).rejects.toThrow(
+      'task write failed',
+    );
+    expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
   });
 
   it('announces the new project after it is saved so Drive folders get created', async () => {
@@ -925,7 +953,8 @@ const STORED_APARTMENT = {
 
 describe('ProjectService.createApartment', () => {
   it('creates the apartment with everything the building decides', async () => {
-    const { service, projectRepository, eventEmitter } = await createService();
+    const { service, projectRepository, eventEmitter, taskInitialization } =
+      await createService();
     projectRepository.findById.mockResolvedValueOnce(BUILDING);
     projectRepository.countApartmentsEverCreated.mockResolvedValue(4);
 
@@ -946,12 +975,17 @@ describe('ProjectService.createApartment', () => {
       addressPlaceId: null,
       code: 'GA-84811-05',
       customerApartment: '12',
-      stageId: QUOTE_STAGE_ID,
+      stageId: DRAFT_STAGE_ID,
       customerPhone: null,
       customerName: null,
       parentProjectId: BUILDING_ID,
       projectTypeId: 'type-building',
     });
+    expect(taskInitialization.ensureForProject).toHaveBeenCalledWith(
+      { id: PROJECT_ID, name: 'דירה 12' },
+      CREATOR,
+      TRANSACTION,
+    );
     expect(eventEmitter.emitAsync).toHaveBeenCalledTimes(1);
     expect(eventEmitter.emitAsync).toHaveBeenCalledWith(
       DOMAIN_EVENTS.PROJECT_CREATED,
@@ -960,6 +994,19 @@ describe('ProjectService.createApartment', () => {
     expect(projectRepository.create.mock.invocationCallOrder[0]).toBeLessThan(
       eventEmitter.emitAsync.mock.invocationCallOrder[0],
     );
+  });
+
+  it('does not announce an apartment whose mandatory task initialization fails', async () => {
+    const { service, projectRepository, eventEmitter, taskInitialization } =
+      await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    taskInitialization.ensureForProject.mockRejectedValue(
+      new Error('mandatory task failed'),
+    );
+    await expect(
+      service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
+    ).rejects.toThrow('mandatory task failed');
+    expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
   });
 
   it('does not announce an apartment whose persistence fails', async () => {

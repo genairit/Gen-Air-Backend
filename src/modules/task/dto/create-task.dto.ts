@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsUUID,
   Matches,
   IsString,
@@ -8,12 +9,18 @@ import {
   IsDateString,
 } from 'class-validator';
 
+import type { TaskType } from '../constants/task-type.constant';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
+import { MANUAL_TASK_TYPES } from '../constants/task-type.constant';
 
 export class CreateTaskDto {
   @IsOptional()
+  @IsIn(MANUAL_TASK_TYPES)
+  declare taskType?: TaskType;
+
+  @IsNotEmpty()
   @IsUUID()
-  declare projectId?: string | null;
+  declare projectId: string;
   @IsOptional()
   @IsUUID()
   declare customerId?: string | null;
@@ -30,7 +37,7 @@ export class CreateTaskDto {
   @Matches(/\S/)
   @MaxLength(FIELD_LENGTHS.TASK_DESCRIPTION)
   declare description: string;
-  @IsNotEmpty()
+  @IsOptional()
   @IsDateString({ strict: true })
-  declare dueDate: string;
+  declare dueDate?: string | null;
 }
