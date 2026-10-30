@@ -11,7 +11,6 @@ import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-syn
 
 const databaseUrl = process.env.CUSTOMER_PAGINATION_TEST_DATABASE_URL ?? '';
 const schema = `customer_pagination_${randomUUID().replaceAll('-', '')}`;
-const repository = new CustomerRepository();
 const emptyFilter = { search: null, prioritySyncStatus: null };
 const fixtureIds = {
   older: '00000000-0000-4000-8000-000000000001',
@@ -25,6 +24,14 @@ const fixtureIds = {
   middleContact: '00000000-0000-4000-8000-000000000015',
 };
 const state: { sequelize: Sequelize | null } = { sequelize: null };
+
+const getRepository = () => {
+  if (!state.sequelize) {
+    throw new Error('The isolated customer test database is not initialized.');
+  }
+
+  return new CustomerRepository(state.sequelize);
+};
 
 describe('customer contact pagination against isolated PostgreSQL', () => {
   beforeAll(async () => {
@@ -142,6 +149,22 @@ describe('customer contact pagination against isolated PostgreSQL', () => {
     await CustomerContact.destroy({ where: { id: fixtureIds.contactDeleted } });
   });
 
+  beforeEach(async () => {
+    const resets = [
+      { id: fixtureIds.contactFirst, name: 'ראשון' },
+      { id: fixtureIds.contactSecond, name: 'שני' },
+      { id: fixtureIds.middleContact, name: 'איש קשר יחיד' },
+    ];
+    await Promise.all(
+      resets.map((contact) =>
+        CustomerContact.update(
+          { name: contact.name, phone: null, email: null },
+          { where: { id: contact.id } },
+        ),
+      ),
+    );
+  });
+
   afterAll(async () => {
     const sequelize = state.sequelize;
     if (!sequelize) {
@@ -156,7 +179,7 @@ describe('customer contact pagination against isolated PostgreSQL', () => {
   });
 
   it('returns complete ordered active contact collections without multiplying customer pages', async () => {
-    const first = await repository.findByFilter(emptyFilter, {
+    const first = await getRepository().findByFilter(emptyFilter, {
       batchSize: 2,
       batchCursor: null,
     });
@@ -174,7 +197,7 @@ describe('customer contact pagination against isolated PostgreSQL', () => {
     ]);
     expect(first.nextCursor).not.toBeNull();
 
-    const second = await repository.findByFilter(emptyFilter, {
+    const second = await getRepository().findByFilter(emptyFilter, {
       batchSize: 2,
       batchCursor: first.nextCursor,
     });
@@ -190,7 +213,7 @@ describe('customer contact pagination against isolated PostgreSQL', () => {
   });
 
   it('keeps search and sync filters while including the matched customers contacts', async () => {
-    const result = await repository.findByFilter(
+    const result = await getRepository().findByFilter(
       { search: 'מסונן', prioritySyncStatus: PRIORITY_SYNC_STATUSES.FAILED },
       { batchSize: 1, batchCursor: null },
     );
@@ -201,5 +224,147 @@ describe('customer contact pagination against isolated PostgreSQL', () => {
       fixtureIds.middleContact,
     ]);
     expect(result.nextCursor).toBeNull();
+  });
+
+  it('searches updated contact names, phones and emails instead of stale customer scalars', async () => {
+    const updated = {
+      name: 'איש קשר עדכני ייחודי',
+      phone: '054-7738291',
+      email: 'updated-contact@example.invalid',
+    };
+    await CustomerContact.update(updated, {
+      where: { id: fixtureIds.contactFirst },
+    });
+    const searchTerms = Object.values(updated);
+    for (const search of searchTerms) {
+      const result = await getRepository().findByFilter(
+        { search, prioritySyncStatus: null },
+        { batchSize: 2, batchCursor: null },
+      );
+      expect(result.items.map((customer) => customer.id)).toEqual([
+        fixtureIds.newest,
+      ]);
+      expect(result.items[0].contacts?.map((contact) => contact.id)).toEqual([
+        fixtureIds.contactFirst,
+        fixtureIds.contactSecond,
+        fixtureIds.contactThird,
+      ]);
+      expect(result.items[0].contacts?.[0].name).toBe(updated.name);
+    }
+
+    await CustomerContact.update(
+      { name: 'שם חדש לאחר עריכה' },
+      { where: { id: fixtureIds.contactFirst } },
+    );
+    const oldName = await getRepository().findByFilter(
+      { search: updated.name, prioritySyncStatus: null },
+      { batchSize: 2, batchCursor: null },
+    );
+    expect(oldName.items).toEqual([]);
+    for (const search of [
+      'פרט היסטורי',
+      '03-1234567',
+      'customer@example.invalid',
+    ]) {
+      const stale = await getRepository().findByFilter(
+        { search, prioritySyncStatus: null },
+        { batchSize: 2, batchCursor: null },
+      );
+      expect(stale.items).toEqual([]);
+    }
+  });
+
+  it('excludes deleted contacts from search as well as displayed collections', async () => {
+    const result = await getRepository().findByFilter(
+      { search: 'איש קשר מוסר', prioritySyncStatus: null },
+      { batchSize: 2, batchCursor: null },
+    );
+    expect(result.items).toEqual([]);
+  });
+
+  it('returns each customer once with its full collection when several contacts match', async () => {
+    const matchingIds = [
+      fixtureIds.contactFirst,
+      fixtureIds.contactSecond,
+      fixtureIds.middleContact,
+    ];
+    await Promise.all(
+      matchingIds.map((id) =>
+        CustomerContact.update(
+          { name: `התאמה משותפת ${id}` },
+          { where: { id } },
+        ),
+      ),
+    );
+    const first = await getRepository().findByFilter(
+      { search: 'התאמה משותפת', prioritySyncStatus: null },
+      { batchSize: 1, batchCursor: null },
+    );
+    expect(first.items.map((customer) => customer.id)).toEqual([
+      fixtureIds.newest,
+    ]);
+    expect(first.items[0].contacts?.map((contact) => contact.id)).toEqual([
+      fixtureIds.contactFirst,
+      fixtureIds.contactSecond,
+      fixtureIds.contactThird,
+    ]);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await getRepository().findByFilter(
+      { search: 'התאמה משותפת', prioritySyncStatus: null },
+      { batchSize: 1, batchCursor: first.nextCursor },
+    );
+    expect(second.items.map((customer) => customer.id)).toEqual([
+      fixtureIds.middle,
+    ]);
+    expect(second.items[0].contacts?.map((contact) => contact.id)).toEqual([
+      fixtureIds.middleContact,
+    ]);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it.each(['%', '_', "O'Reilly", '\\'])(
+    'treats %s as literal contact search text',
+    async (search) => {
+      await CustomerContact.update(
+        { name: "מאה%מדויק_גבול O'Reilly \\" },
+        { where: { id: fixtureIds.contactFirst } },
+      );
+      await CustomerContact.update(
+        { name: 'מאהXמדויקYגבול OXReilly' },
+        { where: { id: fixtureIds.contactSecond } },
+      );
+      const result = await getRepository().findByFilter(
+        { search, prioritySyncStatus: null },
+        { batchSize: 2, batchCursor: null },
+      );
+      expect(result.items.map((customer) => customer.id)).toEqual([
+        fixtureIds.newest,
+      ]);
+      expect(result.items[0].contacts).toHaveLength(3);
+    },
+  );
+
+  it('binds quote and comment syntax as data without widening search', async () => {
+    const result = await getRepository().findByFilter(
+      { search: "%' OR 1=1 --", prioritySyncStatus: null },
+      { batchSize: 2, batchCursor: null },
+    );
+    expect(result.items).toEqual([]);
+  });
+
+  it('retains identity and Priority identifier searches independently of contacts', async () => {
+    await Customer.update(
+      { priorityId: 'PRI-LOOKUP-902' },
+      { where: { id: fixtureIds.middle } },
+    );
+    for (const search of ['לקוח מסונן יחיד', '100000002', 'PRI-LOOKUP-902']) {
+      const result = await getRepository().findByFilter(
+        { search, prioritySyncStatus: null },
+        { batchSize: 2, batchCursor: null },
+      );
+      expect(result.items.map((customer) => customer.id)).toEqual([
+        fixtureIds.middle,
+      ]);
+    }
   });
 });
