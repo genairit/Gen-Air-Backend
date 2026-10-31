@@ -360,6 +360,10 @@ export class ProjectApartmentImportService {
       typeof response === 'object' && response !== null
         ? Reflect.get(response, 'code')
         : null;
+    if (code === HTTP_ERROR_CODES.PROJECT_NAME_ALREADY_EXISTS) {
+      return 'קיים כבר פרויקט בשם הדירה במערכת; לא נשמרו שינויים משורה זו';
+    }
+
     if (code === HTTP_ERROR_CODES.INVALID_CUSTOMER_CONTACT) {
       return 'פרטי איש הקשר אינם תקינים';
     }

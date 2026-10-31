@@ -202,7 +202,7 @@ export class ProjectApartmentService {
       ...contact,
       ...team,
       ...this.resolvePaymentTermsOverride(apartment, changes),
-      name: changes.name,
+      name: changes.name?.trim(),
       apartmentOwnership: changes.apartmentOwnership,
       apartmentCredit: changes.apartmentCredit,
       notes: changes.notes,

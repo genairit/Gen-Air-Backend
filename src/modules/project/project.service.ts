@@ -26,6 +26,11 @@ import {
 } from './utilities/project-intake.utility';
 
 import {
+  resolveProjectLighting,
+  resolveProjectLightingChanges,
+} from './utilities/project-lighting.utility';
+
+import {
   pickCustomerDetails,
   mergeCustomerDetails,
   isProjectTypeChanging,
@@ -140,6 +145,10 @@ export class ProjectService {
     return this.projectRepository.countByStage(stageId);
   }
 
+  isNameAvailable(name: string, excludeId: string | null): Promise<boolean> {
+    return this.projectRepository.isNameAvailable(name, excludeId);
+  }
+
   async create(project: CreateProjectDto, creator: IUser): Promise<IProject> {
     const [initialStage, projectType] = await Promise.all([
       this.projectStageService.getInitialStage(),
@@ -163,7 +172,8 @@ export class ProjectService {
         code,
         ...intake,
         ...customerDetails,
-        name: project.name,
+        ...resolveProjectLighting(project),
+        name: project.name.trim(),
         createdById: creator.id,
         stageId: initialStage.id,
         projectTypeId: project.projectTypeId,
@@ -422,7 +432,8 @@ export class ProjectService {
     return {
       ...intake,
       ...customerDetails,
-      name: changes.name,
+      ...resolveProjectLightingChanges(changes, project),
+      name: changes.name?.trim(),
       notes: changes.notes,
       customerId: changes.customerId,
       projectTypeId: changes.projectTypeId,

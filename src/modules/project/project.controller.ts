@@ -33,6 +33,7 @@ import { GetProjectCountsByFilterDto } from './dto/get-counts-by-filter.dto';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
+import { ProjectNameAvailabilityDto } from './dto/project-name-availability.dto';
 
 @ApiTags('project')
 @ApiBearerAuth()
@@ -54,6 +55,19 @@ export class ProjectController {
     @Query() filter: GetProjectCountsByFilterDto,
   ): Promise<IProjectStageCounts> {
     return this.projectService.getStageCounts(filter);
+  }
+
+  @Get('name-availability')
+  @RequirePermissions(PERMISSIONS.PROJECTS_READ)
+  async nameAvailability(
+    @Query() query: ProjectNameAvailabilityDto,
+  ): Promise<{ available: boolean }> {
+    return {
+      available: await this.projectService.isNameAvailable(
+        query.name,
+        query.excludeId ?? null,
+      ),
+    };
   }
 
   @Get(':id')

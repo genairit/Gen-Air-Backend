@@ -7,12 +7,12 @@ import {
 
 import { Test } from '@nestjs/testing';
 import { Sequelize, Transaction } from 'sequelize';
-import { BadRequestException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ProjectRepository } from './project.repository';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
 import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { getHttpErrorPayload } from '@Utilities/http-error-payload.utility';
 import { ProjectApartmentImportService } from './project-apartment-import.service';
@@ -437,6 +437,35 @@ describe('transactional apartment importer orchestration', () => {
     );
     expect(result.rows[0].reason).toBe('פרטי איש הקשר אינם תקינים');
     expect(result.counts.error).toBe(1);
+    expect(state.events.emitAsync).not.toHaveBeenCalled();
+  });
+
+  it('reports a global apartment-name conflict without contacts, stage, task or success events', async () => {
+    const state = await setup();
+    state.projects.create.mockRejectedValueOnce(
+      new ConflictException(
+        getHttpErrorPayload(HTTP_ERROR_CODES.PROJECT_NAME_ALREADY_EXISTS),
+      ),
+    );
+    const result = await state.service.import(
+      'building',
+      await makeImportFile([IMPORT_ROW]),
+      IMPORT_CREATOR,
+    );
+    expect(result.counts).toEqual({
+      created: 0,
+      existing: 0,
+      duplicate: 0,
+      error: 1,
+    });
+    expect(result.rows[0].reason).toBe(
+      'קיים כבר פרויקט בשם הדירה במערכת; לא נשמרו שינויים משורה זו',
+    );
+    expect(result.rows[0].status).toBe('error');
+    expect(state.projects.create).toHaveBeenCalledTimes(1);
+    expect(state.contacts.resolveForImport).not.toHaveBeenCalled();
+    expect(state.transitions.record).not.toHaveBeenCalled();
+    expect(state.taskInitialization.ensureForProject).not.toHaveBeenCalled();
     expect(state.events.emitAsync).not.toHaveBeenCalled();
   });
 
