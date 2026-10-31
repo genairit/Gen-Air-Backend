@@ -1,4 +1,5 @@
 import { IUser } from '@Modules/user/interfaces/user.interface';
+import type { PaymentTermsType } from '@Constants/payment-terms.constant';
 import { PrioritySyncStatusType } from '../constants/priority-sync-status.constant';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
 import { ICustomerContact } from '@Modules/customer-contact/interfaces/customer-contact.interface';
@@ -21,6 +22,7 @@ export interface ICustomer {
   contacts?: ICustomerContact[];
   prioritySyncedAt: Date | null;
   prioritySyncError: string | null;
+  paymentTerms?: PaymentTermsType | null;
   customerType: ProjectDetailFieldSetType;
   prioritySyncStatus: PrioritySyncStatusType;
 }
@@ -38,6 +40,7 @@ export interface ICustomerSyncStatusCount {
 export type TCustomerSyncStatusCounts = Record<PrioritySyncStatusType, number>;
 
 type TCustomerEditableField =
+  | 'paymentTerms'
   | 'name'
   | 'phone'
   | 'email'
