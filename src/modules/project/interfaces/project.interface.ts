@@ -3,6 +3,7 @@ import {
   IProjectMemberAssignment,
 } from '@Modules/project-member/interfaces/project-member.interface';
 
+import { IProjectLighting } from './project-lighting.interface';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { PaymentTermsType } from '@Constants/payment-terms.constant';
@@ -62,7 +63,8 @@ export interface IProjectIntakeChangeRequest extends IProjectFieldSetTarget {
   changes: TProjectIntakeInput;
 }
 
-export interface IProject extends IProjectCustomerDetails, TProjectIntake {
+export interface IProject
+  extends IProjectCustomerDetails, TProjectIntake, IProjectLighting {
   id: string;
   code: string;
   name: string;
@@ -99,6 +101,7 @@ export interface IProjectFilter {
 
 export type TProjectCreationAttributes = IProjectCustomerDetails &
   TProjectIntake &
+  Partial<IProjectLighting> &
   Pick<
     IProject,
     'code' | 'name' | 'projectTypeId' | 'stageId' | 'createdById'
@@ -115,21 +118,22 @@ export type TProjectCreationAttributes = IProjectCustomerDetails &
     >
   >;
 
-export type TProjectUpdateAttributes = Partial<
-  IProjectCustomerDetails &
-    TProjectIntake &
-    Pick<
-      IProject,
-      | 'name'
-      | 'projectTypeId'
-      | 'stageId'
-      | 'customerId'
-      | 'hasOwnTeam'
-      | 'apartmentCredit'
-      | 'apartmentOwnership'
-      | 'notes'
-    >
->;
+export type TProjectUpdateAttributes = Partial<IProjectLighting> &
+  Partial<
+    IProjectCustomerDetails &
+      TProjectIntake &
+      Pick<
+        IProject,
+        | 'name'
+        | 'projectTypeId'
+        | 'stageId'
+        | 'customerId'
+        | 'hasOwnTeam'
+        | 'apartmentCredit'
+        | 'apartmentOwnership'
+        | 'notes'
+      >
+  >;
 
 export interface INewProjectContext {
   creator: IUser;

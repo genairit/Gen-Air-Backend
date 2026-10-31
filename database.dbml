@@ -128,7 +128,9 @@ Table project_types {
 Table projects {
   id              uuid         [pk, default: `gen_random_uuid()`]
   code            varchar(12)  [not null, unique, note: 'Generated on save: creator first_name + last_name initials, then a 5-digit random number (e.g. אכ-48213). An apartment adds its sequence in the building: אכ-48213-01']
-  name            varchar(200) [not null]
+  name            varchar(200) [not null, note: 'Globally unique among active rows (including apartments) after JS outer-whitespace trimming; case-sensitive C collation partial expression index uq_projects_active_exact_name']
+  has_general_lighting_ceiling_lowering boolean [not null, default: false]
+  general_lighting_ceiling_lowering_height double [note: 'Centimeters: finite nonnegative number required when enabled; null when disabled (chk_projects_lighting_height)']
   project_type_id uuid         [not null, ref: > project_types.id]
   stage_id        uuid         [not null, ref: > project_stages.id, default: '6502a045-2a7d-4bc8-8ba1-36eaedc49a00', note: 'Insert/assignment trigger rejects archived status IDs']
   customer_id     uuid         [ref: > customers.id, note: 'Linked customer for a project or apartment; legacy apartments retain inline customer/contact fields']

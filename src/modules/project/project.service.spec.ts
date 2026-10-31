@@ -1794,3 +1794,145 @@ describe('ProjectService apartment commercial fields', () => {
     expect(projectRepository.update).not.toHaveBeenCalled();
   });
 });
+
+describe('ProjectService lighting persistence', () => {
+  const projectInput = {
+    ...COMPANY_DETAILS,
+    ...COMPANY_INTAKE,
+    customerId: CUSTOMER_ID,
+    name: 'פרויקט הנמכה לתאורה',
+    projectTypeId: COMPANY_TYPE_ID,
+    members: [],
+  };
+  const enabledProject = {
+    ...STORED_INTAKE_PROJECT,
+    hasGeneralLightingCeilingLowering: true,
+    generalLightingCeilingLoweringHeight: 25.5,
+  };
+
+  it.each([0, 25.125])(
+    'passes enabled centimeter height %s into the actual project creation transaction',
+    async (height) => {
+      const state = await createService();
+      await state.service.create(
+        {
+          ...projectInput,
+          hasGeneralLightingCeilingLowering: true,
+          generalLightingCeilingLoweringHeight: height,
+        },
+        CREATOR,
+      );
+      const [attributes, transaction] =
+        state.projectRepository.create.mock.calls[0];
+      expect(attributes.hasGeneralLightingCeilingLowering).toBe(true);
+      expect(attributes.generalLightingCeilingLoweringHeight).toBe(height);
+      expect(transaction).toBe(TRANSACTION);
+    },
+  );
+
+  it('persists disabled/no-height defaults when creation omits lighting', async () => {
+    const state = await createService();
+    await state.service.create(projectInput, CREATOR);
+    const [attributes] = state.projectRepository.create.mock.calls[0];
+    expect(attributes.hasGeneralLightingCeilingLowering).toBe(false);
+    expect(attributes.generalLightingCeilingLoweringHeight).toBeNull();
+  });
+
+  it('rejects creation with enabled lighting but no height before all writes and notifications', async () => {
+    const state = await createService();
+    await expect(
+      state.service.create(
+        { ...projectInput, hasGeneralLightingCeilingLowering: true },
+        CREATOR,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(state.projectRepository.create).not.toHaveBeenCalled();
+    expect(state.projectMemberService.replaceForProject).not.toHaveBeenCalled();
+    expect(state.taskInitialization.ensureForProject).not.toHaveBeenCalled();
+    expect(state.eventEmitter.emitAsync).not.toHaveBeenCalled();
+  });
+
+  it('preserves a stored height when updating the enabled toggle without a height', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue(enabledProject);
+    await state.service.update(
+      PROJECT_ID,
+      { hasGeneralLightingCeilingLowering: true },
+      CREATOR,
+    );
+    const [id, attributes, transaction] =
+      state.projectRepository.update.mock.calls[0];
+    expect(id).toBe(PROJECT_ID);
+    expect(transaction).toBe(TRANSACTION);
+    expect(attributes.hasGeneralLightingCeilingLowering).toBe(true);
+    expect(attributes.generalLightingCeilingLoweringHeight).toBe(25.5);
+  });
+
+  it('clears the stored height when an update disables lighting', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue(enabledProject);
+    await state.service.update(
+      PROJECT_ID,
+      { hasGeneralLightingCeilingLowering: false },
+      CREATOR,
+    );
+    const [, attributes] = state.projectRepository.update.mock.calls[0];
+    expect(attributes.hasGeneralLightingCeilingLowering).toBe(false);
+    expect(attributes.generalLightingCeilingLoweringHeight).toBeNull();
+  });
+
+  it('merges a height-only update with the stored enabled state', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue(enabledProject);
+    await state.service.update(
+      PROJECT_ID,
+      { generalLightingCeilingLoweringHeight: 0 },
+      CREATOR,
+    );
+    const [, attributes] = state.projectRepository.update.mock.calls[0];
+    expect(attributes.hasGeneralLightingCeilingLowering).toBe(true);
+    expect(attributes.generalLightingCeilingLoweringHeight).toBe(0);
+  });
+
+  it('does not rewrite either lighting field in an unrelated rename', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue(enabledProject);
+    await state.service.update(PROJECT_ID, { name: 'שם מעודכן' }, CREATOR);
+    const [, attributes] = state.projectRepository.update.mock.calls[0];
+    expect(attributes.name).toBe('שם מעודכן');
+    expect('hasGeneralLightingCeilingLowering' in attributes).toBe(false);
+    expect('generalLightingCeilingLoweringHeight' in attributes).toBe(false);
+  });
+
+  it('rejects enabling a previously disabled record without a height before writing', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue({
+      ...STORED_INTAKE_PROJECT,
+      hasGeneralLightingCeilingLowering: false,
+      generalLightingCeilingLoweringHeight: null,
+    });
+    await expect(
+      state.service.update(
+        PROJECT_ID,
+        { hasGeneralLightingCeilingLowering: true },
+        CREATOR,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(state.projectRepository.update).not.toHaveBeenCalled();
+    expect(state.projectMemberService.replaceForProject).not.toHaveBeenCalled();
+    expect(state.transitionService.record).not.toHaveBeenCalled();
+  });
+
+  it('rejects explicitly clearing an enabled record height before writing', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue(enabledProject);
+    await expect(
+      state.service.update(
+        PROJECT_ID,
+        { generalLightingCeilingLoweringHeight: null },
+        CREATOR,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(state.projectRepository.update).not.toHaveBeenCalled();
+  });
+});
