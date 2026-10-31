@@ -109,6 +109,7 @@ describe('CRM-only customer creation API', () => {
       expect(customerRepository.create).toHaveBeenCalledWith(
         {
           ...CUSTOMER_INPUT,
+          paymentTerms: null,
           createdById: 'trusted-user',
         },
         dependencies.transaction,

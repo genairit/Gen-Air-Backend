@@ -51,6 +51,7 @@ Enum priority_sync_status {
 }
 
 Table customers {
+  payment_terms varchar(40) [note: 'Quotation default only; note belongs on quotations']
   id                     uuid                     [pk, default: `gen_random_uuid()`]
   customer_type          project_detail_field_set [not null, note: 'Same three kinds as project types: company, private client, institution']
   name                   varchar(200)             [not null]
@@ -304,4 +305,147 @@ Table role_permissions {
 Enum enum_projects_apartment_ownership {
   landowner
   buyer
+}
+
+
+Table catalogue_items {
+  id uuid [pk]
+  sku varchar(200) [not null]
+  description varchar(1000) [not null]
+  unit varchar(40) [not null]
+  price numeric(16,4) [not null]
+  capacity_btu integer
+  brand varchar(100) [not null]
+  system_type varchar(10)
+  equipment_role varchar(30) [not null]
+  equipment_types jsonb [not null]
+  status varchar(20) [not null]
+  preference varchar(20) [not null]
+  includes_remote boolean [not null]
+  includes_thermostat boolean [not null]
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  indexes {
+    (status,brand,equipment_role,system_type)
+    sku [note: 'Unique partial active/not-deleted index uq_catalogue_active_sku']
+  }
+}
+
+Table quotations {
+  rule_configuration jsonb [not null]
+  rule_config_fingerprint varchar(64) [not null]
+  id uuid [pk]
+  number varchar(40) [not null]
+  customer_id uuid [not null]
+  project_id uuid
+  status varchar(20) [not null]
+  date date [not null]
+  brand varchar(100) [not null]
+  payment_terms varchar(40)
+  payment_terms_note varchar(1000) [not null]
+  payment_schedule jsonb [not null]
+  discount_percent numeric(7,4) [not null]
+  target_pretax_amount numeric(16,2)
+  vat_rate numeric(7,4) [not null]
+  internal_notes varchar(5000) [not null]
+  version integer [not null]
+  acknowledged_warnings jsonb [not null]
+  created_by_id uuid [not null]
+  updated_by_id uuid [not null]
+  approved_by_id uuid
+  approved_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  indexes {
+    number [unique]
+    customer_id
+    project_id
+    created_by_id
+    updated_by_id
+    approved_by_id
+    (updated_at,id)
+  }
+}
+
+Table quotation_sections {
+  id uuid [pk]
+  quotation_id uuid [not null]
+  title varchar(200) [not null]
+  system_type varchar(10) [not null]
+  display_order integer [not null]
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  indexes {
+    (quotation_id,display_order) [unique]
+  }
+}
+
+Table quotation_items {
+  catalogue_status varchar(20) [not null]
+  control_kind varchar(20)
+  catalogue_preference varchar(20) [not null]
+  id uuid [pk]
+  section_id uuid [not null]
+  catalogue_item_id uuid [not null]
+  parent_item_id uuid
+  sku varchar(200) [not null]
+  description varchar(1000) [not null]
+  unit varchar(40) [not null]
+  quoted_price numeric(16,4) [not null]
+  quantity numeric(12,4) [not null]
+  equipment_role varchar(30) [not null]
+  equipment_type varchar(100)
+  capacity_btu integer
+  requested_capacity_btu integer
+  location varchar(200) [not null]
+  circuit varchar(1)
+  display_order integer [not null]
+  includes_remote boolean [not null]
+  includes_thermostat boolean [not null]
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  indexes {
+    (section_id,display_order) [unique]
+    catalogue_item_id
+    parent_item_id
+  }
+}
+
+Table catalogue_item_usage {
+  id uuid [pk]
+  user_id uuid [not null]
+  catalogue_item_id uuid [not null]
+  selection_count integer [not null]
+  last_selected_at timestamptz [not null]
+  created_at timestamptz
+  updated_at timestamptz
+  deleted_at timestamptz
+  indexes {
+    (user_id,catalogue_item_id) [unique]
+    catalogue_item_id
+  }
+}
+Ref: quotations.customer_id > customers.id
+Ref: quotations.project_id > projects.id
+Ref: quotations.created_by_id > users.id
+Ref: quotations.updated_by_id > users.id
+Ref: quotations.approved_by_id > users.id
+Ref: quotation_sections.quotation_id > quotations.id
+Ref: quotation_items.section_id > quotation_sections.id
+Ref: quotation_items.catalogue_item_id > catalogue_items.id
+Ref: quotation_items.parent_item_id > quotation_items.id
+Ref: catalogue_item_usage.user_id > users.id
+Ref: catalogue_item_usage.catalogue_item_id > catalogue_items.id
+
+Table quotation_rules {
+ key varchar(60) [pk]
+ enabled boolean [not null]
+ version integer [not null]
+ parameters jsonb [not null]
+ created_at timestamptz
+ updated_at timestamptz
 }

@@ -157,6 +157,7 @@ describe('CustomerService.create', () => {
     expect(customerRepository.create).toHaveBeenCalledWith(
       {
         ...input,
+        paymentTerms: null,
         createdById: 'trusted-user',
       },
       dependencies.transaction,

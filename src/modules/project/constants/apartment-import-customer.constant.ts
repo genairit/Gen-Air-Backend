@@ -14,7 +14,7 @@ export const APARTMENT_IMPORT_CUSTOMER_FIELDS = {
   email: 'customerEmail',
   customerType: 'customerType',
 } as const satisfies Record<
-  keyof CreateCustomerDto,
+  Exclude<keyof CreateCustomerDto, 'paymentTerms'>,
   ApartmentImportColumnKeyType
 >;
 

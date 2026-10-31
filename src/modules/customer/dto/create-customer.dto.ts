@@ -9,16 +9,26 @@ import {
 } from 'class-validator';
 
 import {
+  PAYMENT_TERMS_VALUES,
+  type PaymentTermsType,
+} from '@Constants/payment-terms.constant';
+
+import {
   type ProjectDetailFieldSetType,
   PROJECT_DETAIL_FIELD_SET_VALUES,
 } from '@Constants/project-detail-field-set.constant';
 
+import { ValidateIf } from 'class-validator';
 import { Trim } from '@Decorators/trim.decorator';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { FIELD_VALIDATION_REGEX } from '@Constants/field-validation.constant';
 import { IsIsraeliCompanyNumber } from '@Decorators/is-israeli-company-number.decorator';
 
 export class CreateCustomerDto {
+  @ValidateIf((_object, value) => value != null)
+  @IsIn(PAYMENT_TERMS_VALUES)
+  declare paymentTerms?: PaymentTermsType | null;
+
   @IsNotEmpty()
   @IsIn(PROJECT_DETAIL_FIELD_SET_VALUES)
   declare customerType: ProjectDetailFieldSetType;
