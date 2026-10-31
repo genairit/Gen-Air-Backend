@@ -108,6 +108,7 @@ export class QuotationService {
           quotationView({
             ...current,
             ruleConfiguration: rules.rules,
+            ruleConfigFingerprint: rules.fingerprint,
             acknowledgedWarnings:
               rules.fingerprint === document.ruleConfigFingerprint
                 ? document.acknowledgedWarnings
@@ -168,6 +169,7 @@ export class QuotationService {
       return quotationView({
         ...current,
         ruleConfiguration: configuration.rules,
+        ruleConfigFingerprint: configuration.fingerprint,
         acknowledgedWarnings:
           configuration.fingerprint === quotation.ruleConfigFingerprint
             ? quotation.acknowledgedWarnings

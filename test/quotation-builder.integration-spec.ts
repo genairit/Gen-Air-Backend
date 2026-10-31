@@ -424,6 +424,14 @@ describe('Quotation aggregate on real PostgreSQL', () => {
     expect(fetched.warnings.every((warning) => !warning.acknowledged)).toBe(
       true,
     );
+    expect(fetched.ruleConfigFingerprint).not.toBe(
+      acknowledged.ruleConfigFingerprint,
+    );
+    const stored = await Quotation.findByPk(quote.id);
+    expect(stored?.ruleConfigFingerprint).toBe(
+      acknowledged.ruleConfigFingerprint,
+    );
+
     await expect(
       quotationService().acknowledge(
         quote.id,

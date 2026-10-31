@@ -17,7 +17,7 @@ export const RULE_PARAMETER = {
   MINIMUM_RATIO: 'minimumRatio',
   MAXIMUM_RATIO: 'maximumRatio',
 } as const;
-export const QUOTATION_RULE_KEYS = Object.values(QUOTATION_RULE);
+export const QUOTATION_RULE_KEYS = Object.values(QUOTATION_RULE).toSorted();
 export type TQuotationRuleKey =
   (typeof QUOTATION_RULE)[keyof typeof QUOTATION_RULE];
 export const RULE_PARAMETER_KEYS: Partial<Record<TQuotationRuleKey, string[]>> =
