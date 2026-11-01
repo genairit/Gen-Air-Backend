@@ -61,6 +61,7 @@ export class CustomerService {
       customer;
     return this.customerRepository.create(
       {
+        paymentTerms: customer.paymentTerms ?? null,
         name,
         taxId,
         phone,

@@ -16,6 +16,13 @@ export class DatabaseTransactionService {
     );
   }
 
+  readSnapshot<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
+    return this.sequelize.transaction(
+      { isolationLevel: Transaction.ISOLATION_LEVELS.REPEATABLE_READ },
+      work,
+    );
+  }
+
   run<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
     return this.sequelize.transaction(work);
   }

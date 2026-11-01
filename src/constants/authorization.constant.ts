@@ -1,4 +1,10 @@
 export const PERMISSIONS = {
+  QUOTATIONS_READ: 'quotations.read',
+  QUOTATIONS_CREATE: 'quotations.create',
+  QUOTATIONS_UPDATE: 'quotations.update',
+  QUOTATIONS_APPROVE: 'quotations.approve',
+  CATALOGUE_MANAGE: 'catalogue.manage',
+
   PROJECTS_READ: 'projects.read',
   PROJECTS_CREATE: 'projects.create',
   PROJECTS_UPDATE: 'projects.update',
