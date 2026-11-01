@@ -23,6 +23,11 @@ import {
   PAYMENT_TERMS_VALUES,
 } from '@Constants/payment-terms.constant';
 
+import {
+  ApartmentOwnershipType,
+  APARTMENT_OWNERSHIP_VALUES,
+} from '../constants/apartment-commercial.constant';
+
 import { User } from '@Modules/user/entities/user.entity';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { Customer } from '@Modules/customer/entities/customer.entity';
@@ -60,6 +65,12 @@ export class Project
   extends Model<IProject, TProjectCreationAttributes>
   implements IProject
 {
+  @Column(DataType.ENUM(...APARTMENT_OWNERSHIP_VALUES))
+  declare apartmentOwnership: ApartmentOwnershipType | null;
+
+  @Column(DataType.DECIMAL)
+  declare apartmentCredit: string | null;
+
   @PrimaryKey
   @Default(DataType.UUIDV4)
   @Column(DataType.UUID)
@@ -77,6 +88,13 @@ export class Project
     type: DataType.STRING(FIELD_LENGTHS.PROJECT_NAME),
   })
   declare name: string;
+
+  @Default(false)
+  @Column({ allowNull: false, type: DataType.BOOLEAN })
+  declare hasGeneralLightingCeilingLowering: boolean;
+
+  @Column(DataType.DOUBLE)
+  declare generalLightingCeilingLoweringHeight: number | null;
 
   @ForeignKey(() => ProjectType)
   @Column({ allowNull: false, type: DataType.UUID })

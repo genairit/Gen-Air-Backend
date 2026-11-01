@@ -26,6 +26,11 @@ import {
 } from './utilities/project-intake.utility';
 
 import {
+  resolveProjectLighting,
+  resolveProjectLightingChanges,
+} from './utilities/project-lighting.utility';
+
+import {
   pickCustomerDetails,
   mergeCustomerDetails,
   isProjectTypeChanging,
@@ -41,6 +46,7 @@ import { ProjectRepository } from './project.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { ProjectIntakeService } from './project-intake.service';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
@@ -48,10 +54,12 @@ import { toCursorBatch } from '@Utilities/cursor-batch.utility';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { GetProjectsByFilterDto } from './dto/get-by-filter.dto';
 import { PROJECT_CODE } from './constants/project-code.constant';
+import { assertPermissions } from '@Utilities/permission.utility';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
 import { generateProjectCode } from './utilities/project-code.utility';
+import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { GetProjectCountsByFilterDto } from './dto/get-counts-by-filter.dto';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
@@ -60,6 +68,7 @@ import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
+import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-sync-status.constant';
 import { IProjectMemberAssignment } from '@Modules/project-member/interfaces/project-member.interface';
@@ -79,6 +88,7 @@ export class ProjectService {
     private readonly projectStageTransitionService: ProjectStageTransitionService,
     @Inject(forwardRef(() => ProjectStageService))
     private readonly projectStageService: ProjectStageService,
+    private readonly taskInitialization: ProjectTaskInitializationService,
   ) {}
 
   async getById(id: string): Promise<IProject> {
@@ -135,6 +145,10 @@ export class ProjectService {
     return this.projectRepository.countByStage(stageId);
   }
 
+  isNameAvailable(name: string, excludeId: string | null): Promise<boolean> {
+    return this.projectRepository.isNameAvailable(name, excludeId);
+  }
+
   async create(project: CreateProjectDto, creator: IUser): Promise<IProject> {
     const [initialStage, projectType] = await Promise.all([
       this.projectStageService.getInitialStage(),
@@ -158,7 +172,8 @@ export class ProjectService {
         code,
         ...intake,
         ...customerDetails,
-        name: project.name,
+        ...resolveProjectLighting(project),
+        name: project.name.trim(),
         createdById: creator.id,
         stageId: initialStage.id,
         projectTypeId: project.projectTypeId,
@@ -205,6 +220,19 @@ export class ProjectService {
     const building = await this.getStoredById(buildingId);
 
     return this.projectApartmentService.findByBuilding(building, filter);
+  }
+
+  updateForActor(
+    id: string,
+    input: UpdateProjectDto,
+    actor: IAuthorizedUser,
+  ): Promise<IProject> {
+    assertPermissions(actor, PERMISSIONS.PROJECTS_UPDATE);
+    if ('stageId' in input) {
+      assertPermissions(actor, PERMISSIONS.PROJECTS_STATUS_CHANGE);
+    }
+
+    return this.update(id, input, actor);
   }
 
   async update(
@@ -342,6 +370,12 @@ export class ProjectService {
         transaction,
       );
 
+      await this.taskInitialization.ensureForProject(
+        { id: created.id, name: attributes.name },
+        creator,
+        transaction,
+      );
+
       return created.id;
     });
   }
@@ -365,6 +399,12 @@ export class ProjectService {
     project: IProject,
     changes: UpdateProjectDto,
   ): Promise<TProjectUpdateAttributes> {
+    if ('apartmentOwnership' in changes || 'apartmentCredit' in changes) {
+      throw new BadRequestException(
+        'Apartment ownership and credit belong to apartments only',
+      );
+    }
+
     if ('hasOwnTeam' in changes) {
       throw new BadRequestException(
         'Team inheritance can only be changed for apartments',
@@ -392,7 +432,8 @@ export class ProjectService {
     return {
       ...intake,
       ...customerDetails,
-      name: changes.name,
+      ...resolveProjectLightingChanges(changes, project),
+      name: changes.name?.trim(),
       notes: changes.notes,
       customerId: changes.customerId,
       projectTypeId: changes.projectTypeId,

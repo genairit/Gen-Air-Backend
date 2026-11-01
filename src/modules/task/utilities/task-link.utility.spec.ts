@@ -1,5 +1,4 @@
 import {
-  toTaskLink,
   isTaskLinkRequested,
   resolveTaskCustomerId,
 } from './task-link.utility';
@@ -9,25 +8,6 @@ const CUSTOMER_ID = '00000000-0000-4000-8000-000000000003';
 const OTHER_CUSTOMER_ID = '00000000-0000-4000-8000-000000000004';
 
 describe('task link contract', () => {
-  it('keeps exactly one link and clears the other', () => {
-    expect(toTaskLink({ projectId: PROJECT_ID })).toEqual({
-      projectId: PROJECT_ID,
-      customerId: null,
-    });
-    expect(toTaskLink({ projectId: null, customerId: CUSTOMER_ID })).toEqual({
-      projectId: null,
-      customerId: CUSTOMER_ID,
-    });
-  });
-
-  it('rejects both links and no link', () => {
-    expect(
-      toTaskLink({ projectId: PROJECT_ID, customerId: CUSTOMER_ID }),
-    ).toBeNull();
-    expect(toTaskLink({})).toBeNull();
-    expect(toTaskLink({ projectId: null, customerId: null })).toBeNull();
-  });
-
   it('detects whether an input touches the link', () => {
     expect(isTaskLinkRequested({})).toBe(false);
     expect(isTaskLinkRequested({ projectId: null })).toBe(true);

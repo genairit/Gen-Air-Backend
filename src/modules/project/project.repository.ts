@@ -20,12 +20,16 @@ import {
   CURSOR_ORDER_BY_DIRECTION,
 } from '@Utilities/cursor-pagination.utility';
 
+import { QueryTypes } from 'sequelize';
 import { Injectable } from '@nestjs/common';
 import { Literal } from 'sequelize/types/utils';
 import { Project } from './entities/project.entity';
 import { User } from '@Modules/user/entities/user.entity';
+import { InternalServerErrorException } from '@nestjs/common';
+import { PROJECT_NAME } from './constants/project-name.constant';
 import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { Customer } from '@Modules/customer/entities/customer.entity';
+import { rethrowProjectNameConflict } from './utilities/project-name.utility';
 import { ICursorPage, ICursorBatch } from '@Interfaces/cursor-page.interface';
 import { CUSTOMER_SEARCH_INCLUDE } from './constants/project-include.constant';
 import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
@@ -37,8 +41,42 @@ import { buildCustomerReferenceInclude } from '@Modules/customer/constants/custo
 
 @Injectable()
 export class ProjectRepository {
-  async findById(id: string): Promise<IProject | null> {
+  async isNameAvailable(
+    name: string,
+    excludeId: string | null,
+  ): Promise<boolean> {
+    const database = Project.sequelize;
+    if (!database) {
+      throw new InternalServerErrorException('Project database is unavailable');
+    }
+
+    const rows = await database.query<{ exists: boolean }>(
+      'SELECT EXISTS (SELECT 1 FROM projects WHERE deleted_at IS NULL AND btrim(name, $trimCharacters) COLLATE "C" = $name COLLATE "C" AND ($excludedId::uuid IS NULL OR id <> $excludedId::uuid)) AS "exists"',
+      {
+        type: QueryTypes.SELECT,
+        bind: {
+          name: name.trim(),
+          excludedId: excludeId,
+          trimCharacters: PROJECT_NAME.TRIM_CHARACTERS,
+        },
+      },
+    );
+    const exists = rows.at(0)?.exists;
+    if (typeof exists !== 'boolean') {
+      throw new InternalServerErrorException(
+        'Invalid project name availability result',
+      );
+    }
+
+    return !exists;
+  }
+
+  async findById(
+    id: string,
+    transaction?: Transaction,
+  ): Promise<IProject | null> {
     const project = await Project.findByPk(id, {
+      transaction,
       include: [
         ...this.buildCardIncludes(),
         { model: Customer, paranoid: false },
@@ -55,11 +93,17 @@ export class ProjectRepository {
     return project?.get({ plain: true }) ?? null;
   }
 
+  lockForImport(id: string, transaction: Transaction): Promise<Project | null> {
+    return Project.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+  }
+
   findLiveApartmentByNumber(
     buildingId: string,
     apartmentNumber: string,
+    transaction?: Transaction,
   ): Promise<Project | null> {
     return Project.findOne({
+      transaction,
       where: {
         parentProjectId: buildingId,
         customerApartment: apartmentNumber,
@@ -71,8 +115,12 @@ export class ProjectRepository {
     return Project.count({ where: { parentProjectId: buildingId } });
   }
 
-  countApartmentsEverCreated(buildingId: string): Promise<number> {
+  countApartmentsEverCreated(
+    buildingId: string,
+    transaction?: Transaction,
+  ): Promise<number> {
     return Project.count({
+      transaction,
       where: { parentProjectId: buildingId },
       paranoid: false,
     });
@@ -139,11 +187,18 @@ export class ProjectRepository {
     return Project.count({ where: { stageId } });
   }
 
-  create(
+  async create(
     attributes: TProjectCreationAttributes,
     transaction?: Transaction,
   ): Promise<Project> {
-    return Project.create(attributes, { transaction });
+    try {
+      return await Project.create(
+        { ...attributes, name: attributes.name.trim() },
+        { transaction },
+      );
+    } catch (error) {
+      return rethrowProjectNameConflict(error);
+    }
   }
 
   async update(
@@ -151,12 +206,16 @@ export class ProjectRepository {
     attributes: TProjectUpdateAttributes,
     transaction?: Transaction,
   ): Promise<boolean> {
-    const [updatedCount] = await Project.update(attributes, {
-      where: { id },
-      transaction,
-    });
+    try {
+      const [updatedCount] = await Project.update(attributes, {
+        where: { id },
+        transaction,
+      });
 
-    return updatedCount > 0;
+      return updatedCount > 0;
+    } catch (error) {
+      return rethrowProjectNameConflict(error);
+    }
   }
 
   async updateDriveFolderId(

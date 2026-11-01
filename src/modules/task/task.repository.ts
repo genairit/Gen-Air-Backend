@@ -21,12 +21,24 @@ import { Injectable } from '@nestjs/common';
 import { Task } from './entities/task.entity';
 import { TASK_ORDER } from './constants/task-order.constant';
 import { isTaskStatus } from './utilities/task-status.utility';
+import { PROTECTED_TASK_TYPES } from './constants/task-type.constant';
 import { Op, fn, col, where, Transaction, WhereOptions } from 'sequelize';
 import { ICursorBatch, ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
 
 @Injectable()
 export class TaskRepository {
+  findProtectedForProject(
+    projectId: string,
+    transaction: Transaction,
+  ): Promise<Task[]> {
+    return Task.findAll({
+      where: { projectId, taskType: { [Op.in]: PROTECTED_TASK_TYPES } },
+      paranoid: false,
+      transaction,
+    });
+  }
+
   findById(id: string, transaction?: Transaction): Promise<Task | null> {
     return Task.findByPk(id, {
       transaction,

@@ -3,10 +3,12 @@ import {
   IProjectMemberAssignment,
 } from '@Modules/project-member/interfaces/project-member.interface';
 
+import { IProjectLighting } from './project-lighting.interface';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { PaymentTermsType } from '@Constants/payment-terms.constant';
 import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
+import { ApartmentOwnershipType } from '../constants/apartment-commercial.constant';
 import { IProjectType } from '@Modules/project-type/interfaces/project-type.interface';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
 import { IProjectStage } from '@Modules/project-stage/interfaces/project-stage.interface';
@@ -61,7 +63,8 @@ export interface IProjectIntakeChangeRequest extends IProjectFieldSetTarget {
   changes: TProjectIntakeInput;
 }
 
-export interface IProject extends IProjectCustomerDetails, TProjectIntake {
+export interface IProject
+  extends IProjectCustomerDetails, TProjectIntake, IProjectLighting {
   id: string;
   code: string;
   name: string;
@@ -84,6 +87,8 @@ export interface IProject extends IProjectCustomerDetails, TProjectIntake {
   driveFolderId: string | null;
   prioritySyncedAt: Date | null;
   parentProjectId: string | null;
+  apartmentCredit: string | null;
+  apartmentOwnership: ApartmentOwnershipType | null;
 }
 
 export interface IProjectFilter {
@@ -96,27 +101,39 @@ export interface IProjectFilter {
 
 export type TProjectCreationAttributes = IProjectCustomerDetails &
   TProjectIntake &
+  Partial<IProjectLighting> &
   Pick<
     IProject,
     'code' | 'name' | 'projectTypeId' | 'stageId' | 'createdById'
   > &
   Partial<
-    Pick<IProject, 'customerId' | 'parentProjectId' | 'hasOwnTeam' | 'notes'>
-  >;
-
-export type TProjectUpdateAttributes = Partial<
-  IProjectCustomerDetails &
-    TProjectIntake &
     Pick<
       IProject,
-      | 'name'
-      | 'projectTypeId'
-      | 'stageId'
       | 'customerId'
+      | 'parentProjectId'
       | 'hasOwnTeam'
       | 'notes'
+      | 'apartmentCredit'
+      | 'apartmentOwnership'
     >
->;
+  >;
+
+export type TProjectUpdateAttributes = Partial<IProjectLighting> &
+  Partial<
+    IProjectCustomerDetails &
+      TProjectIntake &
+      Pick<
+        IProject,
+        | 'name'
+        | 'projectTypeId'
+        | 'stageId'
+        | 'customerId'
+        | 'hasOwnTeam'
+        | 'apartmentCredit'
+        | 'apartmentOwnership'
+        | 'notes'
+      >
+  >;
 
 export interface INewProjectContext {
   creator: IUser;

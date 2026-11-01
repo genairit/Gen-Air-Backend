@@ -8,21 +8,27 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AddressModule } from '@Modules/address/address.module';
 import { ProjectModule } from '@Modules/project/project.module';
 import { CustomerModule } from '@Modules/customer/customer.module';
+import { QuotationModule } from '@Modules/quotation/quotation.module';
 import { DatabaseModule } from './providers/database/database.module';
 import { ProjectTypeModule } from '@Modules/project-type/project-type.module';
 import { ProjectDriveModule } from '@Modules/project-drive/project-drive.module';
 import { ProjectStageModule } from '@Modules/project-stage/project-stage.module';
+import { QuestionnaireModule } from '@Modules/questionnaire/questionnaire.module';
 import { ProjectMemberModule } from '@Modules/project-member/project-member.module';
+import { CustomerContactModule } from '@Modules/customer-contact/customer-contact.module';
 import { DriveTemplateFolderModule } from '@Modules/drive-template-folder/drive-template-folder.module';
 import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/project-stage-transition.module';
+import { QuestionnaireSubmissionModule } from '@Modules/questionnaire-submission/questionnaire-submission.module';
 
 @Module({
   imports: [
     DatabaseModule,
+    QuotationModule,
     EventEmitterModule.forRoot(),
     AddressModule,
     AuthModule,
     CustomerModule,
+    CustomerContactModule,
     DriveTemplateFolderModule,
     ProjectModule,
     ProjectDriveModule,
@@ -30,6 +36,8 @@ import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/
     ProjectStageModule,
     ProjectStageTransitionModule,
     ProjectTypeModule,
+    QuestionnaireModule,
+    QuestionnaireSubmissionModule,
     TaskModule,
     UserModule,
   ],

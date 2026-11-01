@@ -2,6 +2,7 @@ import {
   Table,
   Model,
   Column,
+  HasMany,
   Default,
   DataType,
   BelongsTo,
@@ -30,6 +31,8 @@ import {
 
 import { User } from '@Modules/user/entities/user.entity';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
+import type { PaymentTermsType } from '@Constants/payment-terms.constant';
+import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 
 @Table({
   tableName: 'customers',
@@ -122,6 +125,9 @@ export class Customer
   @Column({ allowNull: false, type: DataType.UUID })
   declare createdById: string;
 
+  @Column({ type: DataType.STRING(40), allowNull: true })
+  declare paymentTerms: PaymentTermsType | null;
+
   @CreatedAt
   declare createdAt: Date;
 
@@ -130,6 +136,9 @@ export class Customer
 
   @DeletedAt
   declare deletedAt: Date | null;
+
+  @HasMany(() => CustomerContact, 'customerId')
+  declare contacts?: CustomerContact[];
 
   @BelongsTo(() => User, 'createdById')
   declare createdBy?: User;

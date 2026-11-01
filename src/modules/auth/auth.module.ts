@@ -6,10 +6,12 @@ import { AuthGuard } from '@Guards/auth.guard';
 import { AuthController } from './auth.controller';
 import { UserModule } from '@Modules/user/user.module';
 import { EnvironmentManager } from '@Utilities/environment-manager.utility';
+import { RolePermissionModule } from '@Modules/role-permission/role-permission.module';
 
 @Module({
   imports: [
     UserModule,
+    RolePermissionModule,
     JwtModule.registerAsync({
       useFactory: () => ({
         secret: EnvironmentManager.get('JWT_SECRET', { errorOnMissing: true }),

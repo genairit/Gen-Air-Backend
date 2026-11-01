@@ -16,13 +16,15 @@ import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { UserRoles } from '@Decorators/user-roles.decorator';
 import { GetUsersByFilterDto } from './dto/get-by-filter.dto';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
-import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
+import { Authenticated } from '@Decorators/authenticated.decorator';
 import { UpdateUserPasswordDto } from './dto/update-user-password.dto';
 import type { IUser, TUserRoleCounts } from './interfaces/user.interface';
+import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
+import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 
 @ApiTags('user')
 @ApiBearerAuth()
@@ -31,16 +33,19 @@ export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Get('me')
-  getMe(@AuthenticatedUser() user: IUser): IUser {
+  @Authenticated()
+  getMe(@AuthenticatedUser() user: IAuthorizedUser): IAuthorizedUser {
     return user;
   }
 
   @Get('role-counts')
+  @RequirePermissions(PERMISSIONS.EMPLOYEES_READ)
   getRoleCounts(): Promise<TUserRoleCounts> {
     return this.userService.getRoleCounts();
   }
 
   @Get()
+  @RequirePermissions(PERMISSIONS.EMPLOYEES_READ)
   getByFilter(
     @Query() filter: GetUsersByFilterDto,
   ): Promise<ICursorPage<IUser>> {
@@ -48,18 +53,23 @@ export class UserController {
   }
 
   @Get(':id')
+  @RequirePermissions(PERMISSIONS.EMPLOYEES_READ)
   getById(@Param('id', ParseUUIDPipe) id: string): Promise<IUser> {
     return this.userService.getById(id);
   }
 
   @Post()
-  @UserRoles(ROLE_PERMISSIONS.MANAGE_USERS)
-  create(@Body() user: CreateUserDto): Promise<IUser> {
-    return this.userService.create(user);
+  @RequirePermissions(PERMISSIONS.EMPLOYEES_CREATE)
+  create(
+    @Body() user: CreateUserDto,
+    @AuthenticatedUser() actor: IAuthorizedUser,
+  ): Promise<IUser> {
+    return this.userService.createForActor(user, actor);
   }
 
   @Patch('me/password')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Authenticated()
   updateMyPassword(
     @AuthenticatedUser() user: IUser,
     @Body() changes: UpdateUserPasswordDto,
@@ -68,17 +78,18 @@ export class UserController {
   }
 
   @Patch(':id')
-  @UserRoles(ROLE_PERMISSIONS.MANAGE_USERS)
+  @RequirePermissions(PERMISSIONS.EMPLOYEES_UPDATE)
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() changes: UpdateUserDto,
+    @AuthenticatedUser() actor: IAuthorizedUser,
   ): Promise<IUser> {
-    return this.userService.update(id, changes);
+    return this.userService.updateForActor(id, changes, actor);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UserRoles(ROLE_PERMISSIONS.MANAGE_USERS)
+  @RequirePermissions(PERMISSIONS.EMPLOYEES_DELETE)
   delete(
     @Param('id', ParseUUIDPipe) id: string,
     @AuthenticatedUser() requester: IUser,

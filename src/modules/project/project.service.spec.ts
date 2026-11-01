@@ -12,20 +12,26 @@ import {
 
 import { Test } from '@nestjs/testing';
 import { ProjectService } from './project.service';
+import { ForbiddenException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ProjectRepository } from './project.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectIntakeService } from './project-intake.service';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { AddressService } from '@Modules/address/address.service';
 import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
+import { authorizedUser } from '../../testing/authorization.fixture';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
+import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
+import { APARTMENT_OWNERSHIP } from './constants/apartment-commercial.constant';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
+import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
@@ -33,6 +39,7 @@ import { ProjectStageTransitionService } from '@Modules/project-stage-transition
 const TRANSACTION = { id: 'transaction' };
 const PROJECT_ID = 'project-1';
 const QUOTE_STAGE_ID = 'stage-quote';
+const DRAFT_STAGE_ID = PROJECT_STATUS_IDS.DRAFT;
 const ORDER_STAGE_ID = 'stage-order';
 const COMPANY_TYPE_ID = 'type-company';
 const PRIVATE_TYPE_ID = 'type-private';
@@ -209,13 +216,16 @@ const createService = async () => {
   };
   const projectStageService = {
     getById: jest.fn().mockResolvedValue({ id: ORDER_STAGE_ID }),
-    getInitialStage: jest.fn().mockResolvedValue({ id: QUOTE_STAGE_ID }),
+    getInitialStage: jest.fn().mockResolvedValue({ id: DRAFT_STAGE_ID }),
   };
   const projectMemberService = {
     replaceForProject: jest.fn().mockResolvedValue(null),
     validateAssignments: jest.fn().mockResolvedValue(null),
   };
   const transitionService = { record: jest.fn().mockResolvedValue(null) };
+  const taskInitialization = {
+    ensureForProject: jest.fn().mockResolvedValue(null),
+  };
   const projectTypeService = {
     getById: jest.fn((id: keyof typeof PROJECT_TYPES) =>
       Promise.resolve(PROJECT_TYPES[id]),
@@ -242,6 +252,10 @@ const createService = async () => {
       ProjectService,
       ProjectIntakeService,
       ProjectApartmentService,
+      {
+        provide: ProjectTaskInitializationService,
+        useValue: taskInitialization,
+      },
       { provide: CustomerService, useValue: customerService },
       { provide: AddressService, useValue: addressService },
       { provide: EventEmitter2, useValue: eventEmitter },
@@ -261,6 +275,7 @@ const createService = async () => {
     addressService,
     projectRepository,
     transitionService,
+    taskInitialization,
     projectTypeService,
     projectMemberService,
   };
@@ -276,12 +291,13 @@ describe('ProjectService.create', () => {
     members: [{ userId: 'user-2', role: USER_ROLES.SECRETARY }],
   };
 
-  it('creates the project in the first stage with its members and an opening timeline entry', async () => {
+  it('creates the project in Draft with its members, mandatory tasks and an opening timeline entry', async () => {
     const {
       service,
       projectRepository,
       projectMemberService,
       transitionService,
+      taskInitialization,
     } = await createService();
 
     await service.create(PROJECT, CREATOR);
@@ -292,7 +308,7 @@ describe('ProjectService.create', () => {
     expect(transaction).toBe(TRANSACTION);
     expect(createdAttributes.code).toMatch(/^אכ-[0-9]{5}$/);
     expect(createdAttributes).toMatchObject({
-      stageId: QUOTE_STAGE_ID,
+      stageId: DRAFT_STAGE_ID,
       createdById: CREATOR.id,
     });
     expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
@@ -301,9 +317,25 @@ describe('ProjectService.create', () => {
       TRANSACTION,
     );
     expect(transitionService.record).toHaveBeenCalledWith(
-      expect.objectContaining({ fromStageId: null, toStageId: QUOTE_STAGE_ID }),
+      expect.objectContaining({ fromStageId: null, toStageId: DRAFT_STAGE_ID }),
       TRANSACTION,
     );
+    expect(taskInitialization.ensureForProject).toHaveBeenCalledWith(
+      { id: PROJECT_ID, name: PROJECT.name },
+      CREATOR,
+      TRANSACTION,
+    );
+  });
+
+  it('does not publish a project when mandatory task initialization fails', async () => {
+    const { service, taskInitialization, eventEmitter } = await createService();
+    taskInitialization.ensureForProject.mockRejectedValue(
+      new Error('task write failed'),
+    );
+    await expect(service.create(PROJECT, CREATOR)).rejects.toThrow(
+      'task write failed',
+    );
+    expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
   });
 
   it('announces the new project after it is saved so Drive folders get created', async () => {
@@ -535,7 +567,7 @@ describe('ProjectService.create intake fields', () => {
     expect(projectRepository.create).not.toHaveBeenCalled();
   };
 
-  it('stores the address Google verified, the contact person and the payment terms', async () => {
+  it('stores verified site address and payment terms without duplicating customer contacts', async () => {
     const { service, projectRepository, addressService } =
       await createService();
 
@@ -547,7 +579,12 @@ describe('ProjectService.create intake fields', () => {
       sessionToken: null,
       placeId: TEL_AVIV_PLACE_ID,
     });
-    expect(createdAttributes).toMatchObject(STORED_COMPANY_INTAKE);
+    expect(createdAttributes).toMatchObject({
+      ...STORED_COMPANY_INTAKE,
+      contactName: null,
+      contactPhone: null,
+      contactRole: null,
+    });
   });
 
   it('rejects a project without an address', async () => {
@@ -587,10 +624,20 @@ describe('ProjectService.create intake fields', () => {
     });
   });
 
-  it('rejects a project without a complete contact person, naming the missing fields', async () => {
-    await expectRejection(
-      { ...PROJECT, contactPhone: null, contactRole: null },
-      'Missing contact person details: contactRole, contactPhone',
+  it('creates a project without inline customer-contact inputs', async () => {
+    const { service, projectRepository } = await createService();
+    const project = { ...PROJECT };
+    ['contactName', 'contactPhone', 'contactRole'].forEach((field) =>
+      Reflect.deleteProperty(project, field),
+    );
+    await service.create(project, CREATOR);
+    expect(projectRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contactName: null,
+        contactPhone: null,
+        contactRole: null,
+      }),
+      TRANSACTION,
     );
   });
 
@@ -906,7 +953,8 @@ const STORED_APARTMENT = {
 
 describe('ProjectService.createApartment', () => {
   it('creates the apartment with everything the building decides', async () => {
-    const { service, projectRepository, eventEmitter } = await createService();
+    const { service, projectRepository, eventEmitter, taskInitialization } =
+      await createService();
     projectRepository.findById.mockResolvedValueOnce(BUILDING);
     projectRepository.countApartmentsEverCreated.mockResolvedValue(4);
 
@@ -927,12 +975,17 @@ describe('ProjectService.createApartment', () => {
       addressPlaceId: null,
       code: 'GA-84811-05',
       customerApartment: '12',
-      stageId: QUOTE_STAGE_ID,
+      stageId: DRAFT_STAGE_ID,
       customerPhone: null,
       customerName: null,
       parentProjectId: BUILDING_ID,
       projectTypeId: 'type-building',
     });
+    expect(taskInitialization.ensureForProject).toHaveBeenCalledWith(
+      { id: PROJECT_ID, name: 'דירה 12' },
+      CREATOR,
+      TRANSACTION,
+    );
     expect(eventEmitter.emitAsync).toHaveBeenCalledTimes(1);
     expect(eventEmitter.emitAsync).toHaveBeenCalledWith(
       DOMAIN_EVENTS.PROJECT_CREATED,
@@ -941,6 +994,19 @@ describe('ProjectService.createApartment', () => {
     expect(projectRepository.create.mock.invocationCallOrder[0]).toBeLessThan(
       eventEmitter.emitAsync.mock.invocationCallOrder[0],
     );
+  });
+
+  it('does not announce an apartment whose mandatory task initialization fails', async () => {
+    const { service, projectRepository, eventEmitter, taskInitialization } =
+      await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    taskInitialization.ensureForProject.mockRejectedValue(
+      new Error('mandatory task failed'),
+    );
+    await expect(
+      service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
+    ).rejects.toThrow('mandatory task failed');
+    expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
   });
 
   it('does not announce an apartment whose persistence fails', async () => {
@@ -1611,4 +1677,262 @@ describe('ProjectService apartment team changes', () => {
       expect(projectRepository.update).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('ProjectService feature-specific update permissions', () => {
+  it('delegates ordinary edits with the original actor and payload', async () => {
+    const { service } = await createService();
+    const project = await service.getById(PROJECT_ID);
+    const update = jest.spyOn(service, 'update').mockResolvedValue(project);
+    const actor = authorizedUser([PERMISSIONS.PROJECTS_UPDATE]);
+    const changes = { name: 'Feature-permitted project edit' };
+
+    await expect(
+      service.updateForActor(PROJECT_ID, changes, actor),
+    ).resolves.toBe(project);
+    expect(update).toHaveBeenCalledWith(PROJECT_ID, changes, actor);
+  });
+
+  it('rejects status hidden inside a generic update without a status-change grant', async () => {
+    const { service } = await createService();
+    const project = await service.getById(PROJECT_ID);
+    const update = jest.spyOn(service, 'update').mockResolvedValue(project);
+    const actor = authorizedUser([PERMISSIONS.PROJECTS_UPDATE]);
+
+    expect(() =>
+      service.updateForActor(PROJECT_ID, { stageId: ORDER_STAGE_ID }, actor),
+    ).toThrow(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('delegates a status update only with both update and status-change grants', async () => {
+    const { service } = await createService();
+    const project = await service.getById(PROJECT_ID);
+    const update = jest.spyOn(service, 'update').mockResolvedValue(project);
+    const actor = authorizedUser([
+      PERMISSIONS.PROJECTS_UPDATE,
+      PERMISSIONS.PROJECTS_STATUS_CHANGE,
+    ]);
+    const changes = { stageId: ORDER_STAGE_ID };
+
+    await expect(
+      service.updateForActor(PROJECT_ID, changes, actor),
+    ).resolves.toBe(project);
+    expect(update).toHaveBeenCalledWith(PROJECT_ID, changes, actor);
+  });
+
+  it('requires the generic update grant even when status-change permission exists', async () => {
+    const { service } = await createService();
+    const project = await service.getById(PROJECT_ID);
+    const update = jest.spyOn(service, 'update').mockResolvedValue(project);
+    const actor = authorizedUser([PERMISSIONS.PROJECTS_STATUS_CHANGE]);
+
+    expect(() =>
+      service.updateForActor(PROJECT_ID, { stageId: ORDER_STAGE_ID }, actor),
+    ).toThrow(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('does not infer update rights from an administrator account role', async () => {
+    const { service } = await createService();
+    const project = await service.getById(PROJECT_ID);
+    const update = jest.spyOn(service, 'update').mockResolvedValue(project);
+
+    expect(() =>
+      service.updateForActor(PROJECT_ID, { name: 'Denied' }, authorizedUser()),
+    ).toThrow(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService apartment commercial fields', () => {
+  it('persists supplied ownership and exact credit on apartment creation', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await service.createApartment(
+      BUILDING_ID,
+      {
+        ...NEW_APARTMENT,
+        apartmentOwnership: APARTMENT_OWNERSHIP.BUYER,
+        apartmentCredit: '120.50',
+      },
+      CREATOR,
+    );
+    expect(projectRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apartmentOwnership: APARTMENT_OWNERSHIP.BUYER,
+        apartmentCredit: '120.50',
+      }),
+      TRANSACTION,
+    );
+  });
+  it.each([
+    { apartmentCredit: '0', apartmentOwnership: APARTMENT_OWNERSHIP.LANDOWNER },
+    { apartmentCredit: null, apartmentOwnership: null },
+  ])(
+    'updates or explicitly clears apartment commercial values',
+    async (changes) => {
+      const { service, projectRepository } = await createService();
+      projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+      await service.update(STORED_APARTMENT.id, changes, CREATOR);
+      expect(projectRepository.update).toHaveBeenCalledWith(
+        STORED_APARTMENT.id,
+        expect.objectContaining(changes),
+        TRANSACTION,
+      );
+    },
+  );
+  it.each([
+    { apartmentCredit: '1' },
+    { apartmentOwnership: APARTMENT_OWNERSHIP.BUYER },
+  ])('rejects apartment-only fields on a root project', async (changes) => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(BUILDING);
+    await expect(
+      service.update(BUILDING_ID, changes, CREATOR),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(projectRepository.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService lighting persistence', () => {
+  const projectInput = {
+    ...COMPANY_DETAILS,
+    ...COMPANY_INTAKE,
+    customerId: CUSTOMER_ID,
+    name: 'פרויקט הנמכה לתאורה',
+    projectTypeId: COMPANY_TYPE_ID,
+    members: [],
+  };
+  const enabledProject = {
+    ...STORED_INTAKE_PROJECT,
+    hasGeneralLightingCeilingLowering: true,
+    generalLightingCeilingLoweringHeight: 25.5,
+  };
+
+  it.each([0, 25.125])(
+    'passes enabled centimeter height %s into the actual project creation transaction',
+    async (height) => {
+      const state = await createService();
+      await state.service.create(
+        {
+          ...projectInput,
+          hasGeneralLightingCeilingLowering: true,
+          generalLightingCeilingLoweringHeight: height,
+        },
+        CREATOR,
+      );
+      const [attributes, transaction] =
+        state.projectRepository.create.mock.calls[0];
+      expect(attributes.hasGeneralLightingCeilingLowering).toBe(true);
+      expect(attributes.generalLightingCeilingLoweringHeight).toBe(height);
+      expect(transaction).toBe(TRANSACTION);
+    },
+  );
+
+  it('persists disabled/no-height defaults when creation omits lighting', async () => {
+    const state = await createService();
+    await state.service.create(projectInput, CREATOR);
+    const [attributes] = state.projectRepository.create.mock.calls[0];
+    expect(attributes.hasGeneralLightingCeilingLowering).toBe(false);
+    expect(attributes.generalLightingCeilingLoweringHeight).toBeNull();
+  });
+
+  it('rejects creation with enabled lighting but no height before all writes and notifications', async () => {
+    const state = await createService();
+    await expect(
+      state.service.create(
+        { ...projectInput, hasGeneralLightingCeilingLowering: true },
+        CREATOR,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(state.projectRepository.create).not.toHaveBeenCalled();
+    expect(state.projectMemberService.replaceForProject).not.toHaveBeenCalled();
+    expect(state.taskInitialization.ensureForProject).not.toHaveBeenCalled();
+    expect(state.eventEmitter.emitAsync).not.toHaveBeenCalled();
+  });
+
+  it('preserves a stored height when updating the enabled toggle without a height', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue(enabledProject);
+    await state.service.update(
+      PROJECT_ID,
+      { hasGeneralLightingCeilingLowering: true },
+      CREATOR,
+    );
+    const [id, attributes, transaction] =
+      state.projectRepository.update.mock.calls[0];
+    expect(id).toBe(PROJECT_ID);
+    expect(transaction).toBe(TRANSACTION);
+    expect(attributes.hasGeneralLightingCeilingLowering).toBe(true);
+    expect(attributes.generalLightingCeilingLoweringHeight).toBe(25.5);
+  });
+
+  it('clears the stored height when an update disables lighting', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue(enabledProject);
+    await state.service.update(
+      PROJECT_ID,
+      { hasGeneralLightingCeilingLowering: false },
+      CREATOR,
+    );
+    const [, attributes] = state.projectRepository.update.mock.calls[0];
+    expect(attributes.hasGeneralLightingCeilingLowering).toBe(false);
+    expect(attributes.generalLightingCeilingLoweringHeight).toBeNull();
+  });
+
+  it('merges a height-only update with the stored enabled state', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue(enabledProject);
+    await state.service.update(
+      PROJECT_ID,
+      { generalLightingCeilingLoweringHeight: 0 },
+      CREATOR,
+    );
+    const [, attributes] = state.projectRepository.update.mock.calls[0];
+    expect(attributes.hasGeneralLightingCeilingLowering).toBe(true);
+    expect(attributes.generalLightingCeilingLoweringHeight).toBe(0);
+  });
+
+  it('does not rewrite either lighting field in an unrelated rename', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue(enabledProject);
+    await state.service.update(PROJECT_ID, { name: 'שם מעודכן' }, CREATOR);
+    const [, attributes] = state.projectRepository.update.mock.calls[0];
+    expect(attributes.name).toBe('שם מעודכן');
+    expect('hasGeneralLightingCeilingLowering' in attributes).toBe(false);
+    expect('generalLightingCeilingLoweringHeight' in attributes).toBe(false);
+  });
+
+  it('rejects enabling a previously disabled record without a height before writing', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue({
+      ...STORED_INTAKE_PROJECT,
+      hasGeneralLightingCeilingLowering: false,
+      generalLightingCeilingLoweringHeight: null,
+    });
+    await expect(
+      state.service.update(
+        PROJECT_ID,
+        { hasGeneralLightingCeilingLowering: true },
+        CREATOR,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(state.projectRepository.update).not.toHaveBeenCalled();
+    expect(state.projectMemberService.replaceForProject).not.toHaveBeenCalled();
+    expect(state.transitionService.record).not.toHaveBeenCalled();
+  });
+
+  it('rejects explicitly clearing an enabled record height before writing', async () => {
+    const state = await createService();
+    state.projectRepository.findById.mockResolvedValue(enabledProject);
+    await expect(
+      state.service.update(
+        PROJECT_ID,
+        { generalLightingCeilingLoweringHeight: null },
+        CREATOR,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(state.projectRepository.update).not.toHaveBeenCalled();
+  });
 });
