@@ -44,7 +44,7 @@ describe('customer import transaction boundary', () => {
       transaction,
     );
     expect(repository.create).toHaveBeenCalledWith(
-      { ...customer, createdById: 'creator' },
+      { ...customer, paymentTerms: null, createdById: 'creator' },
       transaction,
     );
     await module.close();
