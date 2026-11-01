@@ -11,6 +11,7 @@ import { Permission } from '@Modules/permission/entities/permission.entity';
 import { EnvironmentManager } from '../../utilities/environment-manager.utility';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
+import { Questionnaire } from '@Modules/questionnaire/entities/questionnaire.entity';
 import { QuotationRule } from '@Modules/quotation-rule/entities/quotation-rule.entity';
 import { CatalogueItem } from '@Modules/catalogue-item/entities/catalogue-item.entity';
 import { QuotationItem } from '@Modules/quotation-item/entities/quotation-item.entity';
@@ -22,6 +23,7 @@ import { QuotationSection } from '@Modules/quotation-section/entities/quotation-
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
+import { QuestionnaireSubmission } from '@Modules/questionnaire-submission/entities/questionnaire-submission.entity';
 
 const logger = new TypedLogger('DatabaseProvider');
 
@@ -75,6 +77,8 @@ export const DatabaseProvider: Provider = {
     const sequelize = new Sequelize(buildSequelizeOptions());
 
     sequelize.addModels([
+      Questionnaire,
+      QuestionnaireSubmission,
       Quotation,
       QuotationSection,
       QuotationItem,
