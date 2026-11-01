@@ -56,6 +56,6 @@ export class ProjectStageService {
   }
 
   getInitialStage(): Promise<IProjectStage> {
-    return this.getById(PROJECT_STATUS_IDS.WAITING);
+    return this.getById(PROJECT_STATUS_IDS.DRAFT);
   }
 }

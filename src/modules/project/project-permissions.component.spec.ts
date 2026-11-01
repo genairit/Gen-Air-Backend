@@ -14,6 +14,7 @@ import { ProjectController } from './project.controller';
 import { AuthService } from '@Modules/auth/auth.service';
 import { isUserRole } from '@Utilities/user-role.utility';
 import { INestApplication, UnauthorizedException } from '@nestjs/common';
+import { baselinePermissions } from '../../testing/authorization.fixture';
 
 const PROJECT_ID = '00000000-0000-4000-8000-000000000001';
 const STAGE_ID = '00000000-0000-4000-8000-000000000002';
@@ -35,7 +36,7 @@ describe('Project HTTP permission boundaries', () => {
     create: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
     createApartment: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
     move: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
-    update: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
+    updateForActor: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
     delete: jest.fn(() => Promise.resolve()),
   };
 
@@ -52,7 +53,11 @@ describe('Project HTTP permission boundaries', () => {
                 throw new UnauthorizedException();
               }
 
-              return Promise.resolve({ id: token, role: token });
+              return Promise.resolve({
+                id: token,
+                role: token,
+                permissions: baselinePermissions(token),
+              });
             },
           },
         },
@@ -127,7 +132,7 @@ describe('Project HTTP permission boundaries', () => {
         .send({})
         .expect(403);
       expect(projectService.move).not.toHaveBeenCalled();
-      expect(projectService.update).not.toHaveBeenCalled();
+      expect(projectService.updateForActor).not.toHaveBeenCalled();
     },
   );
 
@@ -149,7 +154,7 @@ describe('Project HTTP permission boundaries', () => {
         .send({ hasOwnTeam: true, members: [] })
         .expect(200);
       expect(projectService.createApartment).toHaveBeenCalledTimes(1);
-      expect(projectService.update).toHaveBeenCalledTimes(1);
+      expect(projectService.updateForActor).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -171,7 +176,7 @@ describe('Project HTTP permission boundaries', () => {
         .send({ hasOwnTeam: false })
         .expect(403);
       expect(projectService.createApartment).not.toHaveBeenCalled();
-      expect(projectService.update).not.toHaveBeenCalled();
+      expect(projectService.updateForActor).not.toHaveBeenCalled();
     },
   );
 

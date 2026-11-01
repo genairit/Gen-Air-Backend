@@ -12,6 +12,7 @@ import { AuthGuard } from '@Guards/auth.guard';
 import { AuthService } from '@Modules/auth/auth.service';
 import { ProjectDriveService } from './project-drive.service';
 import { ProjectDriveController } from './project-drive.controller';
+import { baselinePermissions } from '../../testing/authorization.fixture';
 import { driveConnectionResult } from '@Providers/google-drive/utilities/drive-connection.utility';
 import { DRIVE_CONNECTION_STATUS } from '@Providers/google-drive/constants/drive-connection.constant';
 
@@ -49,7 +50,11 @@ describe('Drive connection access', () => {
                 throw new UnauthorizedException();
               }
 
-              return Promise.resolve({ id: token, role: roles[token] });
+              return Promise.resolve({
+                id: token,
+                role: roles[token],
+                permissions: baselinePermissions(roles[token]),
+              });
             },
           },
         },

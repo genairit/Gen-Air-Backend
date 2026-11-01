@@ -10,20 +10,25 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-import { Type } from 'class-transformer';
 import { IntersectionType } from '@nestjs/swagger';
+import { Type, Transform } from 'class-transformer';
+import { ProjectLightingDto } from './project-lighting.dto';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { ProjectIntakeDetailsDto } from './project-intake-details.dto';
 import { ProjectCustomerDetailsDto } from './project-customer-details.dto';
+import { ApartmentCommercialDetailsDto } from './apartment-commercial-details.dto';
 import { AssignProjectMemberDto } from '@Modules/project-member/dto/assign-project-member.dto';
 
 export class UpdateProjectDto extends IntersectionType(
-  ProjectCustomerDetailsDto,
-  ProjectIntakeDetailsDto,
+  IntersectionType(ProjectCustomerDetailsDto, ProjectIntakeDetailsDto),
+  IntersectionType(ApartmentCommercialDetailsDto, ProjectLightingDto),
 ) {
   @IsOptional()
   @IsNotEmpty()
   @IsString()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @MaxLength(FIELD_LENGTHS.PROJECT_NAME)
   declare name?: string;
 

@@ -1,8 +1,11 @@
 import { Test } from '@nestjs/testing';
 import { UserService } from './user.service';
 import { UserRepository } from './user.repository';
+import { ForbiddenException } from '@nestjs/common';
 import { IUser } from './interfaces/user.interface';
 import { USER_ROLES } from '@Constants/user-role.constant';
+import { PERMISSIONS } from '@Constants/authorization.constant';
+import { authorizedUser } from '../../testing/authorization.fixture';
 import { ConflictException, BadRequestException } from '@nestjs/common';
 
 const USER: IUser = {
@@ -81,5 +84,91 @@ describe('UserService.delete', () => {
     await expect(service.delete(USER.id, USER)).rejects.toThrow(
       BadRequestException,
     );
+  });
+});
+
+describe('UserService field-specific actor permissions', () => {
+  const input = {
+    firstName: 'Test',
+    lastName: 'Employee',
+    email: 'employee@test.invalid',
+    phone: '0500000000',
+    role: USER_ROLES.ENGINEER,
+    password: 'Test-only-password-123',
+  };
+
+  it('does not permit assigning an account role with only create permission', async () => {
+    const { service } = await createService();
+    const create = jest.spyOn(service, 'create').mockResolvedValue(USER);
+
+    expect(() =>
+      service.createForActor(
+        input,
+        authorizedUser([PERMISSIONS.EMPLOYEES_CREATE]),
+      ),
+    ).toThrow(ForbiddenException);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('creates an employee only when both create and role-assignment grants are present', async () => {
+    const { service } = await createService();
+    const create = jest.spyOn(service, 'create').mockResolvedValue(USER);
+    const actor = authorizedUser([
+      PERMISSIONS.EMPLOYEES_CREATE,
+      PERMISSIONS.EMPLOYEES_ROLES_ASSIGN,
+    ]);
+
+    await expect(service.createForActor(input, actor)).resolves.toEqual(USER);
+    expect(create).toHaveBeenCalledWith(input);
+  });
+
+  it('permits ordinary profile changes without granting role assignment', async () => {
+    const { service } = await createService();
+    const update = jest.spyOn(service, 'update').mockResolvedValue(USER);
+    const actor = authorizedUser([PERMISSIONS.EMPLOYEES_UPDATE]);
+
+    await expect(
+      service.updateForActor(USER.id, { phone: '0500000001' }, actor),
+    ).resolves.toEqual(USER);
+    expect(update).toHaveBeenCalledWith(USER.id, { phone: '0500000001' });
+  });
+
+  it('rejects a role field inside an otherwise permitted profile update', async () => {
+    const { service } = await createService();
+    const update = jest.spyOn(service, 'update').mockResolvedValue(USER);
+    const actor = authorizedUser([PERMISSIONS.EMPLOYEES_UPDATE]);
+
+    expect(() =>
+      service.updateForActor(USER.id, { role: USER_ROLES.SYSTEM_ADMIN }, actor),
+    ).toThrow(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('accepts a role update when role assignment is explicitly granted', async () => {
+    const { service } = await createService();
+    const update = jest.spyOn(service, 'update').mockResolvedValue(USER);
+    const actor = authorizedUser([
+      PERMISSIONS.EMPLOYEES_UPDATE,
+      PERMISSIONS.EMPLOYEES_ROLES_ASSIGN,
+    ]);
+
+    await expect(
+      service.updateForActor(USER.id, { role: USER_ROLES.ENGINEER }, actor),
+    ).resolves.toEqual(USER);
+    expect(update).toHaveBeenCalledWith(USER.id, { role: USER_ROLES.ENGINEER });
+  });
+
+  it('requires profile-update permission even if role assignment is present', async () => {
+    const { service } = await createService();
+    const update = jest.spyOn(service, 'update').mockResolvedValue(USER);
+
+    expect(() =>
+      service.updateForActor(
+        USER.id,
+        { role: USER_ROLES.ENGINEER },
+        authorizedUser([PERMISSIONS.EMPLOYEES_ROLES_ASSIGN]),
+      ),
+    ).toThrow(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
   });
 });

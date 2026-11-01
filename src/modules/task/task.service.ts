@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
-  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 
@@ -17,7 +16,6 @@ import {
 } from './interfaces/task.interface';
 
 import {
-  toTaskLink,
   isTaskLinkRequested,
   resolveTaskCustomerId,
 } from './utilities/task-link.utility';
@@ -29,18 +27,20 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { UserService } from '@Modules/user/user.service';
 import { USER_ROLES } from '@Constants/user-role.constant';
+import { TASK_TYPES } from './constants/task-type.constant';
 import { GetTasksByFilterDto } from './dto/get-by-filter.dto';
 import { isDueDateBeforeToday } from '@Utilities/date.utility';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toCursorBatch } from '@Utilities/cursor-batch.utility';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { TaskStatusType } from './constants/task-status.constant';
-import type { IUser } from '@Modules/user/interfaces/user.interface';
-import { CustomerService } from '@Modules/customer/customer.service';
-import { ROLE_PERMISSIONS } from '@Constants/authorization.constant';
+import { assertPermissions } from '@Utilities/permission.utility';
+import { isProtectedTaskType } from './utilities/task-type.utility';
 import { findChangedAssigneeId } from './utilities/task-assignee.utility';
 import { EMPTY_TASK_STATUS_COUNTS } from './constants/task-status.constant';
+import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { TaskStatusTransitionRepository } from './task-status-transition.repository';
 import { ITaskStatusTransition } from './interfaces/task-status-transition.interface';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
@@ -51,7 +51,6 @@ export class TaskService {
     private readonly taskRepository: TaskRepository,
     private readonly taskStatusTransitionRepository: TaskStatusTransitionRepository,
     private readonly projectService: ProjectService,
-    private readonly customerService: CustomerService,
     private readonly userService: UserService,
     private readonly transactions: DatabaseTransactionService,
     private readonly events: EventEmitter2,
@@ -79,12 +78,14 @@ export class TaskService {
 
   getMyTasks(
     filter: GetTasksByFilterDto,
-    user: IUser,
+    user: IAuthorizedUser,
   ): Promise<ICursorPage<ITask>> {
     return this.getByFilter({ ...filter, assigneeId: user.id });
   }
 
-  async claim(id: string, user: IUser): Promise<ITask> {
+  async claim(id: string, user: IAuthorizedUser): Promise<ITask> {
+    assertPermissions(user, PERMISSIONS.TASKS_CLAIM);
+    await this.assertAssignableEngineer(user.id);
     return this.transactions.run(async (transaction) => {
       const task = await this.requireTask(id, transaction);
       if (task.assigneeId !== null) {
@@ -123,9 +124,18 @@ export class TaskService {
     );
   }
 
-  async create(input: CreateTaskDto, creator: IUser): Promise<ITask> {
-    this.assertManager(creator);
-    this.assertDueDateNotPast(input.dueDate);
+  async create(input: CreateTaskDto, creator: IAuthorizedUser): Promise<ITask> {
+    assertPermissions(creator, PERMISSIONS.TASKS_CREATE);
+    if (input.assigneeId != null) {
+      assertPermissions(creator, PERMISSIONS.TASKS_ASSIGN);
+    }
+
+    if (input.taskType != null && input.taskType !== TASK_TYPES.GENERAL) {
+      throw new BadRequestException(
+        'Quotation and planning tasks are created automatically with a project',
+      );
+    }
+    this.assertDueDateNotPast(input.dueDate ?? null);
 
     const link = this.requireTaskLink(input);
 
@@ -137,12 +147,13 @@ export class TaskService {
     const createdId = await this.transactions.run(async (transaction) => {
       const created = await this.taskRepository.create(
         {
+          taskType: TASK_TYPES.GENERAL,
           title: input.title.trim(),
           ...link,
           createdById: creator.id,
           assigneeId: input.assigneeId ?? null,
           description: input.description.trim(),
-          dueDate: new Date(input.dueDate),
+          dueDate: input.dueDate ? new Date(input.dueDate) : null,
         },
         transaction,
       );
@@ -163,8 +174,16 @@ export class TaskService {
     return this.requireDetailedTask(createdId);
   }
 
-  async update(id: string, input: UpdateTaskDto, user: IUser): Promise<ITask> {
-    this.assertManager(user);
+  async update(
+    id: string,
+    input: UpdateTaskDto,
+    user: IAuthorizedUser,
+  ): Promise<ITask> {
+    assertPermissions(user, PERMISSIONS.TASKS_UPDATE);
+    if ('assigneeId' in input) {
+      assertPermissions(user, PERMISSIONS.TASKS_ASSIGN);
+    }
+
     this.assertDueDateNotPast(input.dueDate ?? null);
     const link = isTaskLinkRequested(input)
       ? this.requireTaskLink(input)
@@ -172,6 +191,8 @@ export class TaskService {
 
     return this.transactions.run(async (transaction) => {
       const task = await this.requireTask(id, transaction);
+      this.assertTaskTypeUnchanged(task, input);
+      this.assertProtectedLinkUnchanged(task, link);
       await Promise.all([
         this.assertLinkExists(link),
         this.assertAssignableEngineer(findChangedAssigneeId(task, input)),
@@ -181,7 +202,9 @@ export class TaskService {
         ...link,
         ...('assigneeId' in input && { assigneeId: input.assigneeId ?? null }),
         ...(input.description && { description: input.description.trim() }),
-        ...(input.dueDate && { dueDate: new Date(input.dueDate) }),
+        ...('dueDate' in input && {
+          dueDate: input.dueDate ? new Date(input.dueDate) : null,
+        }),
       };
       await this.taskRepository.update(id, attributes, transaction);
 
@@ -192,8 +215,10 @@ export class TaskService {
   async updateStatus(
     id: string,
     status: TaskStatusType,
-    user: IUser,
+    user: IAuthorizedUser,
   ): Promise<ITask> {
+    assertPermissions(user, PERMISSIONS.TASKS_STATUS_UPDATE);
+
     return this.transactions.run(async (transaction) => {
       const task = await this.requireTask(id, transaction);
 
@@ -225,9 +250,9 @@ export class TaskService {
   async updateUrgency(
     id: string,
     isUrgent: boolean,
-    user: IUser,
+    user: IAuthorizedUser,
   ): Promise<ITask> {
-    this.assertManager(user);
+    assertPermissions(user, PERMISSIONS.TASKS_URGENCY_CHANGE);
     const result = await this.transactions.run(async (transaction) => {
       const previous = await this.requireTask(id, transaction);
       const becameUrgent = !previous.isUrgent && isUrgent;
@@ -259,10 +284,15 @@ export class TaskService {
     return result.task;
   }
 
-  async delete(id: string, user: IUser): Promise<void> {
-    this.assertManager(user);
+  async delete(id: string, user: IAuthorizedUser): Promise<void> {
+    assertPermissions(user, PERMISSIONS.TASKS_DELETE);
     await this.transactions.run(async (transaction) => {
-      await this.requireTask(id, transaction);
+      const task = await this.requireTask(id, transaction);
+      if (isProtectedTaskType(task.taskType)) {
+        throw new ConflictException(
+          'Automatic quotation and planning tasks cannot be deleted',
+        );
+      }
       await this.taskRepository.softDelete(id, transaction);
     });
   }
@@ -303,36 +333,36 @@ export class TaskService {
     }
   }
 
-  private canManage(user: IUser): boolean {
-    return ROLE_PERMISSIONS.MANAGE_TASKS.some((role) => role === user.role);
-  }
-
-  private assertManager(user: IUser): void {
-    if (!this.canManage(user)) {
-      throw new ForbiddenException('Only managers can manage tasks');
-    }
-  }
-
   private requireTaskLink(input: TTaskLinkInput): TTaskLink {
-    const link = toTaskLink(input);
-
-    if (!link) {
+    if (!input.projectId || input.customerId != null) {
       throw new BadRequestException(
-        'A task must be linked to exactly one of a project or a customer',
+        'A task must belong to a project; its customer is resolved through the project',
       );
     }
+    return { projectId: input.projectId, customerId: null };
+  }
 
-    return link;
+  private assertTaskTypeUnchanged(task: ITask, input: UpdateTaskDto): void {
+    if (input.taskType != null && input.taskType !== task.taskType) {
+      throw new BadRequestException('Task type cannot be changed');
+    }
+  }
+
+  private assertProtectedLinkUnchanged(
+    task: ITask,
+    link: TTaskLink | null,
+  ): void {
+    const isChanged = link !== null && link.projectId !== task.projectId;
+    if (isProtectedTaskType(task.taskType) && isChanged) {
+      throw new ConflictException(
+        'Automatic project tasks cannot move to another project',
+      );
+    }
   }
 
   private async assertLinkExists(link: TTaskLink | null): Promise<void> {
     if (link?.projectId) {
       await this.projectService.getById(link.projectId);
-      return;
-    }
-
-    if (link?.customerId) {
-      await this.customerService.getById(link.customerId);
     }
   }
 

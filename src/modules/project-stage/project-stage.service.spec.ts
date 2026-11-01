@@ -21,7 +21,12 @@ const STAGES: IProjectStage[] = FIXED_PROJECT_STATUSES.map((stage) => ({
 const createService = async () => {
   const repository = {
     findAll: jest.fn().mockResolvedValue(STAGES),
-    findById: jest.fn().mockResolvedValue(STAGES[0]),
+    findById: jest.fn((id: string) =>
+      Promise.resolve(
+        STAGES.find((stage) => stage.id.toLowerCase() === id.toLowerCase()) ??
+          null,
+      ),
+    ),
   };
   const module = await Test.createTestingModule({
     providers: [
@@ -32,9 +37,10 @@ const createService = async () => {
   return { service: module.get(ProjectStageService), repository };
 };
 describe('Fixed project status catalog', () => {
-  it('reads exactly the four persisted statuses in the required order', async () => {
+  it('reads Draft followed by the four existing persisted statuses in the required order', async () => {
     const { service } = await createService();
     expect((await service.getAll()).map((stage) => stage.name)).toEqual([
+      'טיוטה',
       'ממתין',
       'בעבודה',
       'להמתין',
@@ -51,14 +57,10 @@ describe('Fixed project status catalog', () => {
     repository.findAll.mockResolvedValue(stages);
     await expect(service.getAll()).rejects.toThrow(ServiceUnavailableException);
   });
-  it('defaults new projects to waiting by its stable database ID', async () => {
+  it('defaults new projects to Draft by its stable database ID', async () => {
     const { service, repository } = await createService();
-    expect((await service.getInitialStage()).id).toBe(
-      PROJECT_STATUS_IDS.WAITING,
-    );
-    expect(repository.findById).toHaveBeenCalledWith(
-      PROJECT_STATUS_IDS.WAITING,
-    );
+    expect((await service.getInitialStage()).id).toBe(PROJECT_STATUS_IDS.DRAFT);
+    expect(repository.findById).toHaveBeenCalledWith(PROJECT_STATUS_IDS.DRAFT);
   });
   it('accepts canonical UUIDs regardless of letter case', async () => {
     const { service } = await createService();

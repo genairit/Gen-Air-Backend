@@ -9,11 +9,14 @@ import { UserRepository } from './user.repository';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { GetUsersByFilterDto } from './dto/get-by-filter.dto';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toCursorBatch } from '@Utilities/cursor-batch.utility';
+import { assertPermissions } from '@Utilities/permission.utility';
 import { EMPTY_USER_ROLE_COUNTS } from './constants/user.constant';
 import { IUser, TUserRoleCounts } from './interfaces/user.interface';
 import { UpdateUserPasswordDto } from './dto/update-user-password.dto';
+import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { hashPassword, verifyPassword } from '@Utilities/password.utility';
 
 @Injectable()
@@ -74,6 +77,29 @@ export class UserService {
       (counts, { role, count }) => ({ ...counts, [role]: count }),
       EMPTY_USER_ROLE_COUNTS,
     );
+  }
+
+  createForActor(input: CreateUserDto, actor: IAuthorizedUser): Promise<IUser> {
+    assertPermissions(
+      actor,
+      PERMISSIONS.EMPLOYEES_CREATE,
+      PERMISSIONS.EMPLOYEES_ROLES_ASSIGN,
+    );
+
+    return this.create(input);
+  }
+
+  updateForActor(
+    id: string,
+    input: UpdateUserDto,
+    actor: IAuthorizedUser,
+  ): Promise<IUser> {
+    assertPermissions(actor, PERMISSIONS.EMPLOYEES_UPDATE);
+    if ('role' in input) {
+      assertPermissions(actor, PERMISSIONS.EMPLOYEES_ROLES_ASSIGN);
+    }
+
+    return this.update(id, input);
   }
 
   async create(user: CreateUserDto): Promise<IUser> {

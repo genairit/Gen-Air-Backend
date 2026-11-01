@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsUUID,
   Matches,
   IsString,
@@ -8,9 +9,15 @@ import {
   IsDateString,
 } from 'class-validator';
 
+import type { TaskType } from '../constants/task-type.constant';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
+import { TASK_TYPE_VALUES } from '../constants/task-type.constant';
 
 export class UpdateTaskDto {
+  @IsOptional()
+  @IsIn(TASK_TYPE_VALUES)
+  declare taskType?: TaskType;
+
   @IsOptional()
   @IsUUID()
   declare projectId?: string | null;
@@ -31,7 +38,7 @@ export class UpdateTaskDto {
   @MaxLength(FIELD_LENGTHS.TASK_DESCRIPTION)
   declare description?: string;
 
-  @ValidateIf((object) => 'dueDate' in object)
+  @IsOptional()
   @IsDateString({ strict: true })
-  declare dueDate?: string;
+  declare dueDate?: string | null;
 }

@@ -8,6 +8,7 @@ import { AuthService } from '@Modules/auth/auth.service';
 import { ProjectStageService } from './project-stage.service';
 import { ProjectStageController } from './project-stage.controller';
 import { ProjectStageRepository } from './project-stage.repository';
+import { baselinePermissions } from '../../testing/authorization.fixture';
 import { FIXED_PROJECT_STATUSES } from '@Constants/project-status.constant';
 
 const STAGES = FIXED_PROJECT_STATUSES.map((stage) => ({
@@ -31,7 +32,11 @@ describe('Read-only project status API', () => {
           provide: AuthService,
           useValue: {
             authenticate: () =>
-              Promise.resolve({ id: 'admin', role: 'system_admin' }),
+              Promise.resolve({
+                id: 'admin',
+                role: 'system_admin',
+                permissions: baselinePermissions('system_admin'),
+              }),
           },
         },
         { provide: APP_GUARD, useClass: AuthGuard },

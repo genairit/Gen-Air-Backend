@@ -13,13 +13,21 @@ import {
 } from 'sequelize-typescript';
 
 import {
+  TASK_TYPES,
+  TASK_TYPE_VALUES,
+  PROTECTED_TASK_TYPES,
+  TASK_STORED_TITLE_LENGTH,
+} from '../constants/task-type.constant';
+
+import {
   TASK_STATUSES,
   TASK_STATUS_VALUES,
   type TaskStatusType,
 } from '../constants/task-status.constant';
 
+import { Op } from 'sequelize';
 import { User } from '@Modules/user/entities/user.entity';
-import { FIELD_LENGTHS } from '@Constants/field-length.constant';
+import type { TaskType } from '../constants/task-type.constant';
 import { Project } from '@Modules/project/entities/project.entity';
 import { Customer } from '@Modules/customer/entities/customer.entity';
 import { ITask, TTaskCreationAttributes } from '../interfaces/task.interface';
@@ -28,6 +36,12 @@ import { ITask, TTaskCreationAttributes } from '../interfaces/task.interface';
   tableName: 'tasks',
   paranoid: true,
   indexes: [
+    {
+      name: 'uq_tasks_project_protected_type',
+      unique: true,
+      fields: ['project_id', 'task_type'],
+      where: { task_type: { [Op.in]: PROTECTED_TASK_TYPES } },
+    },
     {
       name: 'idx_tasks_urgency_due_date',
       fields: [
@@ -62,8 +76,11 @@ export class Task
   @Default(DataType.UUIDV4)
   @Column(DataType.UUID)
   declare id: string;
-  @Column({ allowNull: false, type: DataType.STRING(FIELD_LENGTHS.TASK_TITLE) })
+  @Column({ allowNull: false, type: DataType.STRING(TASK_STORED_TITLE_LENGTH) })
   declare title: string;
+  @Default(TASK_TYPES.GENERAL)
+  @Column({ allowNull: false, type: DataType.ENUM(...TASK_TYPE_VALUES) })
+  declare taskType: TaskType;
   @ForeignKey(() => Project)
   @Column(DataType.UUID)
   declare projectId: string | null;
