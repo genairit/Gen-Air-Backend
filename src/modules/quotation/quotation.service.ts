@@ -36,10 +36,12 @@ import { DEFAULT_VAT_RATE } from './constants/quotation.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { QuotationSelectionService } from './quotation-selection.service';
+import type { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
 import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
+import type { IQuotationStatusCounts } from './interfaces/quotation-status-counts.interface';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 
@@ -56,6 +58,9 @@ export class QuotationService {
     private readonly projects: ProjectService,
     private readonly transactions: DatabaseTransactionService,
   ) {}
+  statusCounts(query: GetQuotationCountsDto): Promise<IQuotationStatusCounts> {
+    return this.repository.statusCounts(query.search ?? '');
+  }
   async list(query: GetQuotationsDto): Promise<{
     items: IQuotationView[];
     nextCursor: string | null;

@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { Op, Transaction } from 'sequelize';
+import { Op, QueryTypes, Transaction } from 'sequelize';
 import { Quotation } from './entities/quotation.entity';
 import { toContainsPattern } from '@Utilities/query.utility';
 import type { GetQuotationsDto } from './dto/get-quotations.dto';
+import { QUOTATION_STATUS } from './constants/quotation.constant';
 import type { IQuotation } from './interfaces/quotation.interface';
+import { QUOTATION_QUERY } from './constants/quotation-query.constant';
 import type { IQuotationCursor } from './interfaces/quotation-cursor.interface';
+import type { IQuotationStatusCounts } from './interfaces/quotation-status-counts.interface';
 
 @Injectable()
 export class QuotationRepository {
@@ -24,7 +27,7 @@ export class QuotationRepository {
       throw new Error('Quotation database unavailable');
     }
     return database.query(
-      `SELECT q.*,c.name AS "customerName",p.name AS "projectName" FROM quotations q LEFT JOIN customers c ON c.id=q.customer_id LEFT JOIN projects p ON p.id=q.project_id WHERE q.deleted_at IS NULL AND ($status::text IS NULL OR q.status=$status) AND concat_ws(' ',q.number,q.brand,c.name,p.name) ILIKE $search AND ($cursorDate::timestamptz IS NULL OR (q.updated_at,q.id)<($cursorDate::timestamptz,$cursorId::uuid)) ORDER BY q.updated_at DESC,q.id DESC LIMIT $limit`,
+      `SELECT q.*,c.name AS "customerName",p.name AS "projectName" ${QUOTATION_QUERY.JOINS} WHERE ${QUOTATION_QUERY.SEARCH} AND ($status::text IS NULL OR q.status=$status) AND ($cursorDate::timestamptz IS NULL OR (q.updated_at,q.id)<($cursorDate::timestamptz,$cursorId::uuid)) ORDER BY q.updated_at DESC,q.id DESC LIMIT $limit`,
       {
         model: Quotation,
         mapToModel: true,
@@ -38,6 +41,26 @@ export class QuotationRepository {
         },
       },
     );
+  }
+  async statusCounts(search: string): Promise<IQuotationStatusCounts> {
+    const database = Quotation.sequelize;
+    if (!database) {
+      throw new Error('Quotation database unavailable');
+    }
+
+    const [counts] = await database.query<IQuotationStatusCounts>(
+      `SELECT count(*)::integer AS "all", count(*) FILTER (WHERE q.status=$draft)::integer AS draft, count(*) FILTER (WHERE q.status=$review)::integer AS review, count(*) FILTER (WHERE q.status=$approved)::integer AS approved ${QUOTATION_QUERY.JOINS} WHERE ${QUOTATION_QUERY.SEARCH}`,
+      {
+        type: QueryTypes.SELECT,
+        bind: {
+          search: toContainsPattern(search.trim()),
+          draft: QUOTATION_STATUS.DRAFT,
+          review: QUOTATION_STATUS.REVIEW,
+          approved: QUOTATION_STATUS.APPROVED,
+        },
+      },
+    );
+    return counts;
   }
   async nextNumber(prefix: string, transaction: Transaction): Promise<string> {
     const previous = await Quotation.findOne({

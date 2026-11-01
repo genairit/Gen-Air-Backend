@@ -18,6 +18,7 @@ import { AuthGuard } from '@Guards/auth.guard';
 import { QuotationService } from './quotation.service';
 import { AuthService } from '@Modules/auth/auth.service';
 import { QuotationController } from './quotation.controller';
+import { QUOTATION_STATUS } from './constants/quotation.constant';
 import { authorizedUser } from '../../testing/authorization.fixture';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
@@ -31,6 +32,9 @@ const state: { app: INestApplication<Server> | null; actor: IAuthorizedUser } =
   { app: null, actor: authorizedUser() };
 const quotation = {
   list: jest.fn(() => Promise.resolve({ items: [], nextCursor: null })),
+  statusCounts: jest.fn(() =>
+    Promise.resolve({ all: 4, draft: 2, review: 1, approved: 1 }),
+  ),
   getById: jest.fn(() => Promise.resolve({ id })),
   create: jest.fn(() => Promise.resolve({ id })),
   save: jest.fn(() => Promise.resolve({ id })),
@@ -72,6 +76,7 @@ const savePayload = () => ({
 });
 const ROUTES: [string, string, PermissionType][] = [
   ['get', '/quotation', PERMISSIONS.QUOTATIONS_READ],
+  ['get', '/quotation/status-counts', PERMISSIONS.QUOTATIONS_READ],
   ['get', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_READ],
   ['post', '/quotation', PERMISSIONS.QUOTATIONS_CREATE],
   ['put', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_UPDATE],
@@ -146,6 +151,51 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       await call(method, path).set('Authorization', 'Bearer valid').expect(200);
     },
   );
+  test('status-counts resolves before UUID routes and delegates validated search', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_READ],
+    };
+    const response = await request(server())
+      .get('/quotation/status-counts')
+      .query({ search: 'לקוח %_' })
+      .set('Authorization', 'Bearer valid')
+      .expect(200);
+    expect(response.body).toEqual({ all: 4, draft: 2, review: 1, approved: 1 });
+    expect(quotation.statusCounts).toHaveBeenCalledWith({ search: 'לקוח %_' });
+    expect(quotation.getById).not.toHaveBeenCalled();
+  });
+  test.each([
+    { search: 'x'.repeat(201) },
+    { search: ['one', 'two'] },
+    { batchSize: 1 },
+    { status: QUOTATION_STATUS.DRAFT },
+  ])('status-counts rejects malformed or unrelated query %j', async (query) => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_READ],
+    };
+    await request(server())
+      .get('/quotation/status-counts')
+      .query(query)
+      .set('Authorization', 'Bearer valid')
+      .expect(400);
+    expect(quotation.statusCounts).not.toHaveBeenCalled();
+  });
+  test('status-counts accepts the maximum search length', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_READ],
+    };
+    await request(server())
+      .get('/quotation/status-counts')
+      .query({ search: 'x'.repeat(200) })
+      .set('Authorization', 'Bearer valid')
+      .expect(200);
+    expect(quotation.statusCounts).toHaveBeenCalledWith({
+      search: 'x'.repeat(200),
+    });
+  });
   test('valid customer-first POST delegates acting user, no project required', async () => {
     state.actor = {
       ...authorizedUser(),
