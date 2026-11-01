@@ -11,6 +11,7 @@ import { QuotationService } from '@Modules/quotation/quotation.service';
 import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { QuotationRepository } from '@Modules/quotation/quotation.repository';
 import type { SaveQuotationDto } from '@Modules/quotation/dto/save-quotation.dto';
+import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
 import { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
@@ -199,6 +200,127 @@ beforeAll(async () => {
 }, 30000);
 afterAll(async () => {
   await sequelize.close();
+});
+
+describe('Quotation status counts on real PostgreSQL', () => {
+  test('empty database returns numeric zeroes for every status', async () => {
+    expect(await quotationService().statusCounts({})).toEqual({
+      all: 0,
+      draft: 0,
+      review: 0,
+      approved: 0,
+    });
+  });
+  test('counts every status beyond the list page and excludes soft-deleted rows', async () => {
+    const search = `counts-${randomUUID()}`;
+    const fixtures = [
+      { count: 12, status: QUOTATION_STATUS.DRAFT },
+      { count: 8, status: QUOTATION_STATUS.REVIEW },
+      { count: 4, status: QUOTATION_STATUS.APPROVED },
+    ];
+    const statuses = fixtures.flatMap(({ count, status }) =>
+      Array.from({ length: count }, () => status),
+    );
+    for (const status of statuses) {
+      const quote = await quotationService().create({ customerId }, actor);
+      await Quotation.update(
+        { brand: search, status },
+        { where: { id: quote.id } },
+      );
+    }
+    const deleted = await quotationService().create({ customerId }, actor);
+    await Quotation.update(
+      { brand: search, status: QUOTATION_STATUS.APPROVED },
+      { where: { id: deleted.id } },
+    );
+    await Quotation.destroy({ where: { id: deleted.id } });
+    expect(await quotationService().statusCounts({ search })).toEqual({
+      all: 24,
+      draft: 12,
+      review: 8,
+      approved: 4,
+    });
+    const page = await quotationService().list({
+      search,
+      batchSize: 2,
+      status: QUOTATION_STATUS.DRAFT,
+    });
+    expect(page.items).toHaveLength(2);
+    expect(page.nextCursor).not.toBeNull();
+    expect(await quotationService().statusCounts({ search })).toEqual({
+      all: 24,
+      draft: 12,
+      review: 8,
+      approved: 4,
+    });
+  });
+  test('search shares number, brand, customer and project matching with the list', async () => {
+    const relatedCustomerId = randomUUID(),
+      relatedProjectId = randomUUID();
+    const customerName = `customer-${randomUUID()}`,
+      projectName = `project-${randomUUID()}`;
+    await sequelize.query('INSERT INTO customers(id,name) VALUES($id,$name)', {
+      bind: { id: relatedCustomerId, name: customerName },
+    });
+    await sequelize.query('INSERT INTO projects(id,name) VALUES($id,$name)', {
+      bind: { id: relatedProjectId, name: projectName },
+    });
+    const quote = await quotationService().create({ customerId }, actor);
+    const brand = `brand-${randomUUID()}`;
+    await Quotation.update(
+      { brand, customerId: relatedCustomerId, projectId: relatedProjectId },
+      { where: { id: quote.id } },
+    );
+    for (const search of [
+      quote.number,
+      brand,
+      customerName.toUpperCase(),
+      projectName,
+    ]) {
+      expect(
+        await quotationService().statusCounts({ search: `  ${search}  ` }),
+      ).toEqual({
+        all: 1,
+        draft: 1,
+        review: 0,
+        approved: 0,
+      });
+      expect(
+        (await quotationService().list({ search })).items.map(
+          (item) => item.id,
+        ),
+      ).toEqual([quote.id]);
+    }
+  });
+  test('search treats percent, underscore and backslash as literal characters', async () => {
+    const prefix = randomUUID();
+    const literal = `${prefix}%_\\suffix`;
+    for (const brand of [
+      literal,
+      `${prefix}XYsuffix`,
+      `${prefix}other_suffix`,
+    ]) {
+      const quote = await quotationService().create({ customerId }, actor);
+      await Quotation.update({ brand }, { where: { id: quote.id } });
+    }
+    for (const search of [literal, `${prefix}%`, `${prefix}%_`]) {
+      expect(await quotationService().statusCounts({ search })).toEqual({
+        all: 1,
+        draft: 1,
+        review: 0,
+        approved: 0,
+      });
+      expect((await quotationService().list({ search })).items).toHaveLength(1);
+    }
+    expect(
+      await quotationService().statusCounts({ search: randomUUID() }),
+    ).toEqual({
+      all: 0,
+      draft: 0,
+      review: 0,
+      approved: 0,
+    });
+  });
 });
 
 describe('Quotation aggregate on real PostgreSQL', () => {

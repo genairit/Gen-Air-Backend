@@ -20,6 +20,7 @@ import { QuotationService } from './quotation.service';
 import { GetQuotationsDto } from './dto/get-quotations.dto';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
+import { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 
@@ -33,6 +34,13 @@ export class QuotationController {
     query: GetQuotationsDto,
   ): ReturnType<QuotationService['list']> {
     return this.service.list(query);
+  }
+  @Get('status-counts')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
+  statusCounts(
+    @Query() query: GetQuotationCountsDto,
+  ): ReturnType<QuotationService['statusCounts']> {
+    return this.service.statusCounts(query);
   }
   @Get(':id')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
