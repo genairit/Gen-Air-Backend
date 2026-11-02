@@ -33,4 +33,17 @@ export class QuotationExecutionEmailRepository {
       transaction,
     });
   }
+
+  async updateIfRequest(
+    taskId: string,
+    requestId: string,
+    values: TQuotationExecutionEmailUpdate,
+    transaction?: Transaction,
+  ): Promise<number> {
+    const [updated] = await QuotationExecutionEmail.update(values, {
+      where: { taskId, requestId },
+      transaction,
+    });
+    return updated;
+  }
 }

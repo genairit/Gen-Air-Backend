@@ -24,6 +24,18 @@ CREATE TABLE quotation_execution_emails (
   CONSTRAINT chk_quotation_execution_email_recipients CHECK (cardinality(recipient_emails) > 0)
 );
 
+ALTER TABLE quotation_execution_emails ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON quotation_execution_emails FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON quotation_execution_emails FROM anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON quotation_execution_emails FROM authenticated;
+  END IF;
+END $$;
+
 CREATE UNIQUE INDEX uq_quotation_execution_emails_task ON quotation_execution_emails(task_id);
 
 COMMIT;

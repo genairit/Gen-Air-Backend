@@ -10,6 +10,16 @@ import { readFile } from 'node:fs/promises';
 import isEmail from 'validator/lib/isEmail';
 import { EnvironmentManager } from '@Utilities/environment-manager.utility';
 
+export class PartialQuotationEmailDeliveryError extends Error {
+  constructor(
+    readonly messageId: string,
+    readonly acceptedCount: number,
+    readonly rejectedCount: number,
+  ) {
+    super('SMTP accepted only some recipients');
+  }
+}
+
 export interface IQuotationMailAttachment {
   content: Buffer;
   filename: string;
@@ -116,6 +126,17 @@ export class QuotationEmailTransport {
         },
       ],
     });
-    return result.messageId || messageId;
+    const providerMessageId = result.messageId || messageId;
+    if (
+      result.rejected.length > 0 ||
+      result.accepted.length !== message.to.length
+    ) {
+      throw new PartialQuotationEmailDeliveryError(
+        providerMessageId,
+        result.accepted.length,
+        result.rejected.length,
+      );
+    }
+    return providerMessageId;
   }
 }

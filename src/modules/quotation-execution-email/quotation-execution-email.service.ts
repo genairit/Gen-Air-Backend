@@ -6,18 +6,23 @@ import {
 } from '@nestjs/common';
 
 import {
+  QuotationEmailTransport,
+  PartialQuotationEmailDeliveryError,
+} from './quotation-email-transport.service';
+
+import {
   QUOTATION_EMAIL_LIMITS,
   QUOTATION_EMAIL_STATUS,
 } from './constants/quotation-execution-email.constant';
 
 import isEmail from 'validator/lib/isEmail';
 import { TaskService } from '@Modules/task/task.service';
+import { Meta, TypedLogger } from '@Logger/logger.service';
 import { TaskRepository } from '@Modules/task/task.repository';
 import { ProjectService } from '@Modules/project/project.service';
 import { TASK_TYPES } from '@Modules/task/constants/task-type.constant';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { TASK_STATUSES } from '@Modules/task/constants/task-status.constant';
-import { QuotationEmailTransport } from './quotation-email-transport.service';
 import { resolveTaskCustomerId } from '@Modules/task/utilities/task-link.utility';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
 import { QuotationExecutionEmail } from './entities/quotation-execution-email.entity';
@@ -29,6 +34,10 @@ import { DatabaseTransactionService } from '@Providers/database/database-transac
 
 @Injectable()
 export class QuotationExecutionEmailService {
+  private readonly logger = new TypedLogger<Meta>(
+    QuotationExecutionEmailService.name,
+  );
+
   constructor(
     private readonly tasks: TaskService,
     private readonly taskRepository: TaskRepository,
@@ -75,6 +84,33 @@ export class QuotationExecutionEmailService {
   async getStatus(taskId: string) {
     await this.requireEligibleTask(taskId);
     return this.toReceipt(await this.records.findByTaskId(taskId));
+  }
+
+  async getPreview(
+    taskId: string,
+    architectContactId: string,
+    planVersion: string,
+    actor: IAuthorizedUser,
+  ) {
+    const context = await this.getContext(taskId);
+    const architect = context.contacts.find(
+      (contact) => contact.id === architectContactId,
+    );
+    const version = planVersion.trim();
+    if (!architect || !context.apartmentNumber || !version) {
+      throw new BadRequestException(
+        'Select a linked architect contact, apartment number and plan version',
+      );
+    }
+    const senderName = `${actor.firstName} ${actor.lastName}`.trim();
+    const template = renderQuotationExecutionEmail({
+      projectName: context.projectName,
+      apartmentNumber: context.apartmentNumber,
+      architectName: architect.name,
+      planVersion: version,
+      senderName,
+    });
+    return { subject: template.subject, body: template.text, senderName };
   }
 
   async send(
@@ -152,7 +188,15 @@ export class QuotationExecutionEmailService {
       ) {
         return record;
       }
-      if (record && record.status !== QUOTATION_EMAIL_STATUS.FAILED) {
+      const stalePreparation =
+        record?.status === QUOTATION_EMAIL_STATUS.PREPARING &&
+        Date.now() - record.updatedAt.getTime() >
+          QUOTATION_EMAIL_LIMITS.PREPARATION_LEASE_MS;
+      if (
+        record &&
+        record.status !== QUOTATION_EMAIL_STATUS.FAILED &&
+        !stalePreparation
+      ) {
         throw new ConflictException(
           'An email attempt already exists for this task',
         );
@@ -186,48 +230,32 @@ export class QuotationExecutionEmailService {
     });
     if (existing) return this.toReceipt(existing);
 
-    let plan: Awaited<ReturnType<ProjectDriveService['readProjectAttachment']>>;
-    let zip: typeof plan;
-    try {
-      [plan, zip] = await Promise.all([
-        this.drive.readProjectAttachment(
-          context.projectId,
-          input.planFileId,
-          QUOTATION_EMAIL_LIMITS.MAX_FILE_BYTES,
-        ),
-        this.drive.readProjectAttachment(
-          context.projectId,
-          input.zipFileId,
-          QUOTATION_EMAIL_LIMITS.MAX_FILE_BYTES,
-        ),
-      ]);
-      if (
-        /\.zip$/i.test(plan.name) ||
-        !/\.zip$/i.test(zip.name) ||
-        !['504b0304', '504b0506', '504b0708'].includes(
-          zip.content.subarray(0, 4).toString('hex'),
-        )
-      ) {
-        throw new BadRequestException(
-          'Select a plan file and a valid ZIP file',
-        );
-      }
-      if (
-        plan.content.length + zip.content.length >
-        QUOTATION_EMAIL_LIMITS.MAX_TOTAL_BYTES
-      ) {
-        throw new BadRequestException('Selected files are too large for email');
-      }
-    } catch (error) {
-      await this.records.update(taskId, {
+    const [plan, zip] = await this.prepareAttachments(
+      context.projectId,
+      input,
+    ).catch(async (error: unknown) => {
+      await this.records.updateIfRequest(taskId, input.requestId, {
         status: QUOTATION_EMAIL_STATUS.FAILED,
         errorCode: 'ATTACHMENT_PREPARATION_FAILED',
       });
       throw error;
-    }
+    });
 
-    await this.records.update(taskId, {
-      status: QUOTATION_EMAIL_STATUS.SENDING,
+    await this.transactions.run(async (transaction) => {
+      await this.transactions.lockKey(`quotation-email:${taskId}`, transaction);
+      const current = await this.records.findByTaskId(taskId, transaction);
+      if (
+        current?.requestId !== input.requestId ||
+        current.status !== QUOTATION_EMAIL_STATUS.PREPARING
+      ) {
+        throw new ConflictException('Email preparation has expired');
+      }
+      await this.records.updateIfRequest(
+        taskId,
+        input.requestId,
+        { status: QUOTATION_EMAIL_STATUS.SENDING },
+        transaction,
+      );
     });
     try {
       const providerMessageId = await this.transport.send({
@@ -250,20 +278,67 @@ export class QuotationExecutionEmailService {
           },
         ],
       });
-      await this.records.update(taskId, {
+      await this.records.updateIfRequest(taskId, input.requestId, {
         status: QUOTATION_EMAIL_STATUS.SENT,
         providerMessageId,
       });
       return this.toReceipt(await this.records.findByTaskId(taskId));
-    } catch {
-      await this.records.update(taskId, {
+    } catch (error) {
+      this.logger.error({
+        error,
+        taskId,
+        requestId: input.requestId,
+        message: 'Quotation execution email delivery could not be confirmed',
+      });
+      await this.records.updateIfRequest(taskId, input.requestId, {
         status: QUOTATION_EMAIL_STATUS.UNCERTAIN,
-        errorCode: 'DELIVERY_UNCERTAIN',
+        errorCode:
+          error instanceof PartialQuotationEmailDeliveryError
+            ? 'PARTIAL_DELIVERY'
+            : 'DELIVERY_UNCERTAIN',
+        providerMessageId:
+          error instanceof PartialQuotationEmailDeliveryError
+            ? error.messageId
+            : null,
       });
       throw new ConflictException(
         'Email delivery could not be confirmed. Check the delivery status before retrying.',
       );
     }
+  }
+
+  private async prepareAttachments(
+    projectId: string,
+    input: SendQuotationExecutionEmailDto,
+  ) {
+    const [plan, zip] = await Promise.all([
+      this.drive.readProjectAttachment(
+        projectId,
+        input.planFileId,
+        QUOTATION_EMAIL_LIMITS.MAX_FILE_BYTES,
+      ),
+      this.drive.readProjectAttachment(
+        projectId,
+        input.zipFileId,
+        QUOTATION_EMAIL_LIMITS.MAX_FILE_BYTES,
+      ),
+    ]);
+    if (
+      /\.zip$/i.test(plan.name) ||
+      !/\.zip$/i.test(zip.name) ||
+      !['504b0304', '504b0506', '504b0708'].includes(
+        zip.content.subarray(0, 4).toString('hex'),
+      )
+    ) {
+      throw new BadRequestException('Select a plan file and a valid ZIP file');
+    }
+    if (
+      plan.content.length + zip.content.length >
+      QUOTATION_EMAIL_LIMITS.MAX_TOTAL_BYTES
+    ) {
+      throw new BadRequestException('Selected files are too large for email');
+    }
+    return [plan, zip] as const;
   }
 
   private async requireEligibleTask(taskId: string) {
@@ -286,6 +361,11 @@ export class QuotationExecutionEmailService {
           requestId: record.requestId,
           providerMessageId: record.providerMessageId,
           updatedAt: record.updatedAt,
+          retryable:
+            record.status === QUOTATION_EMAIL_STATUS.FAILED ||
+            (record.status === QUOTATION_EMAIL_STATUS.PREPARING &&
+              Date.now() - record.updatedAt.getTime() >
+                QUOTATION_EMAIL_LIMITS.PREPARATION_LEASE_MS),
         }
       : null;
   }

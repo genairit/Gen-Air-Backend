@@ -14,6 +14,7 @@ import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 import { QuotationExecutionEmailService } from './quotation-execution-email.service';
 import { SendQuotationExecutionEmailDto } from './dto/send-quotation-execution-email.dto';
+import { PreviewQuotationExecutionEmailDto } from './dto/preview-quotation-execution-email.dto';
 
 @ApiTags('quotation-execution-email')
 @ApiBearerAuth()
@@ -30,6 +31,25 @@ export class QuotationExecutionEmailController {
   )
   getContext(@Param('taskId', ParseUUIDPipe) taskId: string) {
     return this.service.getContext(taskId);
+  }
+
+  @Post(':taskId/preview')
+  @RequirePermissions(
+    PERMISSIONS.TASKS_READ,
+    PERMISSIONS.PROJECTS_READ,
+    PERMISSIONS.CUSTOMERS_READ,
+  )
+  getPreview(
+    @Param('taskId', ParseUUIDPipe) taskId: string,
+    @Body() input: PreviewQuotationExecutionEmailDto,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ) {
+    return this.service.getPreview(
+      taskId,
+      input.architectContactId,
+      input.planVersion,
+      user,
+    );
   }
 
   @Get(':taskId/status')
