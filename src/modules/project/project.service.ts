@@ -21,11 +21,6 @@ import {
 } from './interfaces/project.interface';
 
 import {
-  hasAddressChanges,
-  hasPaymentTermsChanges,
-} from './utilities/project-intake.utility';
-
-import {
   resolveProjectLighting,
   resolveProjectLightingChanges,
 } from './utilities/project-lighting.utility';
@@ -58,6 +53,7 @@ import { assertPermissions } from '@Utilities/permission.utility';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
+import { hasAddressChanges } from './utilities/project-intake.utility';
 import { generateProjectCode } from './utilities/project-code.utility';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
@@ -518,8 +514,7 @@ export class ProjectService {
     const needsFieldSet =
       isProjectTypeChanging(project, changes) ||
       hasCustomerDetailChanges(changes) ||
-      hasAddressChanges(changes) ||
-      hasPaymentTermsChanges(changes);
+      hasAddressChanges(changes);
 
     if (!needsFieldSet) {
       return null;

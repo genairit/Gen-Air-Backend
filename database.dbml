@@ -9,14 +9,6 @@ Enum project_detail_field_set {
   institution    [note: 'מוסד: name, מ״ע, phone, address, email, floor, unit']
 }
 
-Enum payment_terms {
-  installments_10_60_30 [note: '10-60-30 — פרטי, יוקרה']
-  prepaid               [note: 'תשלום מראש — פרטי, יוקרה']
-  milestones_net_60     [note: 'לפי אבני דרך (שוטף + 60) — מסחרי, בנייה רוויה, מוסד']
-  twelve_prepaid_checks [note: '12 צ׳קים מראש — מסחרי, בנייה רוויה, מוסד']
-  other                 [note: 'אחר — every project type; the terms are described in projects.payment_terms_note']
-}
-
 Enum user_role {
   system_admin    [note: 'הנהלה / מנהל מערכת']
   engineer        [note: 'עובד הנדסה']
@@ -153,8 +145,6 @@ Table projects {
   apartment_credit numeric [note: 'Optional nonnegative ILS amount; at most 2 decimal places; blank remains null']
   customer_apartment          varchar(10)  [note: 'Private and luxury projects']
   customer_unit               varchar(60)  [note: 'Institutional projects: unit or wing']
-  payment_terms               payment_terms [note: 'Legal options per project type are a module-layer rule']
-  payment_terms_note          varchar(300) [note: 'Free-text terms; only set when payment_terms is other']
   address                     varchar(255) [note: 'Project site address as formatted by Google Places; set together with address_place_id']
   address_place_id            text         [note: 'Google Places id; its presence marks the address as verified']
   address_city                varchar(80)  [note: 'Locality component of the Places result']

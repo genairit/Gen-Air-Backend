@@ -94,8 +94,6 @@ export const makeCustomerProjectParent = (
   contactName: null,
   contactRole: null,
   contactPhone: null,
-  paymentTerms: null,
-  paymentTermsNote: null,
   driveFolderId: null,
   priorityId: null,
   prioritySyncedAt: null,

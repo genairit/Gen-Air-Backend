@@ -6,7 +6,6 @@ import {
 import { IProjectLighting } from './project-lighting.interface';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
-import { PaymentTermsType } from '@Constants/payment-terms.constant';
 import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
 import { ApartmentOwnershipType } from '../constants/apartment-commercial.constant';
 import { IProjectType } from '@Modules/project-type/interfaces/project-type.interface';
@@ -40,14 +39,7 @@ export interface IProjectContact {
   contactPhone: string | null;
 }
 
-export interface IProjectPaymentTerms {
-  paymentTermsNote: string | null;
-  paymentTerms: PaymentTermsType | null;
-}
-
-export type TProjectIntake = IProjectAddress &
-  IProjectContact &
-  IProjectPaymentTerms;
+export type TProjectIntake = IProjectAddress & IProjectContact;
 
 export type TProjectIntakeInput = Partial<
   Omit<TProjectIntake, 'address' | 'addressCity'>
@@ -142,11 +134,7 @@ export interface INewProjectContext {
 
 export type TInheritedProjectField = keyof Pick<
   IProject,
-  | 'address'
-  | 'addressCity'
-  | 'paymentTerms'
-  | 'addressPlaceId'
-  | 'paymentTermsNote'
+  'address' | 'addressCity' | 'addressPlaceId'
 >;
 
 export type TBuildingInheritance = Pick<

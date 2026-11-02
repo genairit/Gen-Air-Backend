@@ -13,21 +13,13 @@ import {
 } from 'class-validator';
 
 import { Type } from 'class-transformer';
-import { PickType, IntersectionType } from '@nestjs/swagger';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { APARTMENT } from '../constants/project-apartment.constant';
-import { ProjectIntakeDetailsDto } from './project-intake-details.dto';
 import { CUSTOMER_FLOOR_RANGE } from '@Constants/field-validation.constant';
 import { ApartmentCommercialDetailsDto } from './apartment-commercial-details.dto';
 import { AssignProjectMemberDto } from '@Modules/project-member/dto/assign-project-member.dto';
 
-export class CreateApartmentDto extends IntersectionType(
-  PickType(ProjectIntakeDetailsDto, [
-    'paymentTerms',
-    'paymentTermsNote',
-  ] as const),
-  ApartmentCommercialDetailsDto,
-) {
+export class CreateApartmentDto extends ApartmentCommercialDetailsDto {
   @IsNotEmpty()
   @IsInt()
   @Min(CUSTOMER_FLOOR_RANGE.MIN)

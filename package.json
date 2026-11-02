@@ -72,6 +72,7 @@
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^17.0.0",
     "jest": "^30.0.0",
+    "jest-mock-extended": "^4.0.2",
     "prettier": "^3.4.2",
     "prettier-plugin-pyramid-imports": "^1.0.1",
     "prettier-plugin-pyramid-interface-keys": "^1.0.1",
