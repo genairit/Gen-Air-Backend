@@ -46,7 +46,7 @@ describe('QuotationEmailTransport', () => {
     });
     jest
       .spyOn(nodemailer, 'createTransport')
-      .mockReturnValue({ sendMail } as ReturnType<
+      .mockReturnValue({ sendMail } as unknown as ReturnType<
         typeof nodemailer.createTransport
       >);
     await expect(
