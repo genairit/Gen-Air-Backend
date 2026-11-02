@@ -49,12 +49,16 @@ interface ISmtpSendResult {
 export class QuotationEmailTransport {
   async loadLogo(): Promise<Buffer> {
     try {
-      return await readFile(join(__dirname, '../../assets/genair-logo.png'));
+      return await readFile(this.logoPath());
     } catch {
       throw new ServiceUnavailableException(
         'GenAir email signature image is unavailable',
       );
     }
+  }
+
+  protected logoPath(): string {
+    return join(__dirname, '../../assets/genair-logo.png');
   }
 
   assertReady(recipients: string[]): void {

@@ -1,4 +1,8 @@
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import type Mail from 'nodemailer/lib/mailer';
+import { ServiceUnavailableException } from '@nestjs/common';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { EnvironmentManager } from '@Utilities/environment-manager.utility';
 import { QuotationEmailTransport } from './quotation-email-transport.service';
@@ -39,8 +43,20 @@ class PartialTransport extends QuotationEmailTransport {
   }
 }
 
+class MissingLogoTransport extends QuotationEmailTransport {
+  protected override logoPath(): string {
+    return join(tmpdir(), `genair-missing-logo-${randomUUID()}.png`);
+  }
+}
+
 describe('QuotationEmailTransport', () => {
   afterEach(() => jest.restoreAllMocks());
+
+  it('reports a missing signature asset as a known pre-send failure', async () => {
+    await expect(new MissingLogoTransport().loadLogo()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
 
   it('treats partial SMTP acceptance as uncertain instead of success', async () => {
     const values: Record<string, string> = {
