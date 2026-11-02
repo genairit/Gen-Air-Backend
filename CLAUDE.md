@@ -722,7 +722,7 @@ Before considering a change complete, ask:
 
 ---
 
-## Development Workflow — From Board Task to Merge Request
+## Backend Development Workflow — From Board Task to Merge Request
 
 Every piece of work starts on the board and ends on the board. A task is not "in progress" because
 someone is typing, and it is not "done" because the code compiles — the board must reflect reality at

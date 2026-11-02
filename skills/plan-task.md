@@ -183,7 +183,7 @@ the card yet.
 
 If — and only if — the user says to implement (before or after seeing the plan), execute the work
 **according to their instructions and the agreed plan**, following
-[development-workflow-standards.md](../rules/development-workflow-standards.md):
+[backend-development-workflow-standards.md](../rules/backend-development-workflow-standards.md):
 
 - Move the card to the **active list** before writing any code.
 - Branch from the latest `dev`, named after the card.
