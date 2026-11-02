@@ -4,6 +4,9 @@ import {
   Post,
   Body,
   Param,
+  Delete,
+  HttpCode,
+  HttpStatus,
   Controller,
   ParseUUIDPipe,
 } from '@nestjs/common';
@@ -18,6 +21,7 @@ import {
 import { Query } from '@nestjs/common';
 import { QuotationService } from './quotation.service';
 import { GetQuotationsDto } from './dto/get-quotations.dto';
+import { DeleteQuotationDto } from './dto/delete-quotation.dto';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
 import { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
@@ -71,6 +75,16 @@ export class QuotationController {
     user: IUser,
   ): ReturnType<QuotationService['save']> {
     return this.service.save(id, input, user.id);
+  }
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_DELETE)
+  delete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: DeleteQuotationDto,
+    @AuthenticatedUser() user: IUser,
+  ): Promise<void> {
+    return this.service.delete(id, input, user.id);
   }
   @Post(':id/review')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_APPROVE)
