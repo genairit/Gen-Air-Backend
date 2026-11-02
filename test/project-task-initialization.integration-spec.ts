@@ -289,6 +289,7 @@ describe('project task initialization against isolated PostgreSQL', () => {
       fromStatus: TASK_STATUSES.NOT_STARTED,
       toStatus: TASK_STATUSES.PROPOSAL_SENT,
       changedById: environment.creator.id,
+      changedByRole: environment.creator.role,
     });
     await environment.transactions.run((transaction) =>
       environment.initialize.ensureForProject(

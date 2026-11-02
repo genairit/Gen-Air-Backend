@@ -1,3 +1,4 @@
+import { UserRoleType } from '@Constants/user-role.constant';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { TaskStatusType } from '../constants/task-status.constant';
 
@@ -9,9 +10,10 @@ export interface ITaskStatusTransition {
   changedById: string;
   toStatus: TaskStatusType;
   fromStatus: TaskStatusType | null;
+  changedByRole: UserRoleType | null;
 }
 
 export type TTaskStatusTransitionCreationAttributes = Pick<
   ITaskStatusTransition,
   'taskId' | 'fromStatus' | 'toStatus' | 'changedById'
->;
+> & { changedByRole: UserRoleType };

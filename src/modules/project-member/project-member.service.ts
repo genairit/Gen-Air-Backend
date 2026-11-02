@@ -42,9 +42,12 @@ export class ProjectMemberService {
     const users = await this.userService.findByIds(
       assignments.map((assignment) => assignment.userId),
     );
-    const roleByUserId = new Map(users.map((user) => [user.id, user.role]));
+    const rolesByUserId = new Map(
+      users.map((user) => [user.id, user.assignedRoles ?? [user.role]]),
+    );
     const mismatchedAssignments = assignments.filter(
-      (assignment) => roleByUserId.get(assignment.userId) !== assignment.role,
+      (assignment) =>
+        !rolesByUserId.get(assignment.userId)?.includes(assignment.role),
     );
 
     if (mismatchedAssignments.length > 0) {

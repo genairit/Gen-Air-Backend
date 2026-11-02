@@ -184,6 +184,7 @@ export const createProjectTaskEnvironment = async () => {
       fromStatus: TASK_STATUSES.NOT_STARTED,
       toStatus: TASK_STATUSES.IN_REVIEW,
       changedById: creator.id,
+      changedByRole: creator.role,
     });
     await sequelize.query('GRANT SELECT ON public.tasks TO PUBLIC');
     const beforeMigration = await sequelize.query(

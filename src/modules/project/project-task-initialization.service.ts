@@ -18,7 +18,7 @@ export class ProjectTaskInitializationService {
 
   async ensureForProject(
     project: Pick<IProject, 'id' | 'name'>,
-    creator: Pick<IUser, 'id'>,
+    creator: Pick<IUser, 'id' | 'role'>,
     transaction: Transaction,
   ): Promise<void> {
     await this.transactions.lockKey(
@@ -43,6 +43,7 @@ export class ProjectTaskInitializationService {
           fromStatus: null,
           toStatus: task.status,
           changedById: creator.id,
+          changedByRole: creator.role,
         },
         transaction,
       );

@@ -1,6 +1,7 @@
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
 import { UserService } from '@Modules/user/user.service';
+import { UserRoleType } from '@Constants/user-role.constant';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { SESSION_DURATION_SECONDS } from './constants/auth.constant';
@@ -47,7 +48,27 @@ export class AuthService {
     return this.authorizeUser(user);
   }
 
+  async switchActiveRole(
+    user: IAuthorizedUser,
+    role: UserRoleType,
+  ): Promise<IAuthorizedUser> {
+    const updatedUser = await this.userService.switchActiveRole(
+      user.id,
+      role,
+      user,
+    );
+
+    return this.authorizeUser(updatedUser);
+  }
+
   private async authorizeUser(user: IUser): Promise<IAuthorizedUser> {
+    const activeRoleIsAssigned =
+      user.assignedRoles?.includes(user.role) ?? false;
+
+    if (!activeRoleIsAssigned) {
+      throw new UnauthorizedException('The active role is no longer assigned');
+    }
+
     const permissions = await this.rolePermissionService.getPermissions(
       user.role,
     );
