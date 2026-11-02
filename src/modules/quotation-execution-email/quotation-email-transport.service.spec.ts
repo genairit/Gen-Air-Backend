@@ -16,6 +16,7 @@ const message = {
   subject: 'Subject',
   replyTo: 'sender@example.test',
   requestId: 'f29c0715-5a7a-45f9-841a-845d4f1f4627',
+  logo: Buffer.from('logo'),
   attachments: [attachment, { ...attachment, filename: 'plans.zip' }] as [
     typeof attachment,
     typeof attachment,

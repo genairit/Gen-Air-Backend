@@ -230,13 +230,19 @@ export class QuotationExecutionEmailService {
     });
     if (existing) return this.toReceipt(existing);
 
-    const [plan, zip] = await this.prepareAttachments(
+    const [plan, zip, logo] = await this.prepareAttachments(
       context.projectId,
       input,
     ).catch(async (error: unknown) => {
+      this.logger.error({
+        error,
+        taskId,
+        requestId: input.requestId,
+        message: 'Quotation execution email preparation failed',
+      });
       await this.records.updateIfRequest(taskId, input.requestId, {
         status: QUOTATION_EMAIL_STATUS.FAILED,
-        errorCode: 'ATTACHMENT_PREPARATION_FAILED',
+        errorCode: 'PREPARATION_FAILED',
       });
       throw error;
     });
@@ -265,6 +271,7 @@ export class QuotationExecutionEmailService {
         html: template.html,
         replyTo: actor.email,
         requestId: input.requestId,
+        logo,
         attachments: [
           {
             filename: plan.name,
@@ -311,7 +318,7 @@ export class QuotationExecutionEmailService {
     projectId: string,
     input: SendQuotationExecutionEmailDto,
   ) {
-    const [plan, zip] = await Promise.all([
+    const [plan, zip, logo] = await Promise.all([
       this.drive.readProjectAttachment(
         projectId,
         input.planFileId,
@@ -322,6 +329,7 @@ export class QuotationExecutionEmailService {
         input.zipFileId,
         QUOTATION_EMAIL_LIMITS.MAX_FILE_BYTES,
       ),
+      this.transport.loadLogo(),
     ]);
     if (
       /\.zip$/i.test(plan.name) ||
@@ -338,7 +346,7 @@ export class QuotationExecutionEmailService {
     ) {
       throw new BadRequestException('Selected files are too large for email');
     }
-    return [plan, zip] as const;
+    return [plan, zip, logo] as const;
   }
 
   private async requireEligibleTask(taskId: string) {

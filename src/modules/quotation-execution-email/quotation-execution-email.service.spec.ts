@@ -110,6 +110,7 @@ const setup = async () => {
   };
   const transport = {
     assertReady: jest.fn(),
+    loadLogo: jest.fn().mockResolvedValue(Buffer.from('logo')),
     send: jest.fn().mockResolvedValue('<sent@example.test>'),
   };
   const module = await Test.createTestingModule({
@@ -207,6 +208,16 @@ describe('QuotationExecutionEmailService', () => {
         actor,
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+    expect(transport.send).not.toHaveBeenCalled();
+  });
+
+  it('marks a missing signature image as a retryable preparation failure', async () => {
+    const { service, transport, getRecord } = await setup();
+    transport.loadLogo.mockRejectedValue(new Error('Logo missing'));
+    await expect(service.send('task-id', input, actor)).rejects.toThrow(
+      'Logo missing',
+    );
+    expect(getRecord()?.status).toBe(QUOTATION_EMAIL_STATUS.FAILED);
     expect(transport.send).not.toHaveBeenCalled();
   });
 

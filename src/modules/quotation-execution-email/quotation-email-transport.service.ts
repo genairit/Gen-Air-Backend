@@ -32,6 +32,7 @@ export interface IQuotationMail {
   to: string[];
   text: string;
   html: string;
+  logo: Buffer;
   subject: string;
   replyTo: string;
   requestId: string;
@@ -46,6 +47,16 @@ interface ISmtpSendResult {
 
 @Injectable()
 export class QuotationEmailTransport {
+  async loadLogo(): Promise<Buffer> {
+    try {
+      return await readFile(join(__dirname, '../../assets/genair-logo.png'));
+    } catch {
+      throw new ServiceUnavailableException(
+        'GenAir email signature image is unavailable',
+      );
+    }
+  }
+
   assertReady(recipients: string[]): void {
     const mode = EnvironmentManager.get('EMAIL_DELIVERY_MODE', {
       defaultValue: 'disabled',
@@ -110,9 +121,6 @@ export class QuotationEmailTransport {
       secure: EnvironmentManager.get('SMTP_SECURE') === 'true' || port === 465,
       ...(user && password ? { auth: { user, pass: password } } : {}),
     };
-    const logo = await readFile(
-      join(__dirname, '../../assets/genair-logo.png'),
-    );
     const domain = from.split('@')[1];
     const messageId = `<quotation-execution-${message.requestId}@${domain}>`;
     const result = await this.deliver(config, {
@@ -127,7 +135,7 @@ export class QuotationEmailTransport {
         ...message.attachments,
         {
           filename: 'genair-logo.png',
-          content: logo,
+          content: message.logo,
           cid: 'genair-logo@genair',
           contentType: 'image/png',
           contentDisposition: 'inline',
