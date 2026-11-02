@@ -1,9 +1,8 @@
 # Codex repository guidance
 
-The shared standards and workflows originate in Spec-Development-Component
-(commit `59ba6d4d4571912d138068425554a5fd1430cf23`). `rules/`, `skills/`, and
-`agents/` are the canonical source; this file and `.agents/skills/` adapt them for
-Codex.
+The shared standards and workflows originate in Spec-Development-Component.
+`rules/`, `skills/`, and `agents/` are the canonical source; this file and
+`.agents/skills/` adapt them for Codex.
 
 ## Shared rules
 
@@ -12,7 +11,7 @@ only to the relevant code:
 
 - [Coding standards](rules/coding-standards.md): pyramid ordering, naming, layer
   boundaries, declarative code, and formatting.
-- [Development workflow](rules/development-workflow-standards.md): understand the
+- [Development workflow](rules/backend-development-workflow-standards.md): understand the
   task, branch from the latest `dev`, verify, pass code review and QA, and open a pull
   request into `dev`.
 - [Feedback loops](rules/feedback-loops.md): prove behavior with the appropriate
