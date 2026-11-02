@@ -8,6 +8,8 @@ import { join } from 'node:path';
 import nodemailer from 'nodemailer';
 import { readFile } from 'node:fs/promises';
 import isEmail from 'validator/lib/isEmail';
+import type Mail from 'nodemailer/lib/mailer';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { EnvironmentManager } from '@Utilities/environment-manager.utility';
 
 export class PartialQuotationEmailDeliveryError extends Error {
@@ -34,6 +36,12 @@ export interface IQuotationMail {
   replyTo: string;
   requestId: string;
   attachments: [IQuotationMailAttachment, IQuotationMailAttachment];
+}
+
+interface ISmtpSendResult {
+  messageId: string;
+  accepted: unknown[];
+  rejected: unknown[];
 }
 
 @Injectable()
@@ -96,18 +104,18 @@ export class QuotationEmailTransport {
     const port = Number(EnvironmentManager.get('SMTP_PORT'));
     const user = EnvironmentManager.get('SMTP_USER');
     const password = EnvironmentManager.get('SMTP_PASSWORD');
-    const sender = nodemailer.createTransport({
+    const config: SMTPTransport.Options = {
       host: EnvironmentManager.get('SMTP_HOST'),
       port,
       secure: EnvironmentManager.get('SMTP_SECURE') === 'true' || port === 465,
       ...(user && password ? { auth: { user, pass: password } } : {}),
-    });
+    };
     const logo = await readFile(
       join(__dirname, '../../assets/genair-logo.png'),
     );
     const domain = from.split('@')[1];
     const messageId = `<quotation-execution-${message.requestId}@${domain}>`;
-    const result = await sender.sendMail({
+    const result = await this.deliver(config, {
       from,
       to: message.to,
       replyTo: message.replyTo,
@@ -138,5 +146,12 @@ export class QuotationEmailTransport {
       );
     }
     return providerMessageId;
+  }
+
+  protected deliver(
+    config: SMTPTransport.Options,
+    options: Mail.Options,
+  ): Promise<ISmtpSendResult> {
+    return nodemailer.createTransport(config).sendMail(options);
   }
 }

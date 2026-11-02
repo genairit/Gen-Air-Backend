@@ -1,10 +1,7 @@
-import {
-  QuotationEmailTransport,
-  PartialQuotationEmailDeliveryError,
-} from './quotation-email-transport.service';
-
-import nodemailer from 'nodemailer';
+import type Mail from 'nodemailer/lib/mailer';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { EnvironmentManager } from '@Utilities/environment-manager.utility';
+import { QuotationEmailTransport } from './quotation-email-transport.service';
 
 const attachment = {
   filename: 'plan.pdf',
@@ -25,6 +22,22 @@ const message = {
   ],
 };
 
+class PartialTransport extends QuotationEmailTransport {
+  sent: Mail.Options | null = null;
+
+  protected override deliver(
+    _config: SMTPTransport.Options,
+    options: Mail.Options,
+  ) {
+    this.sent = options;
+    return Promise.resolve({
+      messageId: '<provider@example.test>',
+      accepted: ['one@example.test'],
+      rejected: ['two@example.test'],
+    });
+  }
+}
+
 describe('QuotationEmailTransport', () => {
   afterEach(() => jest.restoreAllMocks());
 
@@ -39,25 +52,13 @@ describe('QuotationEmailTransport', () => {
     jest
       .spyOn(EnvironmentManager, 'get')
       .mockImplementation((key) => values[key] ?? '');
-    const sendMail = jest.fn().mockResolvedValue({
-      messageId: '<provider@example.test>',
-      accepted: ['one@example.test'],
-      rejected: ['two@example.test'],
-    });
-    jest
-      .spyOn(nodemailer, 'createTransport')
-      .mockReturnValue({ sendMail } as unknown as ReturnType<
-        typeof nodemailer.createTransport
-      >);
-    await expect(
-      new QuotationEmailTransport().send(message),
-    ).rejects.toMatchObject({
+    const transport = new PartialTransport();
+    await expect(transport.send(message)).rejects.toMatchObject({
       messageId: '<provider@example.test>',
       acceptedCount: 1,
       rejectedCount: 1,
-    } satisfies Partial<PartialQuotationEmailDeliveryError>);
-    expect(sendMail).toHaveBeenCalledTimes(1);
-    expect(sendMail).toHaveBeenCalledWith(
+    });
+    expect(transport.sent).toEqual(
       expect.objectContaining({
         attachments: [
           expect.objectContaining({ filename: 'plan.pdf' }),

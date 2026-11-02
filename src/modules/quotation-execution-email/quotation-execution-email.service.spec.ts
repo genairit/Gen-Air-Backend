@@ -88,7 +88,7 @@ const setup = async () => {
   };
   const transactions = {
     run: jest.fn((work: (transaction: object) => Promise<unknown>) => work({})),
-    lockKey: jest.fn().mockResolvedValue(undefined),
+    lockKey: jest.fn().mockImplementation(() => Promise.resolve()),
   };
   const records = {
     findByTaskId: jest.fn(() => Promise.resolve(state.record)),
