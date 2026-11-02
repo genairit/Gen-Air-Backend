@@ -1,0 +1,121 @@
+import {
+  Injectable,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+
+import { join } from 'node:path';
+import nodemailer from 'nodemailer';
+import { readFile } from 'node:fs/promises';
+import isEmail from 'validator/lib/isEmail';
+import { EnvironmentManager } from '@Utilities/environment-manager.utility';
+
+export interface IQuotationMailAttachment {
+  content: Buffer;
+  filename: string;
+  contentType: string;
+}
+
+export interface IQuotationMail {
+  to: string[];
+  text: string;
+  html: string;
+  subject: string;
+  replyTo: string;
+  requestId: string;
+  attachments: [IQuotationMailAttachment, IQuotationMailAttachment];
+}
+
+@Injectable()
+export class QuotationEmailTransport {
+  assertReady(recipients: string[]): void {
+    const mode = EnvironmentManager.get('EMAIL_DELIVERY_MODE', {
+      defaultValue: 'disabled',
+    });
+    if (mode !== 'allowlist' && mode !== 'live') {
+      throw new ServiceUnavailableException('Email delivery is not configured');
+    }
+    if (
+      mode === 'live' &&
+      EnvironmentManager.get('NODE_ENV') !== 'production'
+    ) {
+      throw new ServiceUnavailableException(
+        'Live email delivery requires production mode',
+      );
+    }
+    if (mode === 'allowlist') {
+      const allowed = new Set(
+        EnvironmentManager.get('EMAIL_ALLOWED_RECIPIENTS')
+          .split(',')
+          .map((address) => address.trim().toLowerCase())
+          .filter(Boolean),
+      );
+      if (
+        allowed.size === 0 ||
+        recipients.some((address) => !allowed.has(address.toLowerCase()))
+      ) {
+        throw new BadRequestException(
+          'One or more recipients are outside the email test allowlist',
+        );
+      }
+    }
+    const from = EnvironmentManager.get('SMTP_FROM');
+    const host = EnvironmentManager.get('SMTP_HOST');
+    const port = Number(EnvironmentManager.get('SMTP_PORT'));
+    if (
+      !isEmail(from) ||
+      !host ||
+      !Number.isInteger(port) ||
+      port < 1 ||
+      port > 65535
+    ) {
+      throw new ServiceUnavailableException(
+        'SMTP sender configuration is incomplete',
+      );
+    }
+    const user = EnvironmentManager.get('SMTP_USER');
+    const password = EnvironmentManager.get('SMTP_PASSWORD');
+    if (Boolean(user) !== Boolean(password)) {
+      throw new ServiceUnavailableException('SMTP credentials are incomplete');
+    }
+  }
+
+  async send(message: IQuotationMail): Promise<string> {
+    this.assertReady(message.to);
+    const from = EnvironmentManager.get('SMTP_FROM');
+    const port = Number(EnvironmentManager.get('SMTP_PORT'));
+    const user = EnvironmentManager.get('SMTP_USER');
+    const password = EnvironmentManager.get('SMTP_PASSWORD');
+    const sender = nodemailer.createTransport({
+      host: EnvironmentManager.get('SMTP_HOST'),
+      port,
+      secure: EnvironmentManager.get('SMTP_SECURE') === 'true' || port === 465,
+      ...(user && password ? { auth: { user, pass: password } } : {}),
+    });
+    const logo = await readFile(
+      join(__dirname, '../../assets/genair-logo.png'),
+    );
+    const domain = from.split('@')[1];
+    const messageId = `<quotation-execution-${message.requestId}@${domain}>`;
+    const result = await sender.sendMail({
+      from,
+      to: message.to,
+      replyTo: message.replyTo,
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+      messageId,
+      attachments: [
+        ...message.attachments,
+        {
+          filename: 'genair-logo.png',
+          content: logo,
+          cid: 'genair-logo@genair',
+          contentType: 'image/png',
+          contentDisposition: 'inline',
+        },
+      ],
+    });
+    return result.messageId || messageId;
+  }
+}

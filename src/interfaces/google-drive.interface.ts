@@ -30,6 +30,7 @@ export interface IDriveTreeWalk extends IDriveTreeLevel {
 
 export interface IDriveFileMetadata {
   id: string;
+  name?: string;
   trashed: boolean;
   mimeType: string;
   parents: string[];
