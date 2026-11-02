@@ -2,6 +2,7 @@ export const PERMISSIONS = {
   QUOTATIONS_READ: 'quotations.read',
   QUOTATIONS_CREATE: 'quotations.create',
   QUOTATIONS_UPDATE: 'quotations.update',
+  QUOTATIONS_DELETE: 'quotations.delete',
   QUOTATIONS_APPROVE: 'quotations.approve',
   CATALOGUE_MANAGE: 'catalogue.manage',
 

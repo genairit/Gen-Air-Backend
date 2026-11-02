@@ -1,0 +1,9 @@
+# Quotation deletion permission
+
+Apply `20261102080605_add_quotation_delete_permission.sql` to each environment after the compatible backend and client code are deployed. This additive, idempotent seed adds `quotations.delete` and grants it only to `system_admin`; existing role grants, RLS and application data remain unchanged. No schema, ERD or environment-variable changes.
+
+Release the compatible application code before enabling the admin grant. The old backend filters unknown permission keys, so additive seed data remains compatible with an older test environment; the new client understands both old and new permission sets. Refresh existing browser tabs after the release. The new DELETE endpoint requires the separate permission and the current quotation version. It locks the quotation in the same transaction as saves/approval, marks its existing `deleted_at`, increments version and records the actor in `updated_by_id`. Sections/items and their snapshots remain stored; active reads/counts omit the deleted quotation, and numbering never reuses its number. Deletion is allowed in every status, matching the design's permission-based action, including approved quotations; explicit confirmation and version matching remain mandatory.
+
+Verify the permission and admin grant after application. QA must use disposable quotations and demonstrate permission denial, stale versions, concurrency, retained children, counts, missing/repeated deletes and new number allocation. Do not test deletion on company data. There is no user-facing restore action; a mistaken deletion requires an explicit administrative recovery procedure rather than an automatic rollback or physical deletion.
+
+The user explicitly requests direct release to main without full suites for this feature. Use reviewed feature PRs to main and synchronize main back to dev; keep the protected test branch and its normal full-suite gate unchanged for the next scheduled release.

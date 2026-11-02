@@ -494,7 +494,7 @@ describe('Quotation aggregate on real PostgreSQL', () => {
     ).toBe(true);
     const review = await quotationService().transition(
       quote.id,
-      { version: quote.version, status: 'review' },
+      { version: quote.version, status: QUOTATION_STATUS.REVIEW },
       actor,
     );
     await expect(
@@ -934,4 +934,162 @@ describe('Remaining aggregate write guards', () => {
     });
     expect(counts.map((count) => count.selectionCount)).toEqual([2, 2]);
   });
+});
+
+describe('Quotation deletion on real PostgreSQL', () => {
+  test('delete grant migration replays safely and grants only the administrator', async () => {
+    const migration = await readFile(
+      join(
+        process.cwd(),
+        'migrations/20261102080605_add_quotation_delete_permission.sql',
+      ),
+      'utf8',
+    );
+    await sequelize.query(migration);
+    await sequelize.query(migration);
+    const [permissions] = await sequelize.query(
+      "SELECT key, feature, action FROM permissions WHERE key = 'quotations.delete'",
+    );
+    expect(permissions).toEqual([
+      { key: 'quotations.delete', feature: 'quotations', action: 'delete' },
+    ]);
+    const [grants] = await sequelize.query(
+      "SELECT role FROM role_permissions WHERE permission_key = 'quotations.delete'",
+    );
+    expect(grants).toEqual([{ role: 'system_admin' }]);
+    const [existing] = await sequelize.query(
+      "SELECT role FROM role_permissions WHERE permission_key = 'quotations.read' ORDER BY role::text",
+    );
+    expect(existing).toEqual([{ role: 'engineer' }, { role: 'system_admin' }]);
+  });
+
+  test.each(Object.values(QUOTATION_STATUS))(
+    'soft deletes %s while retaining child rows and policy snapshot',
+    async (status) => {
+      const { quote } = await withLine();
+      await Quotation.update({ status }, { where: { id: quote.id } });
+      const before = await Quotation.findByPk(quote.id);
+      await quotationService().delete(
+        quote.id,
+        { version: quote.version },
+        otherActor,
+      );
+      const deleted = await Quotation.findByPk(quote.id, { paranoid: false });
+      expect(deleted).toMatchObject({
+        status,
+        number: quote.number,
+        updatedById: otherActor,
+        version: quote.version + 1,
+      });
+      expect(deleted?.deletedAt).toBeInstanceOf(Date);
+      expect(deleted?.ruleConfiguration).toEqual(before?.ruleConfiguration);
+      expect(deleted?.ruleConfigFingerprint).toBe(
+        before?.ruleConfigFingerprint,
+      );
+      expect(
+        await QuotationSection.count({ where: { quotationId: quote.id } }),
+      ).toBe(1);
+      expect(
+        await QuotationItem.count({
+          where: { sectionId: quote.sections[0].id },
+        }),
+      ).toBe(1);
+      await expect(quotationService().getById(quote.id)).rejects.toMatchObject({
+        status: 404,
+      });
+      expect(
+        (await quotationService().list({ search: quote.number })).items,
+      ).toEqual([]);
+      expect(
+        await quotationService().statusCounts({ search: quote.number }),
+      ).toEqual({ all: 0, draft: 0, review: 0, approved: 0 });
+      await expect(
+        quotationService().delete(
+          quote.id,
+          { version: quote.version + 1 },
+          actor,
+        ),
+      ).rejects.toMatchObject({ status: 404 });
+      const next = await quotationService().create({ customerId }, actor);
+      expect(next.number).not.toBe(quote.number);
+    },
+  );
+  test('stale and absent quotation deletes fail without changing the aggregate', async () => {
+    const { quote } = await withLine();
+    await expect(
+      quotationService().delete(
+        quote.id,
+        { version: quote.version - 1 },
+        otherActor,
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await quotationService().getById(quote.id)).toMatchObject({
+      version: quote.version,
+      updatedById: actor,
+    });
+    await expect(
+      quotationService().delete(randomUUID(), { version: 1 }, actor),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+  test.each(['save', 'approve', 'delete'])(
+    'concurrent %s and delete commit one operation without lost updates',
+    async (operation) => {
+      const { quote } = await withLine();
+      const current =
+        operation === 'approve'
+          ? await quotationService().transition(
+              quote.id,
+              { version: quote.version, status: QUOTATION_STATUS.REVIEW },
+              actor,
+            )
+          : quote;
+      const mutations: Record<string, () => Promise<unknown>> = {
+        save: () =>
+          quotationService().save(
+            current.id,
+            { ...payload(current), internalNotes: 'concurrent save' },
+            actor,
+          ),
+        approve: () =>
+          quotationService().transition(
+            current.id,
+            { version: current.version, status: QUOTATION_STATUS.APPROVED },
+            actor,
+          ),
+        delete: () =>
+          quotationService().delete(
+            current.id,
+            { version: current.version },
+            actor,
+          ),
+      };
+      const outcomes = await Promise.allSettled([
+        mutations[operation](),
+        quotationService().delete(
+          current.id,
+          { version: current.version },
+          otherActor,
+        ),
+      ]);
+      expect(
+        outcomes.filter((outcome) => outcome.status === 'fulfilled'),
+      ).toHaveLength(1);
+      const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+      expect(failure?.status).toBe('rejected');
+      if (failure?.status === 'rejected') {
+        expect([404, 409]).toContain(failure.reason.status);
+      }
+      const stored = await Quotation.findByPk(current.id, { paranoid: false });
+      expect(stored?.version).toBe(current.version + 1);
+      expect(
+        await QuotationItem.count({
+          where: { sectionId: current.sections[0].id },
+        }),
+      ).toBe(1);
+      if (stored?.deletedAt) {
+        expect(stored.internalNotes).toBe(current.internalNotes);
+        expect(stored.status).toBe(current.status);
+      }
+    },
+  );
 });
