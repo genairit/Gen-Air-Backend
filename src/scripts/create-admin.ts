@@ -25,7 +25,6 @@ const parseAdmin = (): CreateUserDto => {
     email: values.email,
     phone: values.phone,
     password: values.password,
-    role: USER_ROLES.SYSTEM_ADMIN,
     assignedRoles: [USER_ROLES.SYSTEM_ADMIN],
     lastName: values['last-name'],
     firstName: values['first-name'],

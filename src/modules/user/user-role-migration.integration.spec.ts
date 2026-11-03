@@ -916,7 +916,6 @@ describe('role assignment migrations', () => {
       email: 'new-engineer@test.invalid',
       phone: '0500000000',
       assignedRoles: [USER_ROLES.ENGINEER],
-      role: USER_ROLES.ENGINEER,
       password: 'secure-password-for-tests',
     };
     auditState.failNextAudit = true;

@@ -42,10 +42,6 @@ export class UpdateUserDto {
   declare phone?: string;
 
   @IsOptional()
-  @IsIn(USER_ROLE_VALUES)
-  declare role?: UserRoleType;
-
-  @IsOptional()
   @IsArray()
   @ArrayNotEmpty()
   @ArrayUnique()

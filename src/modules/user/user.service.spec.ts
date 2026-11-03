@@ -27,8 +27,9 @@ const USER: IUser = {
 };
 
 const createService = async () => {
-  const transaction = Object.create(Transaction.prototype);
+  const transaction = Transaction.prototype;
   const userRepository = {
+    create: jest.fn().mockResolvedValue(USER),
     update: jest.fn().mockResolvedValue(true),
     findById: jest.fn().mockResolvedValue(USER),
     softDelete: jest.fn().mockResolvedValue(true),
@@ -168,7 +169,6 @@ describe('UserService field-specific actor permissions', () => {
     lastName: 'Employee',
     email: 'employee@test.invalid',
     phone: '0500000000',
-    role: USER_ROLES.ENGINEER,
     assignedRoles: [USER_ROLES.ENGINEER],
     password: 'Test-only-password-123',
   };
@@ -198,6 +198,40 @@ describe('UserService field-specific actor permissions', () => {
     expect(create).toHaveBeenCalledWith(input, actor);
   });
 
+  it('uses the first assigned role as the initial active role', async () => {
+    const { service, userRepository, userRoleAuditService, transaction } =
+      await createService();
+    const actor = authorizedUser([
+      PERMISSIONS.EMPLOYEES_CREATE,
+      PERMISSIONS.EMPLOYEES_ROLES_ASSIGN,
+    ]);
+    const assignedRoles = [USER_ROLES.ENGINEER, USER_ROLES.FINANCE];
+
+    await service.createForActor({ ...input, assignedRoles }, actor);
+
+    expect(userRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ role: USER_ROLES.ENGINEER }),
+      transaction,
+    );
+    expect(userRoleAuditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ nextRole: USER_ROLES.ENGINEER }),
+      transaction,
+    );
+  });
+
+  it('rejects creation without an assigned role', async () => {
+    const { service, userRepository } = await createService();
+    const actor = authorizedUser([
+      PERMISSIONS.EMPLOYEES_CREATE,
+      PERMISSIONS.EMPLOYEES_ROLES_ASSIGN,
+    ]);
+
+    await expect(
+      service.createForActor({ ...input, assignedRoles: [] }, actor),
+    ).rejects.toThrow(BadRequestException);
+    expect(userRepository.create).not.toHaveBeenCalled();
+  });
+
   it('permits ordinary profile changes without granting role assignment', async () => {
     const { service } = await createService();
     const update = jest.spyOn(service, 'update').mockResolvedValue(USER);
@@ -213,18 +247,22 @@ describe('UserService field-specific actor permissions', () => {
     );
   });
 
-  it('rejects a role field inside an otherwise permitted profile update', async () => {
+  it('rejects assigned roles inside an otherwise permitted profile update', async () => {
     const { service } = await createService();
     const update = jest.spyOn(service, 'update').mockResolvedValue(USER);
     const actor = authorizedUser([PERMISSIONS.EMPLOYEES_UPDATE]);
 
     expect(() =>
-      service.updateForActor(USER.id, { role: USER_ROLES.SYSTEM_ADMIN }, actor),
+      service.updateForActor(
+        USER.id,
+        { assignedRoles: [USER_ROLES.SYSTEM_ADMIN] },
+        actor,
+      ),
     ).toThrow(ForbiddenException);
     expect(update).not.toHaveBeenCalled();
   });
 
-  it('accepts a role update when role assignment is explicitly granted', async () => {
+  it('accepts assigned-role changes when role assignment is explicitly granted', async () => {
     const { service } = await createService();
     const update = jest.spyOn(service, 'update').mockResolvedValue(USER);
     const actor = authorizedUser([
@@ -233,7 +271,6 @@ describe('UserService field-specific actor permissions', () => {
     ]);
 
     const changes = {
-      role: USER_ROLES.ENGINEER,
       assignedRoles: [USER_ROLES.ENGINEER],
     };
 
@@ -250,7 +287,7 @@ describe('UserService field-specific actor permissions', () => {
     expect(() =>
       service.updateForActor(
         USER.id,
-        { role: USER_ROLES.ENGINEER },
+        { assignedRoles: [USER_ROLES.ENGINEER] },
         authorizedUser([PERMISSIONS.EMPLOYEES_ROLES_ASSIGN]),
       ),
     ).toThrow(ForbiddenException);
@@ -263,6 +300,22 @@ describe('UserService role membership integrity', () => {
     PERMISSIONS.EMPLOYEES_UPDATE,
     PERMISSIONS.EMPLOYEES_ROLES_ASSIGN,
   ]);
+
+  it('keeps the current active role when it remains assigned', async () => {
+    const { service, userRepository, transaction } = await createService();
+
+    await service.update(
+      USER.id,
+      { assignedRoles: [USER_ROLES.ENGINEER, USER_ROLES.SECRETARY] },
+      roleAdministrator,
+    );
+
+    expect(userRepository.update).toHaveBeenCalledWith(
+      USER.id,
+      expect.objectContaining({ role: USER_ROLES.SECRETARY }),
+      transaction,
+    );
+  });
 
   it('falls back to an assigned role when the active role is removed and audits the snapshots', async () => {
     const {
