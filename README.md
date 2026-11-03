@@ -8,6 +8,22 @@ The [backend development workflow](rules/backend-development-workflow-standards.
 covers task intake, implementation, review, QA, and the merge request. The backend
 architecture planning agent can be added to this path when it is defined.
 
+## Payment-term ownership
+
+Customers store an optional `paymentTerms` default, without a note. Quotation
+creation immediately persists that customer's default and an empty quotation-local
+`paymentTermsNote`. Saving a quotation edits its snapshot only; changing a
+customer, including selecting another customer on an existing draft, does not
+silently replace the quotation's terms or note.
+
+Projects and apartments no longer accept, display, or inherit payment terms.
+After deploying this change, review
+[`migrations/sprint-almon/after_deploy.sql`](migrations/sprint-almon/after_deploy.sql)
+to remove the retired project columns and enum. The explicitly approved
+nonproduction values are discarded without backfill. Destructive SQL and the
+commit are disabled until an operator reviews and enables them. No customer or
+quotation schema change is required.
+
 ## Project Drive upload validation
 
 `GET /project-drive/upload-policy` supplies the authenticated client with the

@@ -10,7 +10,6 @@ import {
   IProjectContact,
   TResolvedApartment,
   IProjectStageCounts,
-  IProjectPaymentTerms,
   TProjectUpdateAttributes,
   TProjectCreationAttributes,
 } from './interfaces/project.interface';
@@ -18,15 +17,8 @@ import {
 import {
   mergeContact,
   hasContactChanges,
-  mergePaymentTerms,
-  hasPaymentTermsChanges,
   findMissingContactFields,
 } from './utilities/project-intake.utility';
-
-import {
-  EMPTY_CONTACT,
-  EMPTY_PAYMENT_TERMS,
-} from './constants/project-intake.constant';
 
 import {
   formatApartmentCode,
@@ -44,9 +36,9 @@ import { Transaction } from 'sequelize';
 import { ProjectRepository } from './project.repository';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { CreateApartmentDto } from './dto/create-apartment.dto';
-import { ProjectIntakeService } from './project-intake.service';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
+import { EMPTY_CONTACT } from './constants/project-intake.constant';
 import { resolveApartment } from './utilities/project-inheritance.utility';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
 import { toProjectStageCounts } from './utilities/project-stage-counts.utility';
@@ -68,10 +60,7 @@ interface INewApartmentRequest {
 
 @Injectable()
 export class ProjectApartmentService {
-  constructor(
-    private readonly projectRepository: ProjectRepository,
-    private readonly projectIntakeService: ProjectIntakeService,
-  ) {}
+  constructor(private readonly projectRepository: ProjectRepository) {}
 
   async resolveNewApartment({
     creator,
@@ -82,7 +71,6 @@ export class ProjectApartmentService {
   }: INewApartmentRequest): Promise<TProjectCreationAttributes> {
     this.assertCanHoldApartments(building);
 
-    const paymentTerms = this.resolveNewPaymentTerms(building, apartment);
     const [, sequence] = await Promise.all([
       this.assertApartmentNumberFree(
         building.id,
@@ -97,7 +85,6 @@ export class ProjectApartmentService {
 
     return {
       ...EMPTY_CUSTOMER_DETAILS,
-      ...paymentTerms,
       ...EMPTY_CONTACT,
       customerId: apartment.customerId,
       apartmentOwnership: apartment.apartmentOwnership ?? null,
@@ -201,7 +188,6 @@ export class ProjectApartmentService {
     return {
       ...contact,
       ...team,
-      ...this.resolvePaymentTermsOverride(apartment, changes),
       name: changes.name?.trim(),
       apartmentOwnership: changes.apartmentOwnership,
       apartmentCredit: changes.apartmentCredit,
@@ -211,35 +197,6 @@ export class ProjectApartmentService {
       customerFloor: changes.customerFloor ?? apartment.customerFloor,
       customerApartment: requestedNumber ?? apartment.customerApartment,
     };
-  }
-
-  private resolveNewPaymentTerms(
-    building: IProject,
-    apartment: CreateApartmentDto,
-  ): IProjectPaymentTerms {
-    const hasNoteWithoutTerms =
-      apartment.paymentTerms == null && Boolean(apartment.paymentTermsNote);
-    if (hasNoteWithoutTerms) {
-      throw new BadRequestException(
-        'Choose payment terms before providing their note',
-      );
-    }
-    if (apartment.paymentTerms == null) {
-      return { ...EMPTY_PAYMENT_TERMS };
-    }
-    const fieldSet = building.projectType?.detailFieldSet ?? null;
-    if (!fieldSet) {
-      throw new BadRequestException(
-        'The building has no payment terms field set',
-      );
-    }
-    return this.projectIntakeService.validatePaymentTerms(
-      {
-        paymentTerms: apartment.paymentTerms,
-        paymentTermsNote: apartment.paymentTermsNote ?? null,
-      },
-      fieldSet,
-    );
   }
 
   private resolveTeamChanges(
@@ -277,34 +234,6 @@ export class ProjectApartmentService {
     }
 
     return contact;
-  }
-
-  private resolvePaymentTermsOverride(
-    apartment: IProject,
-    changes: UpdateProjectDto,
-  ): Partial<IProjectPaymentTerms> {
-    if (!hasPaymentTermsChanges(changes)) {
-      return {};
-    }
-
-    const isReturningToBuilding = changes.paymentTerms === null;
-
-    if (isReturningToBuilding) {
-      return { paymentTerms: null, paymentTermsNote: null };
-    }
-
-    const fieldSet = apartment.projectType?.detailFieldSet ?? null;
-
-    if (!fieldSet) {
-      throw new BadRequestException(
-        'The apartment has no project type to check payment terms against',
-      );
-    }
-
-    return this.projectIntakeService.validatePaymentTerms(
-      mergePaymentTerms(apartment, changes),
-      fieldSet,
-    );
   }
 
   private assertCanHoldApartments(building: IProject): void {
