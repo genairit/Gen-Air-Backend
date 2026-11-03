@@ -155,6 +155,7 @@ export class GoogleDriveService {
 
       return {
         id: data.id,
+        ...(data.name ? { name: data.name } : {}),
         mimeType: data.mimeType,
         parents: data.parents ?? [],
         trashed: data.trashed ?? false,

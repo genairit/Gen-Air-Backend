@@ -12,7 +12,6 @@ import { Task } from '@Modules/task/entities/task.entity';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { TaskRepository } from '@Modules/task/task.repository';
 import { ProjectService } from '@Modules/project/project.service';
-import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { AddressService } from '@Modules/address/address.service';
 import { Project } from '@Modules/project/entities/project.entity';
 import { ProviderNames } from '@Providers/database/provider-names';
@@ -255,7 +254,6 @@ export const createProjectTaskEnvironment = async () => {
       customerId: customer.id,
       members: [{ userId: engineer.id, role: USER_ROLES.ENGINEER }],
       addressPlaceId: 'disposable-place',
-      paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
     });
     const createLegacyProject = (name: string, canHaveApartments = false) =>
       Project.create({
@@ -265,7 +263,6 @@ export const createProjectTaskEnvironment = async () => {
         customerId: customer.id,
         stageId: PROJECT_STATUS_IDS.WAITING,
         projectTypeId: canHaveApartments ? buildingType.id : standaloneType.id,
-        paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
       });
     const counts = async () =>
       Promise.all([

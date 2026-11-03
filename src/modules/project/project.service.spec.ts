@@ -20,7 +20,6 @@ import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectIntakeService } from './project-intake.service';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { AddressService } from '@Modules/address/address.service';
-import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { authorizedUser } from '../../testing/authorization.fixture';
@@ -105,16 +104,13 @@ const CONTACT = {
 const COMPANY_INTAKE = {
   ...CONTACT,
   addressPlaceId: TEL_AVIV_PLACE_ID,
-  paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
 };
 
 const STORED_COMPANY_INTAKE = {
   ...CONTACT,
-  paymentTermsNote: null,
   addressCity: 'תל אביב-יפו',
   addressPlaceId: TEL_AVIV_PLACE_ID,
   address: 'דרך נמיר 94, תל אביב-יפו',
-  paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
 };
 
 const EMPTY_INTAKE = {
@@ -122,10 +118,8 @@ const EMPTY_INTAKE = {
   addressCity: null,
   contactName: null,
   contactRole: null,
-  paymentTerms: null,
   contactPhone: null,
   addressPlaceId: null,
-  paymentTermsNote: null,
 };
 
 const PRIVATE_DETAILS = {
@@ -552,7 +546,6 @@ describe('ProjectService.create intake fields', () => {
     name: 'דירת משפחת לוי',
     projectTypeId: PRIVATE_TYPE_ID,
     addressPlaceId: TEL_AVIV_PLACE_ID,
-    paymentTerms: PAYMENT_TERMS.INSTALLMENTS_10_60_30,
   };
 
   const expectRejection = async (
@@ -640,74 +633,9 @@ describe('ProjectService.create intake fields', () => {
       TRANSACTION,
     );
   });
-
-  it('rejects a project without payment terms', async () => {
-    await expectRejection(
-      { ...PROJECT, paymentTerms: null },
-      'paymentTerms is required',
-    );
-  });
-
-  it('rejects payment terms that belong to another project type, listing the legal ones', async () => {
-    await expectRejection(
-      { ...PROJECT, paymentTerms: PAYMENT_TERMS.PREPAID },
-      'Payment terms "prepaid" are not available for this project type; choose one of: milestones_net_60, twelve_prepaid_checks, other',
-    );
-  });
-
-  it('accepts the private payment terms on a private project', async () => {
-    const { service, projectRepository } = await createService();
-
-    await service.create(PRIVATE_PROJECT, CREATOR);
-
-    const [createdAttributes] = projectRepository.create.mock.calls[0];
-
-    expect(createdAttributes).toMatchObject({
-      paymentTerms: PAYMENT_TERMS.INSTALLMENTS_10_60_30,
-    });
-  });
-
-  it('requires the detail when the payment terms are "other"', async () => {
-    await expectRejection(
-      { ...PROJECT, paymentTerms: PAYMENT_TERMS.OTHER },
-      'paymentTermsNote is required when paymentTerms is "other"',
-    );
-  });
-
-  it('stores the detail of "other" payment terms', async () => {
-    const { service, projectRepository } = await createService();
-    const paymentTermsNote = 'תשלום לפי שלבי ביצוע מאושרים';
-
-    await service.create(
-      { ...PROJECT, paymentTerms: PAYMENT_TERMS.OTHER, paymentTermsNote },
-      CREATOR,
-    );
-
-    const [createdAttributes] = projectRepository.create.mock.calls[0];
-
-    expect(createdAttributes).toMatchObject({
-      paymentTermsNote,
-      paymentTerms: PAYMENT_TERMS.OTHER,
-    });
-  });
-
-  it('clears the detail when a concrete payment option is chosen', async () => {
-    const { service, projectRepository } = await createService();
-
-    await service.create(
-      { ...PROJECT, paymentTermsNote: 'פרט שנשאר מהבחירה הקודמת' },
-      CREATOR,
-    );
-
-    const [createdAttributes] = projectRepository.create.mock.calls[0];
-
-    expect(createdAttributes).toMatchObject({ paymentTermsNote: null });
-  });
 });
 
 describe('ProjectService.update intake fields', () => {
-  const PAYMENT_TERMS_NOTE = 'תשלום לפי שלבי ביצוע מאושרים';
-
   const expectRejection = async (
     changes: Parameters<ProjectService['update']>[1],
     message: string,
@@ -742,7 +670,6 @@ describe('ProjectService.update intake fields', () => {
     );
 
     expect(updatedAttributes).not.toHaveProperty('contactName');
-    expect(updatedAttributes).not.toHaveProperty('paymentTerms');
     expect(updatedAttributes).not.toHaveProperty('addressPlaceId');
   });
 
@@ -753,7 +680,6 @@ describe('ProjectService.update intake fields', () => {
     );
 
     expect(updatedAttributes).toMatchObject(CONTACT);
-    expect(updatedAttributes).not.toHaveProperty('paymentTerms');
   });
 
   it('requires the whole contact person once a legacy project edits it', async () => {
@@ -813,65 +739,14 @@ describe('ProjectService.update intake fields', () => {
     );
   });
 
-  it('rejects payment terms illegal for the project type', async () => {
-    await expectRejection(
-      { paymentTerms: PAYMENT_TERMS.INSTALLMENTS_10_60_30 },
-      'Payment terms "installments_10_60_30" are not available for this project type; choose one of: milestones_net_60, twelve_prepaid_checks, other',
-    );
-  });
-
-  it('rejects switching to "other" without its detail', async () => {
-    await expectRejection(
-      { paymentTerms: PAYMENT_TERMS.OTHER },
-      'paymentTermsNote is required when paymentTerms is "other"',
-    );
-  });
-
-  it('switches to "other" with its detail', async () => {
-    const updatedAttributes = await getUpdatedAttributes({
-      paymentTerms: PAYMENT_TERMS.OTHER,
-      paymentTermsNote: PAYMENT_TERMS_NOTE,
-    });
-
-    expect(updatedAttributes).toMatchObject({
-      paymentTerms: PAYMENT_TERMS.OTHER,
-      paymentTermsNote: PAYMENT_TERMS_NOTE,
-    });
-  });
-
-  it('clears the detail when switching from "other" to a concrete option', async () => {
-    const updatedAttributes = await getUpdatedAttributes(
-      { paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS },
-      {
-        ...STORED_INTAKE_PROJECT,
-        paymentTerms: PAYMENT_TERMS.OTHER,
-        paymentTermsNote: PAYMENT_TERMS_NOTE,
-      },
-    );
-
-    expect(updatedAttributes).toMatchObject({
-      paymentTermsNote: null,
-      paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS,
-    });
-  });
-
-  it('re-checks the current payment terms when the project type changes', async () => {
-    await expectRejection(
-      { ...PRIVATE_DETAILS, projectTypeId: PRIVATE_TYPE_ID },
-      'Payment terms "milestones_net_60" are not available for this project type; choose one of: installments_10_60_30, prepaid, other',
-    );
-  });
-
-  it('changes the type together with payment terms legal for it', async () => {
+  it('changes project type without requiring payment terms', async () => {
     const updatedAttributes = await getUpdatedAttributes({
       ...PRIVATE_DETAILS,
       projectTypeId: PRIVATE_TYPE_ID,
-      paymentTerms: PAYMENT_TERMS.PREPAID,
     });
 
     expect(updatedAttributes).toMatchObject({
       projectTypeId: PRIVATE_TYPE_ID,
-      paymentTerms: PAYMENT_TERMS.PREPAID,
     });
   });
 
@@ -889,7 +764,6 @@ describe('ProjectService.update intake fields', () => {
         {
           ...PRIVATE_DETAILS,
           projectTypeId: PRIVATE_TYPE_ID,
-          paymentTerms: PAYMENT_TERMS.PREPAID,
         },
         CREATOR,
       ),
@@ -900,14 +774,13 @@ describe('ProjectService.update intake fields', () => {
     );
   });
 
-  it('lets a legacy project without payment terms change its type', async () => {
+  it('lets a legacy project change its type', async () => {
     const updatedAttributes = await getUpdatedAttributes(
       { ...PRIVATE_DETAILS, projectTypeId: PRIVATE_TYPE_ID },
       STORED_COMPANY_PROJECT,
     );
 
     expect(updatedAttributes).toMatchObject({ projectTypeId: PRIVATE_TYPE_ID });
-    expect(updatedAttributes).not.toHaveProperty('paymentTerms');
   });
 });
 
@@ -971,7 +844,6 @@ describe('ProjectService.createApartment', () => {
       address: null,
       name: 'דירה 12',
       customerFloor: 3,
-      paymentTerms: null,
       addressPlaceId: null,
       code: 'GA-84811-05',
       customerApartment: '12',
@@ -1157,64 +1029,6 @@ describe('ProjectService apartment customer, creation terms and team', () => {
     expect(projectRepository.create.mock.calls[0][0].hasOwnTeam).toBe(true);
   });
 
-  it('stores valid creation payment terms without changing the building', async () => {
-    const { service, projectRepository } = await createService();
-    projectRepository.findById.mockResolvedValueOnce(BUILDING);
-    await service.createApartment(
-      BUILDING_ID,
-      {
-        ...NEW_APARTMENT,
-        paymentTerms: PAYMENT_TERMS.OTHER,
-        paymentTermsNote: 'תשלום מלא במסירה',
-      },
-      CREATOR,
-    );
-    expect(projectRepository.create.mock.calls[0][0]).toMatchObject({
-      paymentTerms: PAYMENT_TERMS.OTHER,
-      paymentTermsNote: 'תשלום מלא במסירה',
-    });
-    expect(projectRepository.update).not.toHaveBeenCalled();
-  });
-
-  it('rejects creation payment terms not allowed for the building type', async () => {
-    const { service, projectRepository } = await createService();
-    projectRepository.findById.mockResolvedValueOnce(BUILDING);
-    await expect(
-      service.createApartment(
-        BUILDING_ID,
-        { ...NEW_APARTMENT, paymentTerms: PAYMENT_TERMS.PREPAID },
-        CREATOR,
-      ),
-    ).rejects.toThrow('not available for this project type');
-    expect(projectRepository.create).not.toHaveBeenCalled();
-  });
-
-  it('requires a note for custom creation payment terms', async () => {
-    const { service, projectRepository } = await createService();
-    projectRepository.findById.mockResolvedValueOnce(BUILDING);
-    await expect(
-      service.createApartment(
-        BUILDING_ID,
-        { ...NEW_APARTMENT, paymentTerms: PAYMENT_TERMS.OTHER },
-        CREATOR,
-      ),
-    ).rejects.toThrow(BadRequestException);
-    expect(projectRepository.create).not.toHaveBeenCalled();
-  });
-
-  it('rejects a creation terms note without an override', async () => {
-    const { service, projectRepository } = await createService();
-    projectRepository.findById.mockResolvedValueOnce(BUILDING);
-    await expect(
-      service.createApartment(
-        BUILDING_ID,
-        { ...NEW_APARTMENT, paymentTermsNote: 'הערה ללא תנאים' },
-        CREATOR,
-      ),
-    ).rejects.toThrow('Choose payment terms');
-    expect(projectRepository.create).not.toHaveBeenCalled();
-  });
-
   it('reports the duplicate apartment number with the Hebrew design message', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.findById.mockResolvedValueOnce(BUILDING);
@@ -1397,8 +1211,6 @@ const BUILDING_INHERITANCE = {
   address: STORED_COMPANY_INTAKE.address,
   addressCity: STORED_COMPANY_INTAKE.addressCity,
   addressPlaceId: STORED_COMPANY_INTAKE.addressPlaceId,
-  paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
-  paymentTermsNote: null,
 };
 
 const APARTMENT_WITH_BUILDING = {
@@ -1409,7 +1221,7 @@ const APARTMENT_WITH_BUILDING = {
 };
 
 describe('ProjectService.getById apartment', () => {
-  it('returns the building address, payment terms and notes, marked as inherited', async () => {
+  it('returns the building address and notes, marked as inherited', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);
 
@@ -1417,14 +1229,7 @@ describe('ProjectService.getById apartment', () => {
       address: BUILDING_INHERITANCE.address,
       addressPlaceId: TEL_AVIV_PLACE_ID,
       parentNotes: BUILDING_INHERITANCE.notes,
-      paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
-      inheritedFields: [
-        'address',
-        'addressCity',
-        'addressPlaceId',
-        'paymentTerms',
-        'paymentTermsNote',
-      ],
+      inheritedFields: ['address', 'addressCity', 'addressPlaceId'],
     });
   });
 
@@ -1453,57 +1258,11 @@ describe('ProjectService.getApartments inheritance', () => {
 
     expect(page.items[0]).toMatchObject({
       parentNotes: BUILDING_INHERITANCE.notes,
-      paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
     });
   });
 });
 
-describe('ProjectService.update apartment payment terms', () => {
-  it('stores an override that is legal for the building type', async () => {
-    const { service, projectRepository } = await createService();
-    projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);
-
-    await service.update(
-      STORED_APARTMENT.id,
-      { paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS },
-      CREATOR,
-    );
-
-    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
-      paymentTermsNote: null,
-      paymentTerms: PAYMENT_TERMS.TWELVE_PREPAID_CHECKS,
-    });
-  });
-
-  it('rejects an override the building type does not offer', async () => {
-    const { service, projectRepository } = await createService();
-    projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);
-
-    await expect(
-      service.update(
-        STORED_APARTMENT.id,
-        { paymentTerms: PAYMENT_TERMS.PREPAID },
-        CREATOR,
-      ),
-    ).rejects.toThrow('not available for this project type');
-  });
-
-  it('returns to the building terms by clearing the override', async () => {
-    const { service, projectRepository } = await createService();
-    projectRepository.findById.mockResolvedValue({
-      ...APARTMENT_WITH_BUILDING,
-      paymentTerms: PAYMENT_TERMS.OTHER,
-      paymentTermsNote: 'תשלום מלא במסירה',
-    });
-
-    await service.update(STORED_APARTMENT.id, { paymentTerms: null }, CREATOR);
-
-    expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
-      paymentTerms: null,
-      paymentTermsNote: null,
-    });
-  });
-
+describe('ProjectService.update apartment notes', () => {
   it('saves the apartment own notes', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.findById.mockResolvedValue(APARTMENT_WITH_BUILDING);

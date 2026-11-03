@@ -29,7 +29,9 @@ import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { decodeUploadedFileName } from '@Utilities/upload.utility';
 import { IProject } from '@Modules/project/interfaces/project.interface';
+import { ISharedDocument } from './interfaces/shared-document.interface';
 import { IProjectDriveContents } from './interfaces/project-drive.interface';
+import { SHARED_DOCUMENT_STATUS } from './constants/shared-document.constant';
 import { renderDriveFolderName } from './utilities/drive-folder-name.utility';
 import { toProjectDriveFolder } from './utilities/drive-folder-status.utility';
 import type { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
@@ -171,6 +173,67 @@ export class ProjectDriveService {
     const rootId = await this.resolveProjectFolder(projectId, {});
     await this.requireProjectFile(fileId, rootId);
     await this.callDrive(() => this.googleDriveService.trashFile(fileId));
+  }
+
+  async selectSharedDocument(
+    projectId: string,
+    fileId: string | null,
+  ): Promise<ISharedDocument> {
+    if (fileId !== null && typeof fileId !== 'string') {
+      throw new BadRequestException('Choose a file or clear the selection');
+    }
+
+    const project = await this.projectService.getById(projectId);
+    if (project.parentProjectId || !project.projectType?.canHaveApartments) {
+      throw new BadRequestException(
+        'Only a parent project can share a document',
+      );
+    }
+
+    if (fileId !== null) {
+      const rootId = await this.resolveProjectFolder(projectId, {});
+      await this.requireProjectFile(fileId, rootId);
+    }
+
+    await this.projectService.setSharedDocumentFileId(projectId, fileId);
+    return this.getSharedDocument(projectId);
+  }
+
+  async getSharedDocument(projectId: string): Promise<ISharedDocument> {
+    const project = await this.projectService.getById(projectId);
+    const parent = project.parentProjectId
+      ? await this.projectService.getById(project.parentProjectId)
+      : project;
+    const fileId = parent.sharedDocumentFileId;
+
+    if (!fileId) {
+      return { status: SHARED_DOCUMENT_STATUS.NONE, file: null };
+    }
+
+    if (!parent.driveFolderId) {
+      return { status: SHARED_DOCUMENT_STATUS.UNAVAILABLE, file: null };
+    }
+
+    this.assertDriveConfigured();
+    try {
+      const file = await this.requireProjectFile(fileId, parent.driveFolderId);
+      return {
+        status: SHARED_DOCUMENT_STATUS.AVAILABLE,
+        file: {
+          id: file.id,
+          name: file.name ?? 'מסמך משותף',
+          url: `https://drive.google.com/open?id=${encodeURIComponent(file.id)}`,
+        },
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        return { status: SHARED_DOCUMENT_STATUS.UNAVAILABLE, file: null };
+      }
+      throw error;
+    }
   }
 
   private async requireProjectFile(

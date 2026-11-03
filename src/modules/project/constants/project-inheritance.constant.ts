@@ -6,9 +6,6 @@ export const ADDRESS_INHERITED_FIELDS: readonly TInheritedProjectField[] = [
   'addressPlaceId',
 ];
 
-export const PAYMENT_TERMS_INHERITED_FIELDS: readonly TInheritedProjectField[] =
-  ['paymentTerms', 'paymentTermsNote'];
-
 export const BUILDING_INHERITANCE_ATTRIBUTES = [
   'id',
   'code',
@@ -16,5 +13,4 @@ export const BUILDING_INHERITANCE_ATTRIBUTES = [
   'notes',
   'customerId',
   ...ADDRESS_INHERITED_FIELDS,
-  ...PAYMENT_TERMS_INHERITED_FIELDS,
 ];
