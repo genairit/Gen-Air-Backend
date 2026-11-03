@@ -9,7 +9,6 @@ import {
   IProjectAddress,
   IProjectContact,
   TProjectIntakeInput,
-  IProjectPaymentTerms,
   IProjectIntakeChangeRequest,
 } from './interfaces/project.interface';
 
@@ -17,18 +16,14 @@ import {
   mergeContact,
   hasAddressChanges,
   hasContactChanges,
-  mergePaymentTerms,
-  hasPaymentTermsChanges,
   findMissingContactFields,
 } from './utilities/project-intake.utility';
 
 import {
   EMPTY_CONTACT,
-  PAYMENT_TERMS_BY_FIELD_SET,
   ADDRESS_CITY_REQUIRED_BY_FIELD_SET,
 } from './constants/project-intake.constant';
 
-import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { AddressService } from '@Modules/address/address.service';
 import { IPlaceAddress } from '@Interfaces/google-places.interface';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
@@ -42,16 +37,12 @@ export class ProjectIntakeService {
     fieldSet: ProjectDetailFieldSetType,
   ): Promise<TProjectIntake> {
     const contact = { ...EMPTY_CONTACT };
-    const paymentTerms = this.validatePaymentTerms(
-      mergePaymentTerms({}, intake),
-      fieldSet,
-    );
     const address = await this.resolveAddress(
       intake.addressPlaceId ?? null,
       fieldSet,
     );
 
-    return { ...address, ...contact, ...paymentTerms };
+    return { ...address, ...contact };
   }
 
   resolveContact(intake: TProjectIntakeInput): IProjectContact {
@@ -62,10 +53,9 @@ export class ProjectIntakeService {
     request: IProjectIntakeChangeRequest,
   ): Promise<Partial<TProjectIntake>> {
     const contact = this.resolveContactChanges(request);
-    const paymentTerms = this.resolvePaymentTermsChanges(request);
     const address = await this.resolveAddressChanges(request);
 
-    return { ...address, ...contact, ...paymentTerms };
+    return { ...address, ...contact };
   }
 
   private resolveContactChanges({
@@ -77,25 +67,6 @@ export class ProjectIntakeService {
     }
 
     return this.requireCompleteContact(mergeContact(project, changes));
-  }
-
-  private resolvePaymentTermsChanges(
-    request: IProjectIntakeChangeRequest,
-  ): Partial<IProjectPaymentTerms> {
-    const { project, changes, fieldSet } = request;
-    const isChangingTerms = hasPaymentTermsChanges(changes);
-    const paymentTerms = mergePaymentTerms(project, changes);
-    const isLegacyWithoutTerms = !isChangingTerms && !paymentTerms.paymentTerms;
-
-    if (!fieldSet || isLegacyWithoutTerms) {
-      return {};
-    }
-
-    if (!isChangingTerms && !request.isTypeChanging) {
-      return {};
-    }
-
-    return this.validatePaymentTerms(paymentTerms, fieldSet);
   }
 
   private async resolveAddressChanges(
@@ -128,35 +99,6 @@ export class ProjectIntakeService {
     }
 
     return contact;
-  }
-
-  validatePaymentTerms(
-    { paymentTerms, paymentTermsNote }: IProjectPaymentTerms,
-    fieldSet: ProjectDetailFieldSetType,
-  ): IProjectPaymentTerms {
-    if (!paymentTerms) {
-      throw new BadRequestException('paymentTerms is required');
-    }
-
-    const allowedTerms = PAYMENT_TERMS_BY_FIELD_SET[fieldSet];
-
-    if (!allowedTerms.includes(paymentTerms)) {
-      throw new BadRequestException(
-        `Payment terms "${paymentTerms}" are not available for this project type; choose one of: ${allowedTerms.join(', ')}`,
-      );
-    }
-
-    if (paymentTerms !== PAYMENT_TERMS.OTHER) {
-      return { paymentTerms, paymentTermsNote: null };
-    }
-
-    if (!paymentTermsNote) {
-      throw new BadRequestException(
-        'paymentTermsNote is required when paymentTerms is "other"',
-      );
-    }
-
-    return { paymentTerms, paymentTermsNote };
   }
 
   private async resolveAddress(

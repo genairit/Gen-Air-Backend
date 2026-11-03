@@ -1,6 +1,5 @@
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
-import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { ProjectIntakeDetailsDto } from './project-intake-details.dto';
 
 const findInvalidFields = async (payload: object): Promise<string[]> => {
@@ -18,9 +17,7 @@ describe('ProjectIntakeDetailsDto', () => {
         contactName: 'דנה לוי',
         contactPhone: '052-7788990',
         contactRole: 'מנהלת פרויקט',
-        paymentTerms: PAYMENT_TERMS.OTHER,
         addressPlaceId: 'ChIJzzwIwJxMHRUR3Ywnw4yVUl0',
-        paymentTermsNote: 'תשלום לפי שלבי ביצוע מאושרים',
       }),
     ).resolves.toEqual([]);
   });
@@ -41,18 +38,6 @@ describe('ProjectIntakeDetailsDto', () => {
     await expect(findInvalidFields({ contactName: 'ד' })).resolves.toEqual([
       'contactName',
     ]);
-  });
-
-  it('rejects an unknown payment option', async () => {
-    await expect(
-      findInvalidFields({ paymentTerms: 'barter' }),
-    ).resolves.toEqual(['paymentTerms']);
-  });
-
-  it('rejects a payment detail shorter than 10 characters', async () => {
-    await expect(
-      findInvalidFields({ paymentTermsNote: 'קצר' }),
-    ).resolves.toEqual(['paymentTermsNote']);
   });
 
   it('rejects a place id with characters Google never uses', async () => {
