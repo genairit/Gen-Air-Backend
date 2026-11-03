@@ -164,6 +164,7 @@ export class TaskService {
           fromStatus: null,
           toStatus: created.status,
           changedById: creator.id,
+          changedByRole: creator.role,
         },
         transaction,
       );
@@ -233,6 +234,7 @@ export class TaskService {
           toStatus: status,
           changedById: user.id,
           fromStatus: task.status,
+          changedByRole: user.role,
         },
         transaction,
       );
@@ -375,7 +377,9 @@ export class TaskService {
 
     const assignee = await this.userService.getById(assigneeId);
 
-    if (assignee.role !== USER_ROLES.ENGINEER) {
+    if (
+      !(assignee.assignedRoles ?? [assignee.role]).includes(USER_ROLES.ENGINEER)
+    ) {
       throw new BadRequestException(
         'Tasks can be assigned only to engineering employees',
       );

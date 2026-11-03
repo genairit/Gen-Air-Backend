@@ -35,10 +35,15 @@ const CUSTOMER_ID = '00000000-0000-4000-8000-000000000003';
 const EMPLOYEE_ID = '00000000-0000-4000-8000-000000000004';
 const OTHER_ID = '00000000-0000-4000-8000-000000000005';
 const MANAGER_ID = '00000000-0000-4000-8000-000000000006';
-const makeUser = (id: string, role: IUser['role']): IAuthorizedUser => ({
+const makeUser = (
+  id: string,
+  role: IUser['role'],
+  assignedRoles: IUser['role'][] = [role],
+): IAuthorizedUser => ({
   permissions: baselinePermissions(role),
   id,
   role,
+  assignedRoles,
   email: `${id}@test.invalid`,
   phone: '0500000000',
   firstName: 'Test',
@@ -53,7 +58,10 @@ const users = {
   employee: makeUser(EMPLOYEE_ID, USER_ROLES.ENGINEER),
   other: makeUser(OTHER_ID, USER_ROLES.ENGINEER),
   secretary: makeUser(OTHER_ID, USER_ROLES.SECRETARY),
-  finance: makeUser(OTHER_ID, USER_ROLES.FINANCE),
+  finance: makeUser(OTHER_ID, USER_ROLES.FINANCE, [
+    USER_ROLES.FINANCE,
+    USER_ROLES.ENGINEER,
+  ]),
   installer: makeUser(OTHER_ID, USER_ROLES.INSTALLER),
   projectManager: makeUser(OTHER_ID, USER_ROLES.PROJECT_MANAGER),
 };
@@ -202,6 +210,20 @@ describe('Task HTTP permission boundaries', () => {
       .post('/task')
       .auth('manager', { type: 'bearer' })
       .send({ ...payload, assigneeId: null })
+      .expect(201);
+  });
+
+  it('accepts a task engineer whose active role differs from the assigned role', async () => {
+    users.employee.permissions = [
+      PERMISSIONS.TASKS_CREATE,
+      PERMISSIONS.TASKS_ASSIGN,
+    ];
+    userService.getById.mockResolvedValue(users.finance);
+
+    await request(server())
+      .post('/task')
+      .auth('employee', { type: 'bearer' })
+      .send({ ...payload, assigneeId: OTHER_ID })
       .expect(201);
   });
 
@@ -371,6 +393,7 @@ describe('Task HTTP permission boundaries', () => {
       taskId: TASK_ID,
       toStatus: 'in_progress',
       changedById: EMPLOYEE_ID,
+      changedByRole: USER_ROLES.ENGINEER,
       fromStatus: 'not_started',
     });
   });
@@ -865,12 +888,14 @@ describe('Task HTTP permission boundaries', () => {
           fromStatus: 'in_review',
           toStatus: 'proposal_sent',
           changedById: EMPLOYEE_ID,
+          changedByRole: USER_ROLES.ENGINEER,
         },
         {
           taskId: TASK_ID,
           fromStatus: 'proposal_sent',
           toStatus: 'in_progress',
           changedById: EMPLOYEE_ID,
+          changedByRole: USER_ROLES.ENGINEER,
         },
       ]);
       expect(repository.create).not.toHaveBeenCalled();

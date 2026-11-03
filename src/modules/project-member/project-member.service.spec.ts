@@ -11,8 +11,16 @@ const INSTALLER_ID = 'installer-user';
 const createService = async () => {
   const userService = {
     findByIds: jest.fn().mockResolvedValue([
-      { id: SECRETARY_ID, role: USER_ROLES.SECRETARY },
-      { id: INSTALLER_ID, role: USER_ROLES.INSTALLER },
+      {
+        id: SECRETARY_ID,
+        role: USER_ROLES.FINANCE,
+        assignedRoles: [USER_ROLES.FINANCE, USER_ROLES.SECRETARY],
+      },
+      {
+        id: INSTALLER_ID,
+        role: USER_ROLES.FINANCE,
+        assignedRoles: [USER_ROLES.FINANCE, USER_ROLES.INSTALLER],
+      },
     ]),
   };
 

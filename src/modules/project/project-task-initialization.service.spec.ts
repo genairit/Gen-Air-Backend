@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { Sequelize, Transaction } from 'sequelize';
+import { USER_ROLES } from '@Constants/user-role.constant';
 import { TaskRepository } from '@Modules/task/task.repository';
 import { TASK_TYPES } from '@Modules/task/constants/task-type.constant';
 import { TASK_STATUSES } from '@Modules/task/constants/task-status.constant';
@@ -9,7 +10,7 @@ import { DatabaseTransactionService } from '@Providers/database/database-transac
 import { TaskStatusTransitionRepository } from '@Modules/task/task-status-transition.repository';
 
 const PROJECT = { id: 'project-1', name: 'בניין לדוגמה' };
-const CREATOR = { id: 'creator-1' };
+const CREATOR = { id: 'creator-1', role: USER_ROLES.ENGINEER };
 
 const setup = async () => {
   const transaction = new Transaction(
@@ -95,6 +96,7 @@ describe('ProjectTaskInitializationService', () => {
         fromStatus: null,
         toStatus: TASK_STATUSES.NOT_STARTED,
         changedById: CREATOR.id,
+        changedByRole: CREATOR.role,
       },
       state.transaction,
     );
@@ -105,6 +107,7 @@ describe('ProjectTaskInitializationService', () => {
         fromStatus: null,
         toStatus: TASK_STATUSES.NOT_STARTED,
         changedById: CREATOR.id,
+        changedByRole: CREATOR.role,
       },
       state.transaction,
     );
