@@ -26,6 +26,12 @@ describe('Drive connection access', () => {
   const provision = jest.fn().mockResolvedValue({ id: 'project' });
   const moveFile = jest.fn(async (): Promise<void> => {});
   const trashFile = jest.fn(async (): Promise<void> => {});
+  const getSharedDocument = jest
+    .fn()
+    .mockResolvedValue({ status: 'none', file: null });
+  const selectSharedDocument = jest
+    .fn()
+    .mockResolvedValue({ status: 'none', file: null });
   const projectId = '92710bd0-68c9-4e20-a4e2-ef75e519f6ce';
   beforeAll(async () => {
     const module = await Test.createTestingModule({
@@ -33,7 +39,14 @@ describe('Drive connection access', () => {
       providers: [
         {
           provide: ProjectDriveService,
-          useValue: { checkConnection, provision, moveFile, trashFile },
+          useValue: {
+            checkConnection,
+            provision,
+            moveFile,
+            trashFile,
+            getSharedDocument,
+            selectSharedDocument,
+          },
         },
         {
           provide: AuthService,
@@ -72,6 +85,8 @@ describe('Drive connection access', () => {
     provision.mockClear();
     moveFile.mockClear();
     trashFile.mockClear();
+    getSharedDocument.mockClear();
+    selectSharedDocument.mockClear();
   });
   afterAll(async () => application.app?.close());
   it('requires authentication', async () => {
@@ -128,6 +143,49 @@ describe('Drive connection access', () => {
       writesTested: false,
     });
     expect(checkConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it('gates shared document reads and writes with existing Drive permissions', async () => {
+    const route = `/project-drive/${projectId}/shared-document`;
+    await request(application.app!.getHttpServer()).get(route).expect(401);
+    await request(application.app!.getHttpServer())
+      .patch(route)
+      .send({ fileId: null })
+      .expect(401);
+    await request(application.app!.getHttpServer())
+      .get(route)
+      .auth('engineer', { type: 'bearer' })
+      .expect(200);
+    await request(application.app!.getHttpServer())
+      .patch(route)
+      .auth('engineer', { type: 'bearer' })
+      .send({ fileId: 'plan-file' })
+      .expect(403);
+    await request(application.app!.getHttpServer())
+      .patch(route)
+      .auth('manager', { type: 'bearer' })
+      .send({ fileId: 'plan-file' })
+      .expect(200);
+    expect(selectSharedDocument).toHaveBeenCalledWith(projectId, 'plan-file');
+    expect(getSharedDocument).toHaveBeenCalledWith(projectId);
+  });
+
+  it('rejects unsafe shared document IDs before the service', async () => {
+    await request(application.app!.getHttpServer())
+      .patch(`/project-drive/${projectId}/shared-document`)
+      .auth('admin', { type: 'bearer' })
+      .send({ fileId: '../foreign' })
+      .expect(400);
+    expect(selectSharedDocument).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit file selection or null clear operation', async () => {
+    await request(application.app!.getHttpServer())
+      .patch(`/project-drive/${projectId}/shared-document`)
+      .auth('admin', { type: 'bearer' })
+      .send({})
+      .expect(400);
+    expect(selectSharedDocument).not.toHaveBeenCalled();
   });
 
   describe.each(['patch', 'delete'] as const)(

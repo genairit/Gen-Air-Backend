@@ -123,6 +123,9 @@ export class Project
   @Column(DataType.STRING(FIELD_LENGTHS.DRIVE_ID))
   declare driveFolderId: string | null;
 
+  @Column(DataType.STRING(FIELD_LENGTHS.DRIVE_ID))
+  declare sharedDocumentFileId: string | null;
+
   @Column(DataType.STRING(FIELD_LENGTHS.PRIORITY_ID))
   declare priorityId: string | null;
 

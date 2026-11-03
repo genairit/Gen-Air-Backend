@@ -44,6 +44,7 @@ const createService = async () => {
   const projectService = {
     getById: jest.fn().mockResolvedValue(PROJECT),
     setDriveFolderId: jest.fn().mockResolvedValue(null),
+    setSharedDocumentFileId: jest.fn().mockResolvedValue(null),
   };
   const googleDriveService = {
     isConfigured: jest.fn().mockReturnValue(true),
@@ -88,6 +89,153 @@ const createService = async () => {
     driveTemplateFolderService,
   };
 };
+
+describe('ProjectDriveService shared parent document', () => {
+  const parent = {
+    ...PROJECT,
+    driveFolderId: PROJECT_FOLDER_ID,
+    sharedDocumentFileId: null,
+    parentProjectId: null,
+    projectType: { canHaveApartments: true },
+  };
+  const child = {
+    ...PROJECT,
+    id: 'apartment-1',
+    parentProjectId: parent.id,
+    sharedDocumentFileId: null,
+  };
+  const fileId = 'plan-file';
+  const nestedFolderId = 'plans-folder';
+
+  const createSharedService = async () => {
+    const context = await createService();
+    const selectedFile = { id: null as string | null };
+    context.projectService.getById.mockImplementation((id: string) =>
+      Promise.resolve(
+        id === child.id
+          ? child
+          : { ...parent, sharedDocumentFileId: selectedFile.id },
+      ),
+    );
+    context.projectService.setSharedDocumentFileId.mockImplementation(
+      (_id: string, id: string | null) => {
+        selectedFile.id = id;
+        return Promise.resolve();
+      },
+    );
+    context.googleDriveService.getFileMetadata.mockImplementation(
+      (id: string) =>
+        Promise.resolve({
+          id,
+          ...(id === fileId ? { name: 'תוכנית ביצוע.pdf' } : {}),
+          trashed: false,
+          mimeType:
+            id === fileId ? 'application/pdf' : GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+          parents: id === fileId ? [nestedFolderId] : [PROJECT_FOLDER_ID],
+        }),
+    );
+    context.googleDriveService.findParentIds.mockImplementation((id: string) =>
+      Promise.resolve(id === nestedFolderId ? [PROJECT_FOLDER_ID] : []),
+    );
+    return context;
+  };
+
+  it('selects a nested file once and resolves it live for every apartment', async () => {
+    const { service, projectService } = await createSharedService();
+    const selected = await service.selectSharedDocument(parent.id, fileId);
+    expect(projectService.setSharedDocumentFileId).toHaveBeenCalledWith(
+      parent.id,
+      fileId,
+    );
+    expect(selected).toEqual({
+      status: 'available',
+      file: {
+        id: fileId,
+        name: 'תוכנית ביצוע.pdf',
+        url: `https://drive.google.com/open?id=${fileId}`,
+      },
+    });
+    expect(await service.getSharedDocument(child.id)).toEqual(selected);
+  });
+
+  it('replaces and clears the parent selection without writing to apartments', async () => {
+    const { service, projectService } = await createSharedService();
+    await service.selectSharedDocument(parent.id, fileId);
+    await service.selectSharedDocument(parent.id, null);
+    expect(await service.getSharedDocument(child.id)).toEqual({
+      status: 'none',
+      file: null,
+    });
+    expect(projectService.setSharedDocumentFileId).toHaveBeenLastCalledWith(
+      parent.id,
+      null,
+    );
+    expect(projectService.setSharedDocumentFileId).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects an apartment selection and a file outside the parent folder', async () => {
+    const { service, googleDriveService, projectService } =
+      await createSharedService();
+    await expect(
+      service.selectSharedDocument(child.id, fileId),
+    ).rejects.toThrow(BadRequestException);
+    googleDriveService.findParentIds.mockResolvedValue(['another-project']);
+    await expect(
+      service.selectSharedDocument(parent.id, fileId),
+    ).rejects.toThrow(BadRequestException);
+    expect(projectService.setSharedDocumentFileId).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing selection before changing the parent', async () => {
+    const { service, projectService } = await createSharedService();
+    const missingFileId = Reflect.get({}, 'fileId') as string | null;
+    await expect(
+      service.selectSharedDocument(parent.id, missingFileId),
+    ).rejects.toThrow(BadRequestException);
+    expect(projectService.setSharedDocumentFileId).not.toHaveBeenCalled();
+  });
+
+  it('shows unavailable when a stored selection has no parent Drive folder', async () => {
+    const { service, projectService } = await createSharedService();
+    projectService.getById.mockImplementation((id: string) =>
+      Promise.resolve(
+        id === child.id
+          ? child
+          : {
+              ...parent,
+              driveFolderId: null,
+              sharedDocumentFileId: fileId,
+            },
+      ),
+    );
+    expect(await service.getSharedDocument(child.id)).toEqual({
+      status: 'unavailable',
+      file: null,
+    });
+  });
+
+  it('reports a missing or moved-out selected file without returning a broken link', async () => {
+    const { service, googleDriveService } = await createSharedService();
+    await service.selectSharedDocument(parent.id, fileId);
+    googleDriveService.getFileMetadata.mockResolvedValue(null);
+    expect(await service.getSharedDocument(child.id)).toEqual({
+      status: 'unavailable',
+      file: null,
+    });
+    googleDriveService.getFileMetadata.mockResolvedValue({
+      id: fileId,
+      name: 'תוכנית ביצוע.pdf',
+      trashed: false,
+      mimeType: 'application/pdf',
+      parents: [nestedFolderId],
+    });
+    googleDriveService.findParentIds.mockResolvedValue(['outside-project']);
+    expect(await service.getSharedDocument(child.id)).toEqual({
+      status: 'unavailable',
+      file: null,
+    });
+  });
+});
 
 const createTempFile = async (): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), 'project-drive-spec-'));

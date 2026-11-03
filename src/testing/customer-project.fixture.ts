@@ -97,6 +97,7 @@ export const makeCustomerProjectParent = (
   paymentTerms: null,
   paymentTermsNote: null,
   driveFolderId: null,
+  sharedDocumentFileId: null,
   priorityId: null,
   prioritySyncedAt: null,
   apartmentOwnership: null,

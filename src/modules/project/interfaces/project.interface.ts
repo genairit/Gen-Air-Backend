@@ -88,6 +88,7 @@ export interface IProject
   prioritySyncedAt: Date | null;
   parentProjectId: string | null;
   apartmentCredit: string | null;
+  sharedDocumentFileId: string | null;
   apartmentOwnership: ApartmentOwnershipType | null;
 }
 

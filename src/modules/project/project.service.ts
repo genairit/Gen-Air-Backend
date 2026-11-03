@@ -308,6 +308,20 @@ export class ProjectService {
     }
   }
 
+  async setSharedDocumentFileId(
+    projectId: string,
+    fileId: string | null,
+  ): Promise<void> {
+    const isUpdated = await this.projectRepository.updateSharedDocumentFileId(
+      projectId,
+      fileId,
+    );
+
+    if (!isUpdated) {
+      throw new NotFoundException(`Parent project ${projectId} was not found`);
+    }
+  }
+
   async delete(id: string): Promise<void> {
     const apartmentCount = await this.projectRepository.countLiveApartments(id);
 
