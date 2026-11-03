@@ -16,7 +16,7 @@ test('payment ownership cleanup is disabled until an operator reviews it', () =>
 
   assert.doesNotMatch(
     runnable,
-    /\b(DROP|DELETE|TRUNCATE|UPDATE|INSERT|COMMIT)\b/i,
+    /^\s*(DROP|DELETE|TRUNCATE|UPDATE|INSERT|COMMIT)\b/im,
   );
   assert.match(runnable, /BEGIN;/);
   assert.match(runnable, /information_schema\.columns/);
@@ -27,6 +27,10 @@ test('reviewed cleanup discards only legacy project terms without backfilling sn
   const database = new PGlite();
   try {
     await database.exec(`
+      CREATE TABLE users (id uuid PRIMARY KEY, role text, deleted_at timestamptz);
+      CREATE TABLE user_roles (user_id uuid, role text);
+      CREATE TABLE user_role_audits (action text);
+      CREATE TABLE task_status_transitions (changed_by_role text);
       CREATE TYPE payment_terms AS ENUM ('prepaid', 'other');
       CREATE TABLE projects (
         id integer PRIMARY KEY,

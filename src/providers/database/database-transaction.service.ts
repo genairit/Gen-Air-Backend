@@ -16,6 +16,13 @@ export class DatabaseTransactionService {
     );
   }
 
+  async markRoleMembershipManaged(transaction: Transaction): Promise<void> {
+    await this.sequelize.query(
+      "SELECT set_config('genair.role_membership_managed', 'true', true)",
+      { transaction },
+    );
+  }
+
   readSnapshot<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
     return this.sequelize.transaction(
       { isolationLevel: Transaction.ISOLATION_LEVELS.REPEATABLE_READ },

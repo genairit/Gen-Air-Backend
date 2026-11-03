@@ -26,6 +26,7 @@ const parseAdmin = (): CreateUserDto => {
     phone: values.phone,
     password: values.password,
     role: USER_ROLES.SYSTEM_ADMIN,
+    assignedRoles: [USER_ROLES.SYSTEM_ADMIN],
     lastName: values['last-name'],
     firstName: values['first-name'],
   });
@@ -49,7 +50,9 @@ const createAdmin = async () => {
   const app = await NestFactory.createApplicationContext(AppModule);
 
   try {
-    const createdAdmin = await app.get(UserService).create(admin);
+    const createdAdmin = await app
+      .get(UserService)
+      .createInitialSystemAdministrator(admin);
 
     logger.info({
       message: 'System admin created',

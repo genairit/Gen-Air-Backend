@@ -6,6 +6,7 @@ import { User } from '@Modules/user/entities/user.entity';
 import { Sequelize, SequelizeOptions } from 'sequelize-typescript';
 import { Project } from '@Modules/project/entities/project.entity';
 import { Customer } from '@Modules/customer/entities/customer.entity';
+import { UserRole } from '@Modules/user-role/entities/user-role.entity';
 import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { Permission } from '@Modules/permission/entities/permission.entity';
 import { EnvironmentManager } from '../../utilities/environment-manager.utility';
@@ -16,6 +17,7 @@ import { QuotationRule } from '@Modules/quotation-rule/entities/quotation-rule.e
 import { CatalogueItem } from '@Modules/catalogue-item/entities/catalogue-item.entity';
 import { QuotationItem } from '@Modules/quotation-item/entities/quotation-item.entity';
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
+import { UserRoleAudit } from '@Modules/user-role-audit/entities/user-role-audit.entity';
 import { RolePermission } from '@Modules/role-permission/entities/role-permission.entity';
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
 import { QuotationExecutionEmail } from '@Modules/quotation-execution-email/entities/quotation-execution-email.entity';
@@ -92,6 +94,8 @@ export const DatabaseProvider: Provider = {
       TaskStatusTransition,
       QuotationExecutionEmail,
       User,
+      UserRole,
+      UserRoleAudit,
       Project,
       Customer,
       CustomerContact,

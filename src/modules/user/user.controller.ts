@@ -71,7 +71,7 @@ export class UserController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Authenticated()
   updateMyPassword(
-    @AuthenticatedUser() user: IUser,
+    @AuthenticatedUser() user: IAuthorizedUser,
     @Body() changes: UpdateUserPasswordDto,
   ): Promise<void> {
     return this.userService.updatePassword(user.id, changes);
@@ -92,7 +92,7 @@ export class UserController {
   @RequirePermissions(PERMISSIONS.EMPLOYEES_DELETE)
   delete(
     @Param('id', ParseUUIDPipe) id: string,
-    @AuthenticatedUser() requester: IUser,
+    @AuthenticatedUser() requester: IAuthorizedUser,
   ): Promise<void> {
     return this.userService.delete(id, requester);
   }

@@ -1,10 +1,13 @@
 import {
   IsIn,
   IsEmail,
+  IsArray,
   IsString,
   MaxLength,
   IsOptional,
   IsNotEmpty,
+  ArrayUnique,
+  ArrayNotEmpty,
   IsPhoneNumber,
 } from 'class-validator';
 
@@ -41,4 +44,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsIn(USER_ROLE_VALUES)
   declare role?: UserRoleType;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayUnique()
+  @IsIn(USER_ROLE_VALUES, { each: true })
+  declare assignedRoles?: UserRoleType[];
 }
