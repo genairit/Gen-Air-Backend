@@ -46,10 +46,6 @@ export class CreateUserDto {
   declare assignedRoles: UserRoleType[];
 
   @IsNotEmpty()
-  @IsIn(USER_ROLE_VALUES)
-  declare role: UserRoleType;
-
-  @IsNotEmpty()
   @IsString()
   @MinLength(FIELD_LENGTHS.PASSWORD_MIN)
   @MaxLength(FIELD_LENGTHS.PASSWORD_MAX)

@@ -159,7 +159,7 @@ export class UserService {
   ): Promise<IUser> {
     assertPermissions(actor, PERMISSIONS.EMPLOYEES_UPDATE);
 
-    if ('role' in input || 'assignedRoles' in input) {
+    if ('assignedRoles' in input) {
       assertPermissions(actor, PERMISSIONS.EMPLOYEES_ROLES_ASSIGN);
     }
 
@@ -171,7 +171,7 @@ export class UserService {
   }
 
   async createInitialSystemAdministrator(user: CreateUserDto): Promise<IUser> {
-    if (user.role !== USER_ROLES.SYSTEM_ADMIN) {
+    if (user.assignedRoles[0] !== USER_ROLES.SYSTEM_ADMIN) {
       throw new BadRequestException(
         'The bootstrap account must use the system administrator role',
       );
@@ -186,8 +186,9 @@ export class UserService {
   ): Promise<IUser> {
     await this.assertEmailAvailable(user.email);
 
-    const assignedRoles = user.assignedRoles ?? [user.role];
-    this.assertValidAssignments(user.role, assignedRoles);
+    const assignedRoles = user.assignedRoles;
+    const initialRole = this.firstAssignedRole(assignedRoles);
+    this.assertValidAssignments(initialRole, assignedRoles);
     const passwordHash = await hashPassword(user.password);
     const createdId = await this.transactions.run(async (transaction) => {
       await this.transactions.lockKey(
@@ -201,7 +202,7 @@ export class UserService {
           lastName: user.lastName,
           email: user.email,
           phone: user.phone,
-          role: user.role,
+          role: initialRole,
           passwordHash,
         },
         transaction,
@@ -215,10 +216,10 @@ export class UserService {
         {
           action: USER_ROLE_AUDIT_ACTIONS.ASSIGNMENT,
           actorId: actor?.id ?? createdUser.id,
-          actorRole: actor?.role ?? user.role,
+          actorRole: actor?.role ?? initialRole,
           subjectUserId: createdUser.id,
           previousRole: null,
-          nextRole: user.role,
+          nextRole: initialRole,
           previousAssignedRoles: [],
           nextAssignedRoles: this.orderRoles(assignedRoles),
         },
@@ -255,14 +256,9 @@ export class UserService {
       const user = await this.requireUserInTransaction(id, transaction);
       const currentRoles = user.assignedRoles ?? [user.role];
       const nextRoles = changes.assignedRoles ?? currentRoles;
-      const nextRole =
-        changes.role ??
-        (nextRoles.includes(user.role) ? user.role : nextRoles[0]);
-      if (!nextRole) {
-        throw new BadRequestException(
-          'Each employee must have at least one assigned role',
-        );
-      }
+      const nextRole = nextRoles.includes(user.role)
+        ? user.role
+        : this.firstAssignedRole(nextRoles);
 
       this.assertValidAssignments(nextRole, nextRoles);
       await this.assertSystemAdministratorRemains(
@@ -503,6 +499,18 @@ export class UserService {
         'The active role must be one of the assigned roles',
       );
     }
+  }
+
+  private firstAssignedRole(assignedRoles: UserRoleType[]): UserRoleType {
+    const firstRole = assignedRoles[0];
+
+    if (!firstRole) {
+      throw new BadRequestException(
+        'Each employee must have at least one assigned role',
+      );
+    }
+
+    return firstRole;
   }
 
   private orderRoles(roles: UserRoleType[]): UserRoleType[] {
