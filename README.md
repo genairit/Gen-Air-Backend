@@ -5,7 +5,8 @@ the backend part of the gen air app
 ## Development workflow
 
 The [backend development workflow](rules/backend-development-workflow-standards.md)
-covers task intake, implementation, review, QA, and the merge request. The backend
+runs the [developer agent](agents/developer-agent.md) between task intake
+and review, then covers QA and the merge request. The backend
 architecture planning agent can be added to this path when it is defined.
 
 ## Payment-term ownership
