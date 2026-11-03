@@ -20,13 +20,13 @@ import { ProjectMember } from '@Modules/project-member/entities/project-member.e
 import { UserRoleAudit } from '@Modules/user-role-audit/entities/user-role-audit.entity';
 import { RolePermission } from '@Modules/role-permission/entities/role-permission.entity';
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
-import { QuotationExecutionEmail } from '@Modules/quotation-execution-email/entities/quotation-execution-email.entity';
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { QuotationSection } from '@Modules/quotation-section/entities/quotation-section.entity';
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
 import { QuestionnaireSubmission } from '@Modules/questionnaire-submission/entities/questionnaire-submission.entity';
+import { QuotationExecutionEmail } from '@Modules/quotation-execution-email/entities/quotation-execution-email.entity';
 
 const logger = new TypedLogger('DatabaseProvider');
 

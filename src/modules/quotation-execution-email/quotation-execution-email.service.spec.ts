@@ -37,6 +37,7 @@ const actor: IAuthorizedUser = {
   createdAt: new Date(),
   updatedAt: new Date(),
   role: USER_ROLES.PROJECT_MANAGER,
+  assignedRoles: [USER_ROLES.PROJECT_MANAGER],
   employeeNumber: '1',
   deletedAt: null,
   permissions: [],
