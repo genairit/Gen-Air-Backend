@@ -9,5 +9,6 @@ import { DriveTemplateFolderModule } from '@Modules/drive-template-folder/drive-
   imports: [ProjectModule, GoogleDriveModule, DriveTemplateFolderModule],
   controllers: [ProjectDriveController],
   providers: [ProjectDriveService],
+  exports: [ProjectDriveService],
 })
 export class ProjectDriveModule {}

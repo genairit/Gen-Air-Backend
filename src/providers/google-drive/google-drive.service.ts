@@ -169,6 +169,26 @@ export class GoogleDriveService {
     }
   }
 
+  async downloadFile(fileId: string, maxBytes: number): Promise<Buffer> {
+    const response = await this.drive.files.get(
+      { ...SHARED_DRIVE_OPTIONS, fileId, alt: 'media' },
+      { responseType: 'stream' },
+    );
+    const stream = response.data;
+    const chunks: Buffer[] = [];
+    const state = { size: 0 };
+    for await (const part of stream) {
+      const chunk = Buffer.from(part as Uint8Array);
+      state.size += chunk.length;
+      if (state.size > maxBytes) {
+        stream.destroy();
+        throw new RangeError('Drive file exceeds the email attachment limit');
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  }
+
   async moveFile({
     fileId,
     parentIds,

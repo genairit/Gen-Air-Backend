@@ -5,6 +5,7 @@ import {
   ConflictException,
   BadGatewayException,
   BadRequestException,
+  PayloadTooLargeException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 
@@ -173,6 +174,28 @@ export class ProjectDriveService {
     const rootId = await this.resolveProjectFolder(projectId, {});
     await this.requireProjectFile(fileId, rootId);
     await this.callDrive(() => this.googleDriveService.trashFile(fileId));
+  }
+
+  async readProjectAttachment(
+    projectId: string,
+    fileId: string,
+    maxBytes: number,
+  ): Promise<{ name: string; mimeType: string; content: Buffer }> {
+    const rootId = await this.resolveProjectFolder(projectId, {});
+    const file = await this.requireProjectFile(fileId, rootId);
+    if (file.mimeType.startsWith('application/vnd.google-apps.')) {
+      throw new BadRequestException(
+        'Select a downloadable file, not a Google Workspace document',
+      );
+    }
+    const content = await this.callDrive(() =>
+      this.googleDriveService.downloadFile(fileId, maxBytes),
+    );
+    return {
+      name: file.name ?? 'project-file',
+      mimeType: file.mimeType,
+      content,
+    };
   }
 
   async selectSharedDocument(
@@ -439,6 +462,11 @@ export class ProjectDriveService {
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
+      }
+      if (error instanceof RangeError) {
+        throw new PayloadTooLargeException(
+          'Drive file exceeds the email attachment limit',
+        );
       }
 
       this.logger.error({ error, message: 'Google Drive request failed' });

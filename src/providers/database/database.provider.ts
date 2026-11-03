@@ -26,6 +26,7 @@ import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catal
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
 import { QuestionnaireSubmission } from '@Modules/questionnaire-submission/entities/questionnaire-submission.entity';
+import { QuotationExecutionEmail } from '@Modules/quotation-execution-email/entities/quotation-execution-email.entity';
 
 const logger = new TypedLogger('DatabaseProvider');
 
@@ -91,6 +92,7 @@ export const DatabaseProvider: Provider = {
       RolePermission,
       Task,
       TaskStatusTransition,
+      QuotationExecutionEmail,
       User,
       UserRole,
       UserRoleAudit,
