@@ -52,6 +52,7 @@ const payload = (): TQuestionnaireSubmissionCreation => ({
 });
 
 describe('Public questionnaire HTTP boundary', () => {
+  const previousClientSecret = process.env.QUESTIONNAIRE_CLIENT_SECRET ?? null;
   const state: {
     app: INestApplication<Server> | null;
     active: boolean;
@@ -81,6 +82,8 @@ describe('Public questionnaire HTTP boundary', () => {
     return state.app.getHttpServer();
   };
   beforeAll(async () => {
+    process.env.QUESTIONNAIRE_CLIENT_SECRET =
+      'questionnaire-component-test-secret-at-least-32-chars';
     const module = await Test.createTestingModule({
       controllers: [QuestionnaireController, QuestionnaireSubmissionController],
       providers: [
@@ -123,6 +126,11 @@ describe('Public questionnaire HTTP boundary', () => {
   });
   afterAll(async () => {
     await state.app?.close();
+    if (previousClientSecret === null) {
+      delete process.env.QUESTIONNAIRE_CLIENT_SECRET;
+    } else {
+      process.env.QUESTIONNAIRE_CLIENT_SECRET = previousClientSecret;
+    }
   });
   it('serves only published questions without requiring credentials', async () => {
     const response = await request(server())
