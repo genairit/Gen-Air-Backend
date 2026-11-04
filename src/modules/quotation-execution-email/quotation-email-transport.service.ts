@@ -123,6 +123,7 @@ export class QuotationEmailTransport {
       host: EnvironmentManager.get('SMTP_HOST'),
       port,
       secure: EnvironmentManager.get('SMTP_SECURE') === 'true' || port === 465,
+      requireTLS: true,
       ...(user && password ? { auth: { user, pass: password } } : {}),
     };
     const domain = from.split('@')[1];

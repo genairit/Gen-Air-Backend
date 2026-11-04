@@ -29,11 +29,13 @@ const message = {
 
 class PartialTransport extends QuotationEmailTransport {
   sent: Mail.Options | null = null;
+  config: SMTPTransport.Options | null = null;
 
   protected override deliver(
-    _config: SMTPTransport.Options,
+    config: SMTPTransport.Options,
     options: Mail.Options,
   ) {
+    this.config = config;
     this.sent = options;
     return Promise.resolve({
       messageId: '<provider@example.test>',
@@ -75,6 +77,13 @@ describe('QuotationEmailTransport', () => {
       acceptedCount: 1,
       rejectedCount: 1,
     });
+    expect(transport.config).toEqual(
+      expect.objectContaining({
+        port: 587,
+        secure: false,
+        requireTLS: true,
+      }),
+    );
     expect(transport.sent).toEqual(
       expect.objectContaining({
         attachments: [
