@@ -38,6 +38,23 @@ export class UserRepository {
     });
   }
 
+  findAllCredentials(): Promise<Array<IUserCredentials & { email: string }>> {
+    return User.unscoped().findAll({
+      attributes: ['id', 'email', 'passwordHash'],
+    });
+  }
+
+  findCredentialsById(
+    id: string,
+    transaction: Transaction,
+  ): Promise<IUserCredentials | null> {
+    return User.unscoped().findByPk(id, {
+      attributes: ['id', 'passwordHash'],
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+  }
+
   async findByFilter(
     filter: IUserFilter,
     batch: ICursorBatch,
@@ -110,7 +127,17 @@ export class UserRepository {
       { where: { id }, transaction },
     );
 
-    return updatedCount > 0;
+    if (updatedCount === 0) {
+      return false;
+    }
+
+    await User.increment('sessionVersion', {
+      by: 1,
+      where: { id },
+      transaction,
+    });
+
+    return true;
   }
 
   async softDelete(id: string, transaction?: Transaction): Promise<boolean> {

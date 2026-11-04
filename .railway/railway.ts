@@ -50,6 +50,7 @@ export default defineRailway((context) => {
       DB_USER: preserve(),
       DB_SSL_CA: preserve(),
       JWT_SECRET: preserve(),
+      QUESTIONNAIRE_CLIENT_SECRET: preserve(),
       FORCE_JSON_LOGS: 'true',
       GOOGLE_PLACES_API_KEY: preserve(),
       GOOGLE_DRIVE_ROOT_FOLDER_ID: preserve(),

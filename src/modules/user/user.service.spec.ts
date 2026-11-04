@@ -5,6 +5,7 @@ import { UserRepository } from './user.repository';
 import { ForbiddenException } from '@nestjs/common';
 import type { IUser } from './interfaces/user.interface';
 import { USER_ROLES } from '@Constants/user-role.constant';
+import { hashPassword } from '@Utilities/password.utility';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { authorizedUser } from '../../testing/authorization.fixture';
 import { UserRoleService } from '@Modules/user-role/user-role.service';
@@ -32,6 +33,9 @@ const createService = async () => {
     create: jest.fn().mockResolvedValue(USER),
     update: jest.fn().mockResolvedValue(true),
     findById: jest.fn().mockResolvedValue(USER),
+    findCredentialsById: jest.fn(),
+    findCredentialsByEmail: jest.fn(),
+    updatePasswordHash: jest.fn().mockResolvedValue(true),
     softDelete: jest.fn().mockResolvedValue(true),
     findByEmailIncludingDeleted: jest.fn().mockResolvedValue(null),
     findByFilter: jest
@@ -117,6 +121,99 @@ describe('UserService.update', () => {
         authorizedUser(),
       ),
     ).rejects.toThrow(ConflictException);
+  });
+});
+
+describe('UserService password security', () => {
+  it('rejects a wrong current password with a stable error code', async () => {
+    const { service, userRepository } = await createService();
+    userRepository.findCredentialsById.mockResolvedValue({
+      id: USER.id,
+      passwordHash: await hashPassword('correct-current'),
+    });
+
+    await expect(
+      service.updatePassword(USER.id, {
+        currentPassword: 'wrong-current',
+        password: 'new-safe-password',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_CURRENT_PASSWORD',
+        message: 'Current password is incorrect',
+      },
+    });
+    expect(userRepository.updatePasswordHash).not.toHaveBeenCalled();
+  });
+
+  it('rejects the current password as a replacement', async () => {
+    const { service, userRepository } = await createService();
+    userRepository.findCredentialsById.mockResolvedValue({
+      id: USER.id,
+      passwordHash: await hashPassword('same-password'),
+    });
+
+    await expect(
+      service.updatePassword(USER.id, {
+        currentPassword: 'same-password',
+        password: 'same-password',
+      }),
+    ).rejects.toThrow('New password must differ');
+    expect(userRepository.updatePasswordHash).not.toHaveBeenCalled();
+  });
+
+  it('updates the hash in the credential-lock transaction after checking the old password', async () => {
+    const { service, userRepository, transaction } = await createService();
+    userRepository.findCredentialsById.mockResolvedValue({
+      id: USER.id,
+      passwordHash: await hashPassword('old-password'),
+    });
+
+    await service.updatePassword(USER.id, {
+      currentPassword: 'old-password',
+      password: 'new-safe-password',
+    });
+
+    expect(userRepository.findCredentialsById).toHaveBeenCalledWith(
+      USER.id,
+      transaction,
+    );
+    expect(userRepository.updatePasswordHash).toHaveBeenCalledWith(
+      USER.id,
+      expect.any(String),
+      transaction,
+    );
+  });
+
+  it('rejects the shared former password for new accounts', async () => {
+    const { service, userRepository } = await createService();
+    await expect(
+      service.create(
+        {
+          firstName: 'Test',
+          lastName: 'User',
+          email: 'test@example.com',
+          phone: '0500000000',
+          assignedRoles: [USER_ROLES.ENGINEER],
+          password: 'temp1234',
+        },
+        authorizedUser(),
+      ),
+    ).rejects.toThrow('Choose a different password');
+    expect(userRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('does not authenticate an existing account with the shared former password', async () => {
+    const { service, userRepository } = await createService();
+    userRepository.findCredentialsByEmail.mockResolvedValue({
+      id: USER.id,
+      passwordHash: await hashPassword('temp1234'),
+    });
+
+    await expect(
+      service.findByCredentials(USER.email, 'temp1234'),
+    ).resolves.toBeNull();
+    expect(userRepository.findById).not.toHaveBeenCalled();
   });
 });
 

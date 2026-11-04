@@ -2,14 +2,41 @@ import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { TIME_LIMITS } from './public/constants/time.js';
+import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { QUESTIONNAIRE_LIMITS } from './public/constants/questionnaire.js';
 
 const LIMITS = {
   BODY_BYTES: QUESTIONNAIRE_LIMITS.BODY_BYTES,
   MINUTE_MS: TIME_LIMITS.MINUTE_MS,
   REQUESTS: 120,
+  TOTAL_REQUESTS: 5000,
   CLIENTS: 10000,
   TIMEOUT_MS: TIME_LIMITS.API_TIMEOUT_MS,
+};
+const CLIENT_COOKIE = 'genair_anonymous_client';
+const CLIENT_PATTERN = /^([0-9a-f]{32})\.([0-9a-f]{64})$/;
+
+const signClient = (clientId, secret) =>
+  `${clientId}.${createHmac('sha256', secret).update(clientId).digest('hex')}`;
+
+const readClientToken = (header) =>
+  header
+    ?.split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${CLIENT_COOKIE}=`))
+    ?.slice(CLIENT_COOKIE.length + 1);
+
+const verifyClient = (token, secret) => {
+  const match = token?.match(CLIENT_PATTERN);
+  if (!match) {
+    return null;
+  }
+
+  const [, clientId, signature] = match;
+  const expected = createHmac('sha256', secret).update(clientId).digest();
+  return timingSafeEqual(expected, Buffer.from(signature, 'hex'))
+    ? clientId
+    : null;
 };
 const STATIC_FILES = {
   '/': ['index.html', 'text/html; charset=utf-8'],
@@ -81,32 +108,57 @@ const readBody = async (request) => {
 
 export const createHandler = ({
   backendUrl,
+  clientSecret = process.env.QUESTIONNAIRE_CLIENT_SECRET,
   fetcher = fetch,
   now = Date.now,
 }) => {
   const origin = readBackendUrl(backendUrl);
+  if (typeof clientSecret !== 'string' || clientSecret.length < 32) {
+    throw new Error(
+      'QUESTIONNAIRE_CLIENT_SECRET must contain at least 32 characters',
+    );
+  }
   const clients = new Map();
-  const limited = (address) => {
+  const total = { count: 0, expires: 0 };
+  const limited = (clientId) => {
     const timestamp = now();
+    if (timestamp >= total.expires) {
+      Object.assign(total, { count: 0, expires: timestamp + LIMITS.MINUTE_MS });
+    }
+    total.count += 1;
+    if (total.count > LIMITS.TOTAL_REQUESTS) {
+      return true;
+    }
     for (const [key, value] of clients) {
       if (timestamp >= value.expires) {
         clients.delete(key);
       }
     }
-    const current = clients.get(address);
+    const current = clients.get(clientId);
     if (current) {
       current.count += 1;
       return current.count > LIMITS.REQUESTS;
     }
     if (clients.size >= LIMITS.CLIENTS) {
-      return true;
+      clients.delete(clients.keys().next().value);
     }
 
-    clients.set(address, { count: 1, expires: timestamp + LIMITS.MINUTE_MS });
+    clients.set(clientId, { count: 1, expires: timestamp + LIMITS.MINUTE_MS });
     return false;
   };
 
   return async (request, response) => {
+    const supplied = readClientToken(request.headers.cookie);
+    const clientId = verifyClient(supplied, clientSecret);
+    const token = clientId
+      ? supplied
+      : signClient(randomBytes(16).toString('hex'), clientSecret);
+    if (!clientId) {
+      response.setHeader(
+        'Set-Cookie',
+        `${CLIENT_COOKIE}=${token}; Path=/; Max-Age=86400; HttpOnly; Secure; SameSite=Strict`,
+      );
+    }
     const route = `${request.method} ${request.url}`;
     const staticFile =
       request.method === 'GET' ? STATIC_FILES[request.url] : null;
@@ -126,8 +178,7 @@ export const createHandler = ({
       respond(response, 404, '{"message":"Not found"}');
       return;
     }
-    // Ignore user-controlled forwarding headers; a shared ingress IP receives a conservative limit.
-    if (limited(request.socket.remoteAddress ?? 'unknown')) {
+    if (limited(clientId ?? token.slice(0, 32))) {
       respond(response, 429, '{"message":"Too many requests"}');
       return;
     }
@@ -143,7 +194,10 @@ export const createHandler = ({
       const body = hasBody ? await readBody(request) : null;
       const upstream = await fetcher(`${origin}${path}`, {
         method: request.method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: `${CLIENT_COOKIE}=${token}`,
+        },
         ...(body ? { body } : {}),
         redirect: 'error',
         signal: AbortSignal.timeout(LIMITS.TIMEOUT_MS),
