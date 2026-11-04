@@ -23,6 +23,12 @@ test('public CRM objects deny Data API roles and retain owner access', async () 
         GRANT ALL ON SEQUENCES TO anon, authenticated;
       ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
         GRANT ALL ON FUNCTIONS TO anon, authenticated;
+      ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+        GRANT SELECT ON TABLES TO PUBLIC;
+      ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+        GRANT USAGE ON SEQUENCES TO PUBLIC;
+      ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+        GRANT EXECUTE ON FUNCTIONS TO PUBLIC;
     `);
 
     const migration = await readFile(
@@ -33,6 +39,20 @@ test('public CRM objects deny Data API roles and retain owner access', async () 
       'utf8',
     );
     await database.exec(migration);
+    await database.exec(`
+      CREATE TABLE public.between_migrations (id integer PRIMARY KEY);
+      CREATE SEQUENCE public.between_migrations_seq;
+      CREATE FUNCTION public.between_migrations_fn() RETURNS integer
+        LANGUAGE sql AS 'SELECT 1';
+    `);
+    const correction = await readFile(
+      new URL(
+        '../migrations/2026-11-04-revoke-public-default-object-grants.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+    await database.exec(correction);
     await database.exec(`
       CREATE TABLE public.future_table (id integer PRIMARY KEY);
       CREATE SEQUENCE public.future_sequence;
@@ -60,6 +80,15 @@ test('public CRM objects deny Data API roles and retain owner access', async () 
           AS authenticated_future_sequence,
         has_function_privilege('anon', 'public.future_function()', 'EXECUTE')
           AS anon_future_function,
+        has_table_privilege('anon', 'public.between_migrations', 'SELECT')
+          AS anon_between_read,
+        has_sequence_privilege('authenticated', 'public.between_migrations_seq', 'USAGE')
+          AS authenticated_between_sequence,
+        has_function_privilege('anon', 'public.between_migrations_fn()', 'EXECUTE')
+          AS anon_between_function,
+        (SELECT relrowsecurity FROM pg_class
+         WHERE oid = 'public.between_migrations'::regclass)
+          AS between_rls,
         has_table_privilege('postgres', 'public.users', 'SELECT,UPDATE')
           AS owner_access
     `);
@@ -72,6 +101,10 @@ test('public CRM objects deny Data API roles and retain owner access', async () 
       anon_future_read: false,
       authenticated_future_sequence: false,
       anon_future_function: false,
+      anon_between_read: false,
+      authenticated_between_sequence: false,
+      anon_between_function: false,
+      between_rls: true,
       owner_access: true,
     });
   } finally {

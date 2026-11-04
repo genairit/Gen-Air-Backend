@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import { Readable } from 'node:stream';
 import assert from 'node:assert/strict';
 import { createHandler, readBackendUrl } from '../server.js';
+import STORAGE_KEYS from '../public/constants/storage-keys.json' with { type: 'json' };
 
 const CLIENT_SECRET = 'questionnaire-test-secret-at-least-32-chars';
 const createTestHandler = (options) =>
@@ -76,7 +77,9 @@ test('proxies only exact permitted routes without credentials or user-selected d
   assert.equal(calls[0][1].headers['Content-Type'], 'application/json');
   assert.match(
     calls[0][1].headers.Cookie,
-    /^genair_anonymous_client=[0-9a-f]{32}\.[0-9a-f]{64}$/,
+    new RegExp(
+      `^${STORAGE_KEYS.ANONYMOUS_CLIENT_COOKIE}=[0-9a-f]{32}\\.[0-9a-f]{64}$`,
+    ),
   );
   assert.equal(calls[0][1].headers.Cookie.includes('session=secret'), false);
   assert.equal(calls[0][1].redirect, 'error');
@@ -152,7 +155,9 @@ test('rejects a forged caller cookie and issues a secure replacement', async () 
     }),
     {
       path: '/questionnaire/genair-workflow',
-      headers: { cookie: 'genair_anonymous_client=' + 'a'.repeat(97) },
+      headers: {
+        cookie: `${STORAGE_KEYS.ANONYMOUS_CLIENT_COOKIE}=${'a'.repeat(97)}`,
+      },
     },
   );
   assert.equal(result.status, 200);

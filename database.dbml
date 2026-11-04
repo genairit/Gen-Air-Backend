@@ -38,7 +38,7 @@ Table users {
 }
 
 Table auth_login_attempts {
-  account_key   char(64)    [pk, note: 'HMAC of account or account and anonymous caller']
+  account_key   char(64)    [pk, note: 'HMAC key for a separate account, caller, or global login bucket']
   attempt_count integer     [not null]
   expires_at    timestamptz [not null]
 

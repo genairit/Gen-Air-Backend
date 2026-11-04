@@ -1,7 +1,26 @@
+import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { TIME_UNITS } from '@Constants/time.constant';
 import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 
-export const ANONYMOUS_CLIENT_COOKIE = 'genair_anonymous_client';
+const storageKeys: unknown = JSON.parse(
+  readFileSync(
+    join(
+      __dirname,
+      '../../apps/questionnaire/public/constants/storage-keys.json',
+    ),
+    'utf8',
+  ),
+);
+if (
+  !storageKeys ||
+  typeof storageKeys !== 'object' ||
+  !('ANONYMOUS_CLIENT_COOKIE' in storageKeys) ||
+  typeof storageKeys.ANONYMOUS_CLIENT_COOKIE !== 'string'
+) {
+  throw new Error('Anonymous client cookie storage key is missing');
+}
+export const ANONYMOUS_CLIENT_COOKIE = storageKeys.ANONYMOUS_CLIENT_COOKIE;
 const CLIENT_PATTERN = /^([0-9a-f]{32})\.([0-9a-f]{64})$/;
 
 export const signAnonymousClient = (

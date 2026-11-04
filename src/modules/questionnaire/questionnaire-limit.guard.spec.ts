@@ -1,12 +1,16 @@
+import {
+  signAnonymousClient,
+  ANONYMOUS_CLIENT_COOKIE,
+} from '@Utilities/anonymous-client.utility';
+
 import { HttpException } from '@nestjs/common';
 import { QuestionnaireLimitGuard } from './questionnaire-limit.guard';
 import { QUESTIONNAIRE_LIMITS } from './constants/questionnaire.constant';
-import { signAnonymousClient } from '@Utilities/anonymous-client.utility';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 
 const CLIENT_SECRET = 'questionnaire-test-secret-at-least-32-chars';
 const clientCookie = (id: string) =>
-  `genair_anonymous_client=${signAnonymousClient(id.repeat(32), CLIENT_SECRET)}`;
+  `${ANONYMOUS_CLIENT_COOKIE}=${signAnonymousClient(id.repeat(32), CLIENT_SECRET)}`;
 const context = (
   method: string,
   body: unknown = null,

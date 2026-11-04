@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { TIME_LIMITS, TIME_UNITS } from './public/constants/time.js';
 import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { QUESTIONNAIRE_LIMITS } from './public/constants/questionnaire.js';
+import STORAGE_KEYS from './public/constants/storage-keys.json' with { type: 'json' };
 
 const LIMITS = {
   BODY_BYTES: QUESTIONNAIRE_LIMITS.BODY_BYTES,
@@ -13,7 +14,7 @@ const LIMITS = {
   CLIENTS: 10000,
   TIMEOUT_MS: TIME_LIMITS.API_TIMEOUT_MS,
 };
-const CLIENT_COOKIE = 'genair_anonymous_client';
+const CLIENT_COOKIE = STORAGE_KEYS.ANONYMOUS_CLIENT_COOKIE;
 const CLIENT_PATTERN = /^([0-9a-f]{32})\.([0-9a-f]{64})$/;
 
 const signClient = (clientId, secret) =>

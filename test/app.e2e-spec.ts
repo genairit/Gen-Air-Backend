@@ -3,9 +3,11 @@ import { App } from 'supertest/types';
 import { Test } from '@nestjs/testing';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from '@Guards/auth.guard';
+import { TIME_UNITS } from '@Constants/time.constant';
 import { AuthService } from '@Modules/auth/auth.service';
 import { AuthController } from '@Modules/auth/auth.controller';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ANONYMOUS_CLIENT_COOKIE } from '@Utilities/anonymous-client.utility';
 
 describe('Auth HTTP boundary (e2e)', () => {
   const previousClientSecret = process.env.QUESTIONNAIRE_CLIENT_SECRET ?? null;
@@ -67,8 +69,11 @@ describe('Auth HTTP boundary (e2e)', () => {
       user: { id: 'employee-id' },
       accessToken: 'test-access-token',
     });
+    const cookieLifetimeSeconds = TIME_UNITS.DAY_MS / TIME_UNITS.SECOND_MS;
     expect(response.headers['set-cookie']?.[0]).toMatch(
-      /^genair_anonymous_client=[0-9a-f]{32}\.[0-9a-f]{64}; Path=\/; Max-Age=86400; HttpOnly; Secure; SameSite=Strict$/,
+      new RegExp(
+        `^${ANONYMOUS_CLIENT_COOKIE}=[0-9a-f]{32}\\.[0-9a-f]{64}; Path=/; Max-Age=${cookieLifetimeSeconds}; HttpOnly; Secure; SameSite=Strict$`,
+      ),
     );
     expect(login).toHaveBeenCalledWith(credentials, expect.any(String));
   });
