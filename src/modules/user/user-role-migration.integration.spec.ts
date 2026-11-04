@@ -29,6 +29,7 @@ import { CreateUserDto } from '@Modules/user/dto/create-user.dto';
 import { authorizedUser } from '../../testing/authorization.fixture';
 import { UserRoleService } from '@Modules/user-role/user-role.service';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
+import { LoginAttemptService } from '@Modules/auth/login-attempt.service';
 import { QueryTypes, Transaction as SequelizeTransaction } from 'sequelize';
 import { UserRoleAuditService } from '@Modules/user-role-audit/user-role-audit.service';
 import { RolePermissionService } from '@Modules/role-permission/role-permission.service';
@@ -553,6 +554,7 @@ const createUserService = async (
     return {
       id: user.id,
       role: user.role,
+      sessionVersion: 0,
       deletedAt: null,
       email: user.email ?? `${user.id}@test.invalid`,
       phone: '0500000000',
@@ -828,10 +830,15 @@ describe('role assignment migrations', () => {
           useValue: {
             verifyAsync: jest.fn().mockResolvedValue({
               sub: LEGACY_UPDATE_USER_ID,
+              sessionVersion: 0,
             }),
           },
         },
         { provide: UserService, useValue: service },
+        {
+          provide: LoginAttemptService,
+          useValue: { consume: jest.fn(), reset: jest.fn() },
+        },
         {
           provide: RolePermissionService,
           useValue: { getPermissions: jest.fn().mockResolvedValue([]) },

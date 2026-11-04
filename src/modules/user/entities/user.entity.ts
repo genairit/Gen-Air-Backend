@@ -61,6 +61,10 @@ export class User
   })
   declare passwordHash: string;
 
+  @Default(0)
+  @Column({ allowNull: false, type: DataType.INTEGER })
+  declare sessionVersion: number;
+
   @CreatedAt
   declare createdAt: Date;
 

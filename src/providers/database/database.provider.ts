@@ -32,7 +32,7 @@ const logger = new TypedLogger('DatabaseProvider');
 
 const DEFAULT_DB_PORT = '5432';
 
-const buildSequelizeOptions = (): SequelizeOptions => {
+export const buildSequelizeOptions = (): SequelizeOptions => {
   const dbName = EnvironmentManager.get('DB_NAME', { errorOnMissing: true });
   const dbUser = EnvironmentManager.get('DB_USER', { errorOnMissing: true });
   const dbPassword = EnvironmentManager.get('DB_PASS', {
@@ -43,6 +43,9 @@ const buildSequelizeOptions = (): SequelizeOptions => {
     defaultValue: DEFAULT_DB_PORT,
   });
   const useSSL = EnvironmentManager.get('DB_SSL') === 'true';
+  const certificateAuthority = useSSL
+    ? EnvironmentManager.get('DB_SSL_CA', { errorOnMissing: true })
+    : null;
 
   return {
     host: dbHost,
@@ -66,8 +69,9 @@ const buildSequelizeOptions = (): SequelizeOptions => {
       dialectOptions: {
         ssl: {
           require: true,
-          rejectUnauthorized:
-            EnvironmentManager.get('DB_SSL_REJECT_UNAUTHORIZED') !== 'false',
+          ca: certificateAuthority,
+          servername: dbHost,
+          rejectUnauthorized: true,
         },
       },
     }),

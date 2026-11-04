@@ -17,6 +17,12 @@ import {
 } from './interfaces/user.interface';
 
 import {
+  hashPassword,
+  verifyPassword,
+  isBlockedPassword,
+} from '@Utilities/password.utility';
+
+import {
   USER_ROLES,
   UserRoleType,
   USER_ROLE_VALUES,
@@ -32,10 +38,12 @@ import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toCursorBatch } from '@Utilities/cursor-batch.utility';
 import { assertPermissions } from '@Utilities/permission.utility';
+import { DUMMY_PASSWORD_HASH } from '@Constants/password.constant';
 import { UpdateUserPasswordDto } from './dto/update-user-password.dto';
 import { UserRoleService } from '@Modules/user-role/user-role.service';
+import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
-import { hashPassword, verifyPassword } from '@Utilities/password.utility';
+import { HTTP_ERROR_MESSAGES } from '@Constants/http-error-message.constant';
 import { UserRoleAuditService } from '@Modules/user-role-audit/user-role-audit.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { USER_ROLE_AUDIT_ACTIONS } from '@Modules/user-role-audit/constants/user-role-audit.constant';
@@ -89,21 +97,29 @@ export class UserService {
     password: string,
   ): Promise<IUser | null> {
     const credentials = await this.userRepository.findCredentialsByEmail(email);
-
-    if (!credentials) {
-      return null;
-    }
-
     const isPasswordValid = await verifyPassword(
       password,
-      credentials.passwordHash,
+      credentials?.passwordHash ?? DUMMY_PASSWORD_HASH,
     );
 
-    if (!isPasswordValid) {
+    if (!credentials || !isPasswordValid || isBlockedPassword(password)) {
       return null;
     }
 
-    return this.findById(credentials.id);
+    return this.transactions.run(async (transaction) => {
+      const currentCredentials = await this.userRepository.findCredentialsById(
+        credentials.id,
+        transaction,
+      );
+      if (
+        !currentCredentials ||
+        currentCredentials.passwordHash !== credentials.passwordHash
+      ) {
+        return null;
+      }
+
+      return this.requireUserInTransaction(credentials.id, transaction);
+    });
   }
 
   async getByFilter(filter: GetUsersByFilterDto): Promise<ICursorPage<IUser>> {
@@ -184,6 +200,7 @@ export class UserService {
     user: CreateUserDto,
     actor: IAuthorizedUser | null,
   ): Promise<IUser> {
+    this.assertAllowedPassword(user.password);
     await this.assertEmailAvailable(user.email);
 
     const assignedRoles = user.assignedRoles;
@@ -352,14 +369,46 @@ export class UserService {
     userId: string,
     changes: UpdateUserPasswordDto,
   ): Promise<void> {
-    const passwordHash = await hashPassword(changes.password);
-    const isUpdated = await this.userRepository.updatePasswordHash(
-      userId,
-      passwordHash,
-    );
+    this.assertAllowedPassword(changes.password);
+    await this.transactions.run(async (transaction) => {
+      const credentials = await this.userRepository.findCredentialsById(
+        userId,
+        transaction,
+      );
+      if (!credentials) {
+        throw new NotFoundException(`User ${userId} was not found`);
+      }
 
-    if (!isUpdated) {
-      throw new NotFoundException(`User ${userId} was not found`);
+      const valid = await verifyPassword(
+        changes.currentPassword,
+        credentials.passwordHash,
+      );
+      if (!valid) {
+        throw new BadRequestException({
+          code: HTTP_ERROR_CODES.INVALID_CURRENT_PASSWORD,
+          message:
+            HTTP_ERROR_MESSAGES[HTTP_ERROR_CODES.INVALID_CURRENT_PASSWORD],
+        });
+      }
+
+      if (await verifyPassword(changes.password, credentials.passwordHash)) {
+        throw new BadRequestException(
+          'New password must differ from the current password',
+        );
+      }
+
+      const passwordHash = await hashPassword(changes.password);
+      await this.userRepository.updatePasswordHash(
+        userId,
+        passwordHash,
+        transaction,
+      );
+    });
+  }
+
+  private assertAllowedPassword(password: string): void {
+    if (isBlockedPassword(password)) {
+      throw new BadRequestException('Choose a different password');
     }
   }
 

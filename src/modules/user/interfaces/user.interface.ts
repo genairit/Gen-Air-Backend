@@ -12,6 +12,7 @@ export interface IUser {
   passwordHash?: string;
   employeeNumber: string;
   deletedAt: Date | null;
+  sessionVersion?: number;
   assignedRoles?: UserRoleType[];
 }
 

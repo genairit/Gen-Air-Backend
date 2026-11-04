@@ -20,6 +20,7 @@
     "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json",
     "check:drive": "ts-node -r tsconfig-paths/register src/scripts/check-google-drive.ts",
     "create-admin": "node dist/scripts/create-admin.js",
+    "rotate-legacy-password": "node dist/scripts/rotate-legacy-password.js",
     "typecheck:iac": "tsc --noEmit --strict --skipLibCheck --module nodenext --moduleResolution nodenext --types jest .railway/railway.ts .railway/railway.spec.ts",
     "test:iac": "jest --rootDir .railway",
     "test:questionnaire-migration": "node --test test/questionnaire-migration.mjs"
