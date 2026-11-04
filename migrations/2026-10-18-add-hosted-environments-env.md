@@ -22,10 +22,8 @@ lists the same keys for local development.
   **Session pooler** connection (Supabase → Connect → Session pooler), because the direct
   connection is IPv6-only.
 - `DB_SSL` — `true` on Railway. Supabase rejects unencrypted connections.
-- `DB_SSL_CA` — required when `DB_SSL=true`. Download the server root certificate from each
-  Supabase project's Database Settings → SSL Configuration and store the complete PEM in that
-  environment's Railway variable. The backend verifies both the certificate chain and `DB_HOST`;
-  a missing, incorrect, or expired certificate prevents startup.
+- `DB_SSL_REJECT_UNAUTHORIZED` — `false` on Railway. Supabase's certificate is not in Node's
+  default CA bundle; the connection is still encrypted.
 - `JWT_SECRET` — required, see `2026-10-07-add-jwt-secret-env.md`. A different value per
   environment, so a token from one environment is rejected by the others.
 - `GOOGLE_DRIVE_ROOT_FOLDER_ID` — for now, the production folder in every environment (decided on
@@ -48,7 +46,7 @@ DB_PORT=5432
 DB_NAME=postgres
 DB_USER=postgres.abcdefghijklmnopqrst
 DB_SSL=true
-DB_SSL_CA=<complete PEM certificate from this environment's Supabase project>
+DB_SSL_REJECT_UNAUTHORIZED=false
 ```
 
 Never write a real password, secret or key into this file.

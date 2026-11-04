@@ -10,7 +10,7 @@ The quotation execution email endpoint stays disabled unless `EMAIL_DELIVERY_MOD
 | `EMAIL_ALLOWED_RECIPIENTS` | In allowlist mode | Comma-separated exact test email addresses, e.g. `qa@example.test,designer@example.test`. Every recipient must match. |
 | `SMTP_HOST` | Yes | SMTP host, e.g. `smtp.example.test`. |
 | `SMTP_PORT` | Yes | SMTP port, e.g. `587` or `465`. |
-| `SMTP_SECURE` | No | `true` for TLS on connect; port 465 also enables it. Port 587 requires STARTTLS and fails closed if the server does not offer it. |
+| `SMTP_SECURE` | No | `true` for TLS on connect; port 465 also enables it. |
 | `SMTP_USER` | With `SMTP_PASSWORD` | SMTP username; omit both for a trusted local relay. |
 | `SMTP_PASSWORD` | With `SMTP_USER` | SMTP password; keep only in the deployment secret store. |
 | `SMTP_FROM` | Yes | Mailbox email address, e.g. `projects@example.test`. Reply-To uses the logged-in sender's email. |
