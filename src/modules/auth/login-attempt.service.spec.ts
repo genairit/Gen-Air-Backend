@@ -1,4 +1,5 @@
 import { Sequelize } from 'sequelize';
+import { mock } from 'jest-mock-extended';
 import { HttpException } from '@nestjs/common';
 import { LoginAttemptService } from './login-attempt.service';
 
@@ -7,21 +8,31 @@ const database = () => {
   const query = jest.fn(
     (sql: string, options?: { bind?: Record<string, string> }) => {
       if (sql.startsWith('INSERT')) {
-        const keys = [options?.bind?.accountKey, options?.bind?.callerKey];
-        return keys.map((accountKey) => {
-          const next = (counts.get(accountKey!) ?? 0) + 1;
-          counts.set(accountKey!, next);
-          return { accountKey, attemptCount: next };
-        });
+        const keys = [
+          options?.bind?.accountKey,
+          options?.bind?.callerKey,
+          options?.bind?.globalKey,
+        ];
+        return Promise.resolve(
+          keys.map((accountKey) => {
+            if (!accountKey) {
+              throw new Error('Missing bound login quota key');
+            }
+            const next = (counts.get(accountKey) ?? 0) + 1;
+            counts.set(accountKey, next);
+            return { accountKey, attemptCount: next };
+          }),
+        );
       }
-      if (sql.includes('account_key IN')) {
+      if (sql.includes('account_key = $accountKey')) {
         counts.delete(options?.bind?.accountKey ?? '');
-        counts.delete(options?.bind?.callerKey ?? '');
       }
-      return [];
+      return Promise.resolve([]);
     },
   );
-  return { query, sequelize: { query } as unknown as Sequelize };
+  const sequelize = mock<Sequelize>();
+  sequelize.query.mockImplementation(query);
+  return { query, sequelize };
 };
 
 describe('LoginAttemptService policy', () => {
@@ -64,14 +75,49 @@ describe('LoginAttemptService policy', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('clears account and caller counters after a successful login', async () => {
+  it('caps one caller across different email addresses', async () => {
+    const { sequelize } = database();
+    const service = new LoginAttemptService(sequelize);
+
+    await Promise.all(
+      Array.from({ length: 10 }, (_, index) =>
+        service.consume(`user-${index}@gen-air.example`, 'same-client'),
+      ),
+    );
+    await expect(
+      service.consume('another@gen-air.example', 'same-client'),
+    ).rejects.toMatchObject({ status: 429 });
+    await expect(
+      service.consume('another@gen-air.example', 'other-client'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('caps cookie rotation and email spraying with a shared aggregate quota', async () => {
+    const { sequelize } = database();
+    const firstReplica = new LoginAttemptService(sequelize);
+    const secondReplica = new LoginAttemptService(sequelize);
+
+    await Promise.all(
+      Array.from({ length: 300 }, (_, index) =>
+        firstReplica.consume(
+          `spray-${index}@gen-air.example`,
+          `rotated-client-${index}`,
+        ),
+      ),
+    );
+    await expect(
+      secondReplica.consume('next@gen-air.example', 'next-client'),
+    ).rejects.toMatchObject({ status: 429 });
+  });
+
+  it('clears the account counter after a successful login while preserving the caller quota', async () => {
     const { sequelize } = database();
     const service = new LoginAttemptService(sequelize);
     await service.consume('user@gen-air.example', 'client-a');
     await service.reset('user@gen-air.example', 'client-a');
 
     await Promise.all(
-      Array.from({ length: 10 }, () =>
+      Array.from({ length: 9 }, () =>
         service.consume('user@gen-air.example', 'client-a'),
       ),
     );

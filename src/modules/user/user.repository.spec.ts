@@ -7,10 +7,8 @@ describe('UserRepository password rotation', () => {
 
   it('increments the session version in the same transaction as the password hash', async () => {
     const transaction = Transaction.prototype;
-    const update = jest.spyOn(User, 'update').mockResolvedValue([1] as never);
-    const increment = jest
-      .spyOn(User, 'increment')
-      .mockResolvedValue([] as never);
+    const update = jest.spyOn(User, 'update').mockResolvedValue([1, []]);
+    const increment = jest.spyOn(User, 'increment').mockResolvedValue([[], 1]);
     const repository = new UserRepository();
 
     await expect(

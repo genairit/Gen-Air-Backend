@@ -6,4 +6,5 @@ export const PASSWORD_HASHING = {
 
 export const DUMMY_PASSWORD_HASH = `${'00'.repeat(PASSWORD_HASHING.SALT_BYTES)}:${'00'.repeat(PASSWORD_HASHING.KEY_LENGTH)}`;
 
-export const BLOCKED_PASSWORDS = ['temp1234'] as const;
+export const LEGACY_SHARED_PASSWORD = 'temp1234';
+export const BLOCKED_PASSWORDS = [LEGACY_SHARED_PASSWORD] as const;

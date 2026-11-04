@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { readFile } from 'node:fs/promises';
-import { TIME_LIMITS } from './public/constants/time.js';
+import { TIME_LIMITS, TIME_UNITS } from './public/constants/time.js';
 import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { QUESTIONNAIRE_LIMITS } from './public/constants/questionnaire.js';
 
@@ -156,7 +156,7 @@ export const createHandler = ({
     if (!clientId) {
       response.setHeader(
         'Set-Cookie',
-        `${CLIENT_COOKIE}=${token}; Path=/; Max-Age=86400; HttpOnly; Secure; SameSite=Strict`,
+        `${CLIENT_COOKIE}=${token}; Path=/; Max-Age=${TIME_LIMITS.DAY_MS / TIME_UNITS.SECOND_MS}; HttpOnly; Secure; SameSite=Strict`,
       );
     }
     const route = `${request.method} ${request.url}`;

@@ -1,3 +1,4 @@
+import { TIME_UNITS } from '@Constants/time.constant';
 import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 
 export const ANONYMOUS_CLIENT_COOKIE = 'genair_anonymous_client';
@@ -48,4 +49,4 @@ export const createAnonymousClient = (
 };
 
 export const anonymousClientSetCookie = (token: string): string =>
-  `${ANONYMOUS_CLIENT_COOKIE}=${token}; Path=/; Max-Age=86400; HttpOnly; Secure; SameSite=Strict`;
+  `${ANONYMOUS_CLIENT_COOKIE}=${token}; Path=/; Max-Age=${TIME_UNITS.DAY_MS / TIME_UNITS.SECOND_MS}; HttpOnly; Secure; SameSite=Strict`;

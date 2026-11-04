@@ -1,6 +1,6 @@
 Project nest_server_infrastructure {
   database_type: 'PostgreSQL'
-  Note: 'GenAir CRM MVP schema. Keep in sync with the SQL files in migrations/.'
+  Note: 'GenAir CRM MVP schema. Keep in sync with migrations/. Public application tables have RLS enabled and Data API roles have no direct grants.'
 }
 
 Enum project_detail_field_set {

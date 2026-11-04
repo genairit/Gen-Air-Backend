@@ -215,6 +215,29 @@ describe('UserService password security', () => {
     ).resolves.toBeNull();
     expect(userRepository.findById).not.toHaveBeenCalled();
   });
+
+  it('rejects an old password if it rotates while verification is in progress', async () => {
+    const { service, userRepository, transaction } = await createService();
+    const oldHash = await hashPassword('old-password');
+    const newHash = await hashPassword('new-password');
+    userRepository.findCredentialsByEmail.mockResolvedValue({
+      id: USER.id,
+      passwordHash: oldHash,
+    });
+    userRepository.findCredentialsById.mockResolvedValue({
+      id: USER.id,
+      passwordHash: newHash,
+    });
+
+    await expect(
+      service.findByCredentials(USER.email, 'old-password'),
+    ).resolves.toBeNull();
+    expect(userRepository.findCredentialsById).toHaveBeenCalledWith(
+      USER.id,
+      transaction,
+    );
+    expect(userRepository.findById).not.toHaveBeenCalled();
+  });
 });
 
 describe('UserService.getRoleCounts', () => {

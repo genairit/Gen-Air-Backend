@@ -45,6 +45,4 @@ export const verifyPassword = async (
 };
 
 export const isBlockedPassword = (password: string): boolean =>
-  BLOCKED_PASSWORDS.some(
-    (blocked) => password.trim().toLowerCase() === blocked,
-  );
+  BLOCKED_PASSWORDS.some((blocked) => password === blocked);

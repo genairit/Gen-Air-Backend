@@ -10,6 +10,7 @@ import { AppModule } from '../app.module';
 import { NestFactory } from '@nestjs/core';
 import { createInterface } from 'node:readline';
 import { UserRepository } from '@Modules/user/user.repository';
+import { LEGACY_SHARED_PASSWORD } from '@Constants/password.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
 const options = {
@@ -39,7 +40,7 @@ const readNewPassword = async (): Promise<string> => {
 
 const main = async (): Promise<void> => {
   const { values } = parseArgs({ options });
-  if (Boolean(values.audit) === Boolean(values.email)) {
+  if ((values.audit === true) === (typeof values.email === 'string')) {
     throw new Error('Pass exactly one of --audit or --email <employee-email>');
   }
 
@@ -50,7 +51,7 @@ const main = async (): Promise<void> => {
       const credentials = await users.findAllCredentials();
       const affected: string[] = [];
       for (const user of credentials) {
-        if (await verifyPassword('temp1234', user.passwordHash)) {
+        if (await verifyPassword(LEGACY_SHARED_PASSWORD, user.passwordHash)) {
           affected.push(user.email);
         }
       }
@@ -73,7 +74,10 @@ const main = async (): Promise<void> => {
       throw new Error('New password does not meet the password policy');
     }
     const target = await users.findCredentialsByEmail(email);
-    if (!target || !(await verifyPassword('temp1234', target.passwordHash))) {
+    if (
+      !target ||
+      !(await verifyPassword(LEGACY_SHARED_PASSWORD, target.passwordHash))
+    ) {
       throw new Error(
         'No active account with the former shared password was found',
       );
@@ -82,7 +86,10 @@ const main = async (): Promise<void> => {
     const hash = await hashPassword(password);
     await app.get(DatabaseTransactionService).run(async (transaction) => {
       const locked = await users.findCredentialsById(target.id, transaction);
-      if (!locked || !(await verifyPassword('temp1234', locked.passwordHash))) {
+      if (
+        !locked ||
+        !(await verifyPassword(LEGACY_SHARED_PASSWORD, locked.passwordHash))
+      ) {
         throw new Error('The account password changed before rotation');
       }
       await users.updatePasswordHash(target.id, hash, transaction);

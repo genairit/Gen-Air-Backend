@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { QueryTypes, Sequelize } from 'sequelize';
+import { TIME_UNITS } from '@Constants/time.constant';
 import { ProviderNames } from '@Providers/database/provider-names';
 import { EnvironmentManager } from '@Utilities/environment-manager.utility';
 import { Inject, Injectable, HttpException, HttpStatus } from '@nestjs/common';
@@ -7,8 +8,10 @@ import { Inject, Injectable, HttpException, HttpStatus } from '@nestjs/common';
 const LOGIN_LIMIT = {
   CALLER_ATTEMPTS: 10,
   ACCOUNT_ATTEMPTS: 100,
+  GLOBAL_ATTEMPTS: 300,
   WINDOW_MINUTES: 15,
-  CLEANUP_INTERVAL_MS: 60_000,
+  GLOBAL_WINDOW_MINUTES: 1,
+  CLEANUP_INTERVAL_MS: TIME_UNITS.MINUTE_MS,
 } as const;
 
 interface IAttemptCount {
@@ -31,7 +34,8 @@ export class LoginAttemptService {
       `INSERT INTO public.auth_login_attempts (account_key, attempt_count, expires_at)
        VALUES
          ($accountKey, 1, now() + $windowMinutes * interval '1 minute'),
-         ($callerKey, 1, now() + $windowMinutes * interval '1 minute')
+         ($callerKey, 1, now() + $windowMinutes * interval '1 minute'),
+         ($globalKey, 1, now() + $globalWindowMinutes * interval '1 minute')
        ON CONFLICT (account_key) DO UPDATE SET
          attempt_count = CASE
            WHEN auth_login_attempts.expires_at <= now() THEN 1
@@ -39,12 +43,16 @@ export class LoginAttemptService {
          END,
          expires_at = CASE
            WHEN auth_login_attempts.expires_at <= now()
-             THEN now() + $windowMinutes * interval '1 minute'
+             THEN EXCLUDED.expires_at
            ELSE auth_login_attempts.expires_at
          END
        RETURNING account_key AS "accountKey", attempt_count AS "attemptCount"`,
       {
-        bind: { ...keys, windowMinutes: LOGIN_LIMIT.WINDOW_MINUTES },
+        bind: {
+          ...keys,
+          windowMinutes: LOGIN_LIMIT.WINDOW_MINUTES,
+          globalWindowMinutes: LOGIN_LIMIT.GLOBAL_WINDOW_MINUTES,
+        },
         type: QueryTypes.SELECT,
       },
     );
@@ -54,11 +62,16 @@ export class LoginAttemptService {
     const caller = attempts.find(
       (attempt) => attempt.accountKey === keys.callerKey,
     );
+    const global = attempts.find(
+      (attempt) => attempt.accountKey === keys.globalKey,
+    );
     if (
       !account ||
       !caller ||
+      !global ||
       account.attemptCount > LOGIN_LIMIT.ACCOUNT_ATTEMPTS ||
-      caller.attemptCount > LOGIN_LIMIT.CALLER_ATTEMPTS
+      caller.attemptCount > LOGIN_LIMIT.CALLER_ATTEMPTS ||
+      global.attemptCount > LOGIN_LIMIT.GLOBAL_ATTEMPTS
     ) {
       throw new HttpException(
         'Too many login attempts',
@@ -70,15 +83,15 @@ export class LoginAttemptService {
   async reset(email: string, clientId: string): Promise<void> {
     const keys = this.keys(email, clientId);
     await this.sequelize.query(
-      'DELETE FROM public.auth_login_attempts WHERE account_key IN ($accountKey, $callerKey)',
-      { bind: keys },
+      'DELETE FROM public.auth_login_attempts WHERE account_key = $accountKey',
+      { bind: { accountKey: keys.accountKey } },
     );
   }
 
   private keys(
     email: string,
     clientId: string,
-  ): { accountKey: string; callerKey: string } {
+  ): { accountKey: string; callerKey: string; globalKey: string } {
     const secret = EnvironmentManager.get('JWT_SECRET', {
       errorOnMissing: true,
     });
@@ -87,7 +100,8 @@ export class LoginAttemptService {
       createHmac('sha256', secret).update(value).digest('hex');
     return {
       accountKey: hash(`account:${normalized}`),
-      callerKey: hash(`caller:${normalized}:${clientId}`),
+      callerKey: hash(`caller:${clientId}`),
+      globalKey: hash('global:login'),
     };
   }
 

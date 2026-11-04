@@ -36,8 +36,8 @@ const createService = async () => {
     getPermissions: jest.fn().mockResolvedValue([PERMISSIONS.TASKS_CREATE]),
   };
   const attempts = {
-    consume: jest.fn().mockResolvedValue(undefined),
-    reset: jest.fn().mockResolvedValue(undefined),
+    consume: jest.fn().mockImplementation(async () => {}),
+    reset: jest.fn().mockImplementation(async () => {}),
   };
   const module = await Test.createTestingModule({
     providers: [

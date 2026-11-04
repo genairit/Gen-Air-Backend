@@ -43,6 +43,7 @@ import { UpdateUserPasswordDto } from './dto/update-user-password.dto';
 import { UserRoleService } from '@Modules/user-role/user-role.service';
 import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
+import { HTTP_ERROR_MESSAGES } from '@Constants/http-error-message.constant';
 import { UserRoleAuditService } from '@Modules/user-role-audit/user-role-audit.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { USER_ROLE_AUDIT_ACTIONS } from '@Modules/user-role-audit/constants/user-role-audit.constant';
@@ -105,7 +106,20 @@ export class UserService {
       return null;
     }
 
-    return this.findById(credentials.id);
+    return this.transactions.run(async (transaction) => {
+      const currentCredentials = await this.userRepository.findCredentialsById(
+        credentials.id,
+        transaction,
+      );
+      if (
+        !currentCredentials ||
+        currentCredentials.passwordHash !== credentials.passwordHash
+      ) {
+        return null;
+      }
+
+      return this.requireUserInTransaction(credentials.id, transaction);
+    });
   }
 
   async getByFilter(filter: GetUsersByFilterDto): Promise<ICursorPage<IUser>> {
@@ -372,7 +386,8 @@ export class UserService {
       if (!valid) {
         throw new BadRequestException({
           code: HTTP_ERROR_CODES.INVALID_CURRENT_PASSWORD,
-          message: 'Current password is incorrect',
+          message:
+            HTTP_ERROR_MESSAGES[HTTP_ERROR_CODES.INVALID_CURRENT_PASSWORD],
         });
       }
 
