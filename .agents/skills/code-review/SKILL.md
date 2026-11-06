@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: 'Run the code review agent - enforce the elegance standards through its Definition of Done; Mode A posts an inline review on a GitHub PR URL, Mode B reviews local changes and annotates them with // CR: comments.'
+description: "Run the code review agent - enforce the development standards through its Definition of Done; Mode A posts an inline review on a GitHub PR URL, Mode B reviews local changes and annotates them with // CR: comments."
 ---
 
 # Code review
@@ -15,7 +15,7 @@ the review checklist, and the exact output templates. Also follow the repository
 - Run the review in a fresh subagent or session when one is available, so it is
   not biased by the reasoning that produced the code. Otherwise, re-read the full
   branch diff from scratch before judging it.
-- Read the elegance rule live from `rules/coding-standards.md` on every review.
+- Read the numbered development standards live from `agents/developer-agent.md` on every review.
 - In the development workflow, use Mode B against the latest `origin/dev`,
   including uncommitted and untracked files.
 - Never commit or push. Use the platform's temp directory for any file a CLI call

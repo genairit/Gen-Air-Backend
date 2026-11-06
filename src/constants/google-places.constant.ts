@@ -1,9 +1,12 @@
 import { TIME_UNITS } from './date';
 
+const DEFAULT_FORMATTING_COUNTRY_CODE = 'IL';
+const SERVICE_COUNTRY_CODES = [DEFAULT_FORMATTING_COUNTRY_CODE, 'PS'] as const;
+
 export const GOOGLE_PLACES = {
-  REGION_CODE: 'il',
-  COUNTRY_CODE: 'IL',
+  SERVICE_COUNTRY_CODES,
   LANGUAGE_CODE: 'he',
+  REGION_CODE: DEFAULT_FORMATTING_COUNTRY_CODE.toLowerCase(),
   AUTOCOMPLETE_PATH: '/places:autocomplete',
   API_KEY_HEADER: 'X-Goog-Api-Key',
   FIELD_MASK_HEADER: 'X-Goog-FieldMask',

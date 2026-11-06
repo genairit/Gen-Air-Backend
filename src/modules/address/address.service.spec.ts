@@ -82,6 +82,25 @@ describe('AddressService.getVerifiedAddress', () => {
     );
   });
 
+  it.each(['עלמון', 'ענתות'])(
+    'accepts %s when Google classifies the selected place under PS',
+    async (city) => {
+      const address: IPlaceAddress = {
+        ...ISRAELI_ADDRESS,
+        city,
+        countryCode: 'PS',
+        formattedAddress: city,
+      };
+      const { service } = await createService({
+        findPlace: jest.fn().mockResolvedValue(address),
+      });
+
+      await expect(service.getVerifiedAddress(LOOKUP)).resolves.toEqual(
+        address,
+      );
+    },
+  );
+
   it('rejects a place id Google does not know', async () => {
     const { service } = await createService({
       findPlace: jest.fn().mockResolvedValue(null),
@@ -92,17 +111,20 @@ describe('AddressService.getVerifiedAddress', () => {
     );
   });
 
-  it('rejects a place outside Israel', async () => {
-    const { service } = await createService({
-      findPlace: jest
-        .fn()
-        .mockResolvedValue({ ...ISRAELI_ADDRESS, countryCode: 'JO' }),
-    });
+  it.each(['JO', 'EG', 'US', ''])(
+    'rejects a place with unsupported country code %s',
+    async (countryCode) => {
+      const { service } = await createService({
+        findPlace: jest
+          .fn()
+          .mockResolvedValue({ ...ISRAELI_ADDRESS, countryCode }),
+      });
 
-    await expect(service.getVerifiedAddress(LOOKUP)).rejects.toThrow(
-      BadRequestException,
-    );
-  });
+      await expect(service.getVerifiedAddress(LOOKUP)).rejects.toThrow(
+        BadRequestException,
+      );
+    },
+  );
 
   it('rejects a place with no country', async () => {
     const { service } = await createService({

@@ -11,6 +11,11 @@ import {
 } from 'sequelize-typescript';
 
 import {
+  USER_ROLE_VALUES,
+  type UserRoleType,
+} from '@Constants/user-role.constant';
+
+import {
   TASK_STATUS_VALUES,
   type TaskStatusType,
 } from '../constants/task-status.constant';
@@ -55,6 +60,9 @@ export class TaskStatusTransition
   @ForeignKey(() => User)
   @Column({ allowNull: false, type: DataType.UUID })
   declare changedById: string;
+
+  @Column({ type: DataType.ENUM(...USER_ROLE_VALUES) })
+  declare changedByRole: UserRoleType | null;
 
   @CreatedAt declare createdAt: Date;
 

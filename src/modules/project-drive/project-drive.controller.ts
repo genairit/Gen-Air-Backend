@@ -27,9 +27,11 @@ import { DriveFileParamsDto } from './dto/drive-file-params.dto';
 import type { IDriveItem } from '@Interfaces/google-drive.interface';
 import { ApiTags, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
 import { DRIVE_UPLOAD_POLICY } from '@Constants/drive-upload.constant';
+import { ISharedDocument } from './interfaces/shared-document.interface';
 import { IProjectDriveContents } from './interfaces/project-drive.interface';
 import type { IProject } from '@Modules/project/interfaces/project.interface';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
+import { SharedDocumentSelectionDto } from './dto/shared-document-selection.dto';
 import { UploadCleanupInterceptor } from '../../interceptors/upload-cleanup.interceptor';
 import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
 
@@ -58,6 +60,26 @@ export class ProjectDriveController {
     @Query() folder: DriveFolderDto,
   ): Promise<IProjectDriveContents> {
     return this.projectDriveService.getContents(projectId, folder);
+  }
+
+  @Get(':projectId/shared-document')
+  @RequirePermissions(PERMISSIONS.DRIVE_READ)
+  getSharedDocument(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+  ): Promise<ISharedDocument> {
+    return this.projectDriveService.getSharedDocument(projectId);
+  }
+
+  @Patch(':projectId/shared-document')
+  @RequirePermissions(PERMISSIONS.DRIVE_MOVE)
+  selectSharedDocument(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Body() selection: SharedDocumentSelectionDto,
+  ): Promise<ISharedDocument> {
+    return this.projectDriveService.selectSharedDocument(
+      projectId,
+      selection.fileId,
+    );
   }
 
   @Post(':projectId/files')

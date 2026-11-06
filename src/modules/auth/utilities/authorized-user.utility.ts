@@ -8,6 +8,7 @@ export const toAuthorizedUser = (
 ): IAuthorizedUser => ({
   id: user.id,
   role: user.role,
+  assignedRoles: user.assignedRoles ?? [user.role],
   email: user.email,
   phone: user.phone,
   firstName: user.firstName,

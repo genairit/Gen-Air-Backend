@@ -1,4 +1,5 @@
 import { USER_ROLES } from '@Constants/user-role.constant';
+import { UserRoleType } from '@Constants/user-role.constant';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { IProject } from '@Modules/project/interfaces/project.interface';
@@ -14,7 +15,9 @@ export const CUSTOMER_PROJECT_TEST_IDS = {
   TYPE: '10000000-0000-4000-8000-000000000005',
 } as const;
 
-export const makeCustomerProjectUser = (): IUser => ({
+export const makeCustomerProjectUser = (): IUser & {
+  assignedRoles: UserRoleType[];
+} => ({
   id: CUSTOMER_PROJECT_TEST_IDS.MEMBER,
   email: 'private@example.invalid',
   phone: '0500000000',
@@ -22,6 +25,7 @@ export const makeCustomerProjectUser = (): IUser => ({
   firstName: 'אורי',
   lastName: 'כהן',
   employeeNumber: 'ENG-1',
+  assignedRoles: [USER_ROLES.ENGINEER],
   passwordHash: 'must-not-be-returned',
   createdAt: new Date('2026-10-01T10:00:00.000Z'),
   updatedAt: new Date('2026-10-01T10:00:00.000Z'),
@@ -94,9 +98,8 @@ export const makeCustomerProjectParent = (
   contactName: null,
   contactRole: null,
   contactPhone: null,
-  paymentTerms: null,
-  paymentTermsNote: null,
   driveFolderId: null,
+  sharedDocumentFileId: null,
   priorityId: null,
   prioritySyncedAt: null,
   apartmentOwnership: null,

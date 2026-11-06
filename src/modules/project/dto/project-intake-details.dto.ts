@@ -1,5 +1,4 @@
 import {
-  IsIn,
   Length,
   Matches,
   IsString,
@@ -7,11 +6,6 @@ import {
   IsNotEmpty,
   IsOptional,
 } from 'class-validator';
-
-import {
-  PaymentTermsType,
-  PAYMENT_TERMS_VALUES,
-} from '@Constants/payment-terms.constant';
 
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { IsGooglePlaceId } from '@Decorators/is-google-place-id.decorator';
@@ -39,16 +33,4 @@ export class ProjectIntakeDetailsDto {
   @IsString()
   @MaxLength(FIELD_LENGTHS.CONTACT_ROLE)
   declare contactRole?: string | null;
-
-  @IsOptional()
-  @IsIn(PAYMENT_TERMS_VALUES)
-  declare paymentTerms?: PaymentTermsType | null;
-
-  @IsOptional()
-  @IsString()
-  @Length(
-    FIELD_LENGTHS.PAYMENT_TERMS_NOTE_MIN,
-    FIELD_LENGTHS.PAYMENT_TERMS_NOTE,
-  )
-  declare paymentTermsNote?: string | null;
 }

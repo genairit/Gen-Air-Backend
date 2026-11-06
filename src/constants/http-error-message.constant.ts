@@ -4,6 +4,7 @@ import {
 } from './http-error-code.constant';
 
 export const HTTP_ERROR_MESSAGES = {
+  [HTTP_ERROR_CODES.INVALID_CURRENT_PASSWORD]: 'Current password is incorrect',
   [HTTP_ERROR_CODES.PROJECT_NAME_ALREADY_EXISTS]:
     'קיים כבר פרויקט בשם זה. יש לבחור שם אחר (ההשוואה תלוית רישיות)',
   [HTTP_ERROR_CODES.INVALID_TEMPLATE]: 'Invalid apartment import template',

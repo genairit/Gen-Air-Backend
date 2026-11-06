@@ -1,10 +1,25 @@
+import {
+  signAnonymousClient,
+  ANONYMOUS_CLIENT_COOKIE,
+} from '@Utilities/anonymous-client.utility';
+
 import { HttpException } from '@nestjs/common';
 import { QuestionnaireLimitGuard } from './questionnaire-limit.guard';
 import { QUESTIONNAIRE_LIMITS } from './constants/questionnaire.constant';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 
-const context = (method: string, body: unknown = null): ExecutionContextHost =>
-  new ExecutionContextHost([{ method, body }]);
+const CLIENT_SECRET = 'questionnaire-test-secret-at-least-32-chars';
+const clientCookie = (id: string) =>
+  `${ANONYMOUS_CLIENT_COOKIE}=${signAnonymousClient(id.repeat(32), CLIENT_SECRET)}`;
+const context = (
+  method: string,
+  body: unknown = null,
+  cookie = clientCookie('a'),
+): ExecutionContextHost =>
+  new ExecutionContextHost([
+    { method, body, headers: { cookie } },
+    { setHeader: jest.fn() },
+  ]);
 
 const expectStatus = (action: () => unknown, expected: number): void => {
   try {
@@ -19,6 +34,9 @@ const expectStatus = (action: () => unknown, expected: number): void => {
 };
 
 describe('Questionnaire resource limits', () => {
+  beforeAll(() => {
+    process.env.QUESTIONNAIRE_CLIENT_SECRET = CLIENT_SECRET;
+  });
   afterEach(() => jest.restoreAllMocks());
 
   it('allows the submission budget exactly, rejects overflow and resets at the boundary', () => {
@@ -42,6 +60,18 @@ describe('Questionnaire resource limits', () => {
     );
     expectStatus(() => guard.canActivate(context('GET')), 429);
     expect(guard.canActivate(context('POST'))).toBe(true);
+  });
+
+  it('keeps another caller available after one caller exhausts the submission quota', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(100000);
+    const guard = new QuestionnaireLimitGuard();
+    Array.from({ length: QUESTIONNAIRE_LIMITS.SUBMISSIONS_PER_WINDOW }).forEach(
+      () => expect(guard.canActivate(context('POST'))).toBe(true),
+    );
+    expectStatus(() => guard.canActivate(context('POST')), 429);
+    expect(guard.canActivate(context('POST', null, clientCookie('b')))).toBe(
+      true,
+    );
   });
 
   it('measures serialized UTF-8 bytes, allowing the exact boundary but not one byte more', () => {

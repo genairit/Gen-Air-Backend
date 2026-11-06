@@ -12,11 +12,12 @@ export interface IUser {
   passwordHash?: string;
   employeeNumber: string;
   deletedAt: Date | null;
+  sessionVersion?: number;
+  assignedRoles?: UserRoleType[];
 }
 
 export interface IUserFilter {
   search: string | null;
-  role: UserRoleType | null;
 }
 
 export interface IUserCredentials {
@@ -24,12 +25,9 @@ export interface IUserCredentials {
   passwordHash: string;
 }
 
-export interface IUserRoleCount {
-  count: number;
-  role: UserRoleType;
-}
-
-export type TUserRoleCounts = Record<UserRoleType, number>;
+export type TUserRoleCounts = Record<UserRoleType, number> & {
+  total: number;
+};
 
 export type TUserCreationAttributes = Pick<
   IUser,

@@ -1,10 +1,13 @@
 import {
   IsIn,
   IsEmail,
+  IsArray,
   IsString,
   MaxLength,
   MinLength,
   IsNotEmpty,
+  ArrayUnique,
+  ArrayNotEmpty,
   IsPhoneNumber,
 } from 'class-validator';
 
@@ -36,9 +39,11 @@ export class CreateUserDto {
   @MaxLength(FIELD_LENGTHS.PHONE)
   declare phone: string;
 
-  @IsNotEmpty()
-  @IsIn(USER_ROLE_VALUES)
-  declare role: UserRoleType;
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayUnique()
+  @IsIn(USER_ROLE_VALUES, { each: true })
+  declare assignedRoles: UserRoleType[];
 
   @IsNotEmpty()
   @IsString()

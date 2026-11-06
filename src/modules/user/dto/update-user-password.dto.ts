@@ -4,6 +4,11 @@ import { IsString, MaxLength, MinLength, IsNotEmpty } from 'class-validator';
 export class UpdateUserPasswordDto {
   @IsNotEmpty()
   @IsString()
+  @MaxLength(FIELD_LENGTHS.PASSWORD_MAX)
+  declare currentPassword: string;
+
+  @IsNotEmpty()
+  @IsString()
   @MinLength(FIELD_LENGTHS.PASSWORD_MIN)
   @MaxLength(FIELD_LENGTHS.PASSWORD_MAX)
   declare password: string;
