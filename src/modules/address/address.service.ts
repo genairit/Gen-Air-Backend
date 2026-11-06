@@ -43,9 +43,13 @@ export class AddressService {
       throw new NotFoundException(`Place ${lookup.placeId} was not found`);
     }
 
-    if (address.countryCode !== GOOGLE_PLACES.COUNTRY_CODE) {
+    const isInServiceArea = GOOGLE_PLACES.SERVICE_COUNTRY_CODES.some(
+      (countryCode) => countryCode === address.countryCode,
+    );
+
+    if (!isInServiceArea) {
       throw new BadRequestException(
-        `Place ${lookup.placeId} is not in Israel; choose an Israeli address`,
+        'Selected place is outside the supported service area; choose another address',
       );
     }
 
