@@ -16,6 +16,7 @@ import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { QuotationRepository } from '@Modules/quotation/quotation.repository';
 import type { ICustomer } from '@Modules/customer/interfaces/customer.interface';
 import type { SaveQuotationDto } from '@Modules/quotation/dto/save-quotation.dto';
+import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
 import type { IQuotation } from '@Modules/quotation/interfaces/quotation.interface';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
@@ -173,6 +174,44 @@ afterEach(async () => {
 });
 
 describe('QuotationService card100 payment ownership', () => {
+  test('approval rejects conflicting or incomplete staged terms', async () => {
+    const { service, customer, repository, actor } = context();
+    const quotation = await service.create({ customerId: customer.id }, actor);
+    const stages = [
+      { percent: '30', text: 'בחתימה' },
+      { percent: '70', text: 'במסירה' },
+    ];
+    await repository.update(quotation.id, {
+      status: QUOTATION_STATUS.REVIEW,
+      paymentTerms: PAYMENT_TERMS.PREPAID,
+      paymentSchedule: stages,
+    });
+    await expect(
+      service.transition(
+        quotation.id,
+        { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
+        actor,
+      ),
+    ).rejects.toThrow('נבחרו גם תנאי תשלום קבועים וגם שלבי תשלום');
+    await repository.update(quotation.id, {
+      paymentTerms: null,
+      paymentSchedule: [{ percent: '30', text: '' }, stages[1]],
+    });
+    await expect(
+      service.transition(
+        quotation.id,
+        { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
+        actor,
+      ),
+    ).rejects.toThrow('יש לתאר את מועד התשלום של כל שלב');
+    await repository.update(quotation.id, { paymentSchedule: stages });
+    const approved = await service.transition(
+      quotation.id,
+      { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
+      actor,
+    );
+    expect(approved.status).toBe(QUOTATION_STATUS.APPROVED);
+  });
   describe('create', () => {
     test.each([...PAYMENT_TERMS_VALUES, null])(
       'immediately persists customer payment default %s with an empty local note',

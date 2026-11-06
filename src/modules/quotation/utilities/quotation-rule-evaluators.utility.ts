@@ -18,7 +18,7 @@ import {
   type TQuotationRuleKey,
 } from '@Modules/quotation-rule/constants/quotation-rule.constant';
 
-import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
+import { quotationPaymentIssues } from './quotation-payment.utility';
 import type { IQuotationDocument } from '../interfaces/quotation-document.interface';
 import { ruleParameter } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
@@ -212,33 +212,12 @@ export const QUOTATION_RULE_EVALUATORS: Record<
           `מעגל ${circuit.name}: דיוורסיטי מחוץ לטווח 1:${ruleParameter(context.configuration, QUOTATION_RULE.VRF_RATIO, RULE_PARAMETER.MINIMUM_RATIO)}–1:${ruleParameter(context.configuration, QUOTATION_RULE.VRF_RATIO, RULE_PARAMETER.MAXIMUM_RATIO)} (${new Decimal(circuit.indoor).div(circuit.outdoor).toFixed(2)})`,
         ),
       ),
-  [QUOTATION_RULE.PAYMENT_TERMS]: ({ quotation }) => {
-    if (!quotation.paymentTerms) {
-      return [candidate('payment', 'לא נבחרו תנאי תשלום')];
-    }
-    if (
-      quotation.paymentTerms === PAYMENT_TERMS.OTHER &&
-      !quotation.paymentTermsNote.trim()
-    ) {
-      return [candidate('payment', 'נדרש פירוט לתנאי תשלום אחרים')];
-    }
-    return [];
-  },
-  [QUOTATION_RULE.PAYMENT_SCHEDULE]: ({ quotation }) => {
-    if (!quotation.paymentSchedule.length) {
-      return [];
-    }
-    const sum = quotation.paymentSchedule.reduce(
-      (result, stage) => result.plus(stage.percent),
-      new Decimal(0),
-    );
-    return sum.equals(100)
-      ? []
-      : [
-          candidate(
-            'payment',
-            `תנאי התשלום מסתכמים ל-${sum.toString()}% במקום 100%`,
-          ),
-        ];
-  },
+  [QUOTATION_RULE.PAYMENT_TERMS]: ({ quotation }) =>
+    quotationPaymentIssues(quotation).terms.map((text) =>
+      candidate('payment', text),
+    ),
+  [QUOTATION_RULE.PAYMENT_SCHEDULE]: ({ quotation }) =>
+    quotationPaymentIssues(quotation).schedule.map((text) =>
+      candidate('payment', text),
+    ),
 };
