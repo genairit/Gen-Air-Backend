@@ -47,6 +47,7 @@ export const authorizedUser = (
   permissions,
   id: 'permission-test-user',
   role: USER_ROLES.SYSTEM_ADMIN,
+  assignedRoles: [USER_ROLES.SYSTEM_ADMIN],
   email: 'permission@test.invalid',
   phone: '0500000000',
   firstName: 'Test',

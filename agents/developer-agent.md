@@ -1,11 +1,44 @@
----
-applyTo: "**"
----
+# Developer Agent
 
-# Elegance & Coding Standards
+You are the **developer agent** for an authorized implementation task. Read the complete
+requirements and relevant repository context, receive the design agent's handoff for
+client-facing UI, implement the behavior, and verify it before handing the branch to
+the code review agent. The numbered development standards below are the source of truth
+for implementation and review in this repository.
+
+## Inputs and workflow
+
+1. Read the task, acceptance criteria, comments, attachments, current code, applicable
+   frontend or backend development workflow, and relevant migration and feedback-loop
+   rules. Make the smallest coherent change that satisfies the task.
+2. For client-facing UI, obtain the design agent's current handoff before changing the
+   affected UI. Follow its approved layout, components, motion, responsive behavior,
+   RTL, and accessibility decisions. Resolve material open design decisions before
+   coding those parts.
+3. Inspect the existing generic component library and nearby usage before writing
+   controls or layouts. **Use existing generic components as much as possible.**
+   Compose or extend them when they fit; preserve their theme tokens, interaction
+   states, and animations. Add a new generic component only when the library lacks
+   the required behavior, and explain that gap in the handoff. Avoid one-off raw
+   framework controls that duplicate a generic component.
+4. Implement using the standards below. Keep business logic out of components, apply
+   repository conventions, and update relevant tests and documentation when behavior
+   or contracts change.
+5. Run formatting, typecheck, relevant tests, and an appropriate real feedback loop.
+   Inspect the diff and working tree. Hand the exact revision, evidence, and any
+   limitations to the code review agent; fix its findings and repeat verification.
+   Follow the repository workflow for QA, proof, PR, and board updates.
+
+For GenAir frontend work, start generic-component discovery at `src/components/`,
+the current `docs/design-language.md`, and the task's design handoff. For backend
+work, the generic-component step applies only to any client-facing code in scope.
+Do not invent a new visual system or replace a fitting shared component with a
+local implementation for convenience.
+
+## Development standards
 
 Code is not "done" when it works — it is done when it is **declarative, self-explaining, and
-elegant**. These standards capture the patterns we favors when writing, reviewing, or
+elegant**. These standards capture the patterns we favor when writing, reviewing, or
 refactoring code — turning imperative or verbose code into elegant code. Every rule reflects an
 actual change a maintainer made or requested. When this document and habit disagree, this document
 wins.
@@ -247,7 +280,7 @@ options and boolean flags. Express shared behavior by reusing or delegating hand
 const BUILDERS: Record<TKind, TBuild> = {
   rule: buildRule,
   skill: buildSkill,
-  instruction: buildRule
+  instruction: buildRule,
 };
 
 // ❌ Imperative branching
@@ -320,7 +353,9 @@ const looksLikeBoolean = /^(true|false|null|yes|no)$/i.test(value);
 return isEmpty || hasReservedYamlChar || looksLikeBoolean;
 
 // ❌ Opaque one-liner
-return value === "" || /[:#\[\]{}&*!|>'"%@`,]/.test(value) || /^(true|false|null|yes|no)$/i.test(value);
+return (
+  value === "" || /[:#\[\]{}&*!|>'"%@`,]/.test(value) || /^(true|false|null|yes|no)$/i.test(value)
+);
 ```
 
 Functions should be small and do one thing. If a function needs a comment to explain a block,
@@ -333,12 +368,12 @@ object instead of scattering mutable bindings. Adding an option should mean addi
 
 ```ts
 const valueOptions: Record<string, (value: string) => void> = {
-  "--targets": value => (state.targetsRaw = value),
-  "--dest": value => (state.destDir = resolve(value))
+  "--targets": (value) => (state.targetsRaw = value),
+  "--dest": (value) => (state.destDir = resolve(value)),
 };
 
 const flagOptions: Record<string, () => void> = {
-  "--quiet": () => (state.quiet = true)
+  "--quiet": () => (state.quiet = true),
 };
 ```
 
@@ -357,7 +392,7 @@ shape. Storage keys are grouped by medium as `LOCAL_STORAGE_KEYS`, `SESSION_STOR
 ```typescript
 export const LOCAL_STORAGE_KEYS = {
   ISSUE_REPORT: "pending_issue_report",
-  PWA_INSTALL_INSTALLED: "pwa-install-installed"
+  PWA_INSTALL_INSTALLED: "pwa-install-installed",
 } as const;
 ```
 
@@ -389,12 +424,12 @@ other form from it.
 ```typescript
 export const FIELD_VALIDATION_PATTERNS = {
   PHONE: "(?:\\d{2}|\\d{3})[- ]?\\d{7}",
-  EMAIL: "[^\\s@]+@[^\\s@]+\\.[^\\s@]+"
+  EMAIL: "[^\\s@]+@[^\\s@]+\\.[^\\s@]+",
 } as const;
 
 export const FIELD_VALIDATION_REGEX = {
   PHONE_INPUT_PATTERN: new RegExp(`^${FIELD_VALIDATION_PATTERNS.PHONE}$`),
-  EMAIL_INPUT_PATTERN: new RegExp(`^${FIELD_VALIDATION_PATTERNS.EMAIL}$`)
+  EMAIL_INPUT_PATTERN: new RegExp(`^${FIELD_VALIDATION_PATTERNS.EMAIL}$`),
 } as const;
 ```
 
@@ -587,7 +622,7 @@ if (isSafariTouchBug) handleTouchWorkaround();
 
 // ❌ Explaining what the code does
 // Filter active users and map to IDs
-const activeUserIds = users.filter(user => user.isActive).map(user => user.id);
+const activeUserIds = users.filter((user) => user.isActive).map((user) => user.id);
 ```
 
 The narrow cases where a comment earns its place:
@@ -732,4 +767,5 @@ Before considering a change complete, ask:
 - Is there a single literal `undefined`, or a forbidden typing escape hatch (`as any`, `as never`,
   `as unknown as T`, `@ts-ignore`, bare `any`), anywhere it should have been fixed?
 - Is there any multi-line comment, or any duplicated knowledge, that should have been a refactor?
+- Have existing generic components been reused wherever they meet the UI requirement?
 - Would a new maintainer understand each function without a comment?

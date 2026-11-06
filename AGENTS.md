@@ -1,18 +1,17 @@
 # Codex repository guidance
 
-The shared standards and workflows originate in Spec-Development-Component
-(commit `59ba6d4d4571912d138068425554a5fd1430cf23`). `rules/`, `skills/`, and
-`agents/` are the canonical source; this file and `.agents/skills/` adapt them for
-Codex.
+The shared standards and workflows originate in Spec-Development-Component.
+`rules/`, `skills/`, and `agents/` are the canonical source; this file and
+`.agents/skills/` adapt them for Codex.
 
 ## Shared rules
 
-Read these rules before implementation or review, applying stack-specific sections
-only to the relevant code:
+Read the developer agent and applicable rules before implementation or review.
+Apply stack-specific sections only to relevant code:
 
-- [Coding standards](rules/coding-standards.md): pyramid ordering, naming, layer
-  boundaries, declarative code, and formatting.
-- [Development workflow](rules/development-workflow-standards.md): understand the
+- [Developer agent](agents/developer-agent.md): implementation standards, layer
+  boundaries, formatting, verification, and reuse of generic UI components.
+- [Development workflow](rules/backend-development-workflow-standards.md): understand the
   task, branch from the latest `dev`, verify, pass code review and QA, and open a pull
   request into `dev`.
 - [Feedback loops](rules/feedback-loops.md): prove behavior with the appropriate
@@ -26,6 +25,8 @@ only to the relevant code:
   and implementation when requested.
 - `$entity-module`: read `.agents/skills/entity-module/SKILL.md` for NestJS server
   entity modules. In frontend work, use it only for an authorized backend change.
+- `$developer`: read `.agents/skills/developer/SKILL.md` to implement
+  authorized tasks with the canonical developer agent.
 - `$code-review`: read `.agents/skills/code-review/SKILL.md` to run the canonical
   [code review agent](agents/code-reviewer.md) on a PR or local changes.
 
@@ -33,6 +34,8 @@ only to the relevant code:
   handoff from Gen-Air-Automation.
 
 ## Code review and QA gates
+
+Run `$developer` for implementation before review.
 
 When a task's implementation is finished and verified, run `$code-review` in
 Mode B on the branch before attaching proof or opening a pull request. Fix every

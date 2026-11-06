@@ -1,4 +1,8 @@
-import { PASSWORD_HASHING } from '@Constants/password.constant';
+import {
+  PASSWORD_HASHING,
+  BLOCKED_PASSWORDS,
+} from '@Constants/password.constant';
+
 import { scrypt, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const deriveKey = (password: string, salt: Buffer): Promise<Buffer> =>
@@ -39,3 +43,6 @@ export const verifyPassword = async (
 
   return hasMatchingLength && timingSafeEqual(storedKey, derivedKey);
 };
+
+export const isBlockedPassword = (password: string): boolean =>
+  BLOCKED_PASSWORDS.some((blocked) => password === blocked);

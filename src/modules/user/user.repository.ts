@@ -1,6 +1,5 @@
 import {
   IUserFilter,
-  IUserRoleCount,
   IUserCredentials,
   TUserUpdateAttributes,
   TUserCreationAttributes,
@@ -14,15 +13,14 @@ import {
 
 import { Injectable } from '@nestjs/common';
 import { User } from './entities/user.entity';
-import { isUserRole } from '@Utilities/user-role.utility';
 import { Op, Sequelize, Transaction, WhereOptions } from 'sequelize';
 import { ICursorPage, ICursorBatch } from '@Interfaces/cursor-page.interface';
 import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
 
 @Injectable()
 export class UserRepository {
-  findById(id: string): Promise<User | null> {
-    return User.findByPk(id);
+  findById(id: string, transaction?: Transaction): Promise<User | null> {
+    return User.findByPk(id, { transaction });
   }
 
   findByIds(ids: string[]): Promise<User[]> {
@@ -40,13 +38,36 @@ export class UserRepository {
     });
   }
 
+  findAllCredentials(): Promise<Array<IUserCredentials & { email: string }>> {
+    return User.unscoped().findAll({
+      attributes: ['id', 'email', 'passwordHash'],
+    });
+  }
+
+  findCredentialsById(
+    id: string,
+    transaction: Transaction,
+  ): Promise<IUserCredentials | null> {
+    return User.unscoped().findByPk(id, {
+      attributes: ['id', 'passwordHash'],
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+  }
+
   async findByFilter(
     filter: IUserFilter,
     batch: ICursorBatch,
+    matchingRoleUserIds: string[] | null,
   ): Promise<ICursorPage<User>> {
+    const roleFilter =
+      matchingRoleUserIds === null
+        ? []
+        : [{ id: { [Op.in]: matchingRoleUserIds } }];
     const rows = await User.findAll({
       where: {
         [Op.and]: [
+          ...roleFilter,
           ...this.buildFilterWhere(filter),
           ...buildCursorWhere(batch.batchCursor),
         ],
@@ -58,12 +79,22 @@ export class UserRepository {
     return toCursorPage(rows, batch.batchSize);
   }
 
-  async countByRole(): Promise<IUserRoleCount[]> {
-    const groupedCounts = await User.count({ group: ['role'] });
+  countActiveByIds(
+    userIds: string[],
+    transaction?: Transaction,
+  ): Promise<number> {
+    if (userIds.length === 0) {
+      return Promise.resolve(0);
+    }
 
-    return groupedCounts.flatMap(({ role, count }) =>
-      isUserRole(role) ? [{ role, count }] : [],
-    );
+    return User.count({
+      where: { id: { [Op.in]: userIds } },
+      transaction,
+    });
+  }
+
+  countActiveUsers(): Promise<number> {
+    return User.count();
   }
 
   create(
@@ -96,7 +127,17 @@ export class UserRepository {
       { where: { id }, transaction },
     );
 
-    return updatedCount > 0;
+    if (updatedCount === 0) {
+      return false;
+    }
+
+    await User.increment('sessionVersion', {
+      by: 1,
+      where: { id },
+      transaction,
+    });
+
+    return true;
   }
 
   async softDelete(id: string, transaction?: Transaction): Promise<boolean> {
@@ -107,7 +148,6 @@ export class UserRepository {
 
   private buildFilterWhere(filter: IUserFilter): WhereOptions<User>[] {
     return [
-      ...whereWhenPresent(filter.role, (role) => ({ role })),
       ...whereWhenPresent(filter.search, (search) =>
         this.buildSearchWhere(search),
       ),

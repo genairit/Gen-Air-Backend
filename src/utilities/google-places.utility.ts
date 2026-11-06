@@ -97,7 +97,9 @@ export const buildAutocompleteBody = (search: IPlaceSearch) => ({
   input: search.input,
   regionCode: GOOGLE_PLACES.REGION_CODE,
   languageCode: GOOGLE_PLACES.LANGUAGE_CODE,
-  includedRegionCodes: [GOOGLE_PLACES.REGION_CODE],
+  includedRegionCodes: GOOGLE_PLACES.SERVICE_COUNTRY_CODES.map((countryCode) =>
+    countryCode.toLowerCase(),
+  ),
   ...(search.sessionToken ? { sessionToken: search.sessionToken } : {}),
 });
 

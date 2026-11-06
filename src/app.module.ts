@@ -19,11 +19,13 @@ import { CustomerContactModule } from '@Modules/customer-contact/customer-contac
 import { DriveTemplateFolderModule } from '@Modules/drive-template-folder/drive-template-folder.module';
 import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/project-stage-transition.module';
 import { QuestionnaireSubmissionModule } from '@Modules/questionnaire-submission/questionnaire-submission.module';
+import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-email/quotation-execution-email.module';
 
 @Module({
   imports: [
     DatabaseModule,
     QuotationModule,
+    QuotationExecutionEmailModule,
     EventEmitterModule.forRoot(),
     AddressModule,
     AuthModule,

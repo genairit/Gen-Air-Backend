@@ -34,9 +34,11 @@ import { QuotationRepository } from './quotation.repository';
 import type { GetQuotationsDto } from './dto/get-quotations.dto';
 import { DEFAULT_VAT_RATE } from './constants/quotation.constant';
 import { ProjectService } from '@Modules/project/project.service';
+import type { DeleteQuotationDto } from './dto/delete-quotation.dto';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { QuotationSelectionService } from './quotation-selection.service';
 import type { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
+import { quotationPaymentIssues } from './utilities/quotation-payment.utility';
 import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
@@ -227,6 +229,25 @@ export class QuotationService {
     });
     return this.getById(id);
   }
+  async delete(
+    id: string,
+    input: DeleteQuotationDto,
+    userId: string,
+  ): Promise<void> {
+    await this.transactions.run(async (transaction) => {
+      const current = await this.document(id, transaction);
+      this.assertVersion(current, input.version);
+      await this.repository.update(
+        id,
+        {
+          deletedAt: new Date(),
+          updatedById: userId,
+          version: current.version + 1,
+        },
+        transaction,
+      );
+    });
+  }
   async save(
     id: string,
     input: SaveQuotationDto,
@@ -318,6 +339,16 @@ export class QuotationService {
         throw new BadRequestException(
           'יש לבחור חברה ולהוסיף פריטים לפני בדיקה',
         );
+      }
+      if (input.status === QUOTATION_STATUS.APPROVED) {
+        const paymentIssues = quotationPaymentIssues(checked);
+        const paymentError = [
+          ...paymentIssues.terms,
+          ...paymentIssues.schedule,
+        ][0];
+        if (paymentError) {
+          throw new BadRequestException(paymentError);
+        }
       }
       if (
         input.status === QUOTATION_STATUS.APPROVED &&

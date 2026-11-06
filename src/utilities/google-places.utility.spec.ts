@@ -22,14 +22,14 @@ const buildAxiosError = (status: number): AxiosError =>
   });
 
 describe('buildAutocompleteBody', () => {
-  it('restricts suggestions to Israel in Hebrew and passes the session token', () => {
+  it('restricts suggestions to the supported service area in Hebrew and passes the session token', () => {
     expect(
       buildAutocompleteBody({ input: 'הרצל 1', sessionToken: SESSION_TOKEN }),
     ).toEqual({
       input: 'הרצל 1',
       regionCode: 'il',
       languageCode: 'he',
-      includedRegionCodes: ['il'],
+      includedRegionCodes: ['il', 'ps'],
       sessionToken: SESSION_TOKEN,
     });
   });

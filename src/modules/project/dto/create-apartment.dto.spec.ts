@@ -3,7 +3,6 @@ import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { UpdateProjectDto } from './update-project.dto';
 import { CreateApartmentDto } from './create-apartment.dto';
-import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 
 const APARTMENT = {
   customerFloor: 3,
@@ -68,15 +67,19 @@ describe('CreateApartmentDto', () => {
     },
   );
 
-  it('accepts an explicit empty own team and optional payment terms', async () => {
+  it('accepts an explicit empty own team', async () => {
     await expect(
       findInvalidFields({
         ...APARTMENT,
         members: [],
-        paymentTerms: PAYMENT_TERMS.OTHER,
-        paymentTermsNote: 'תשלום מלא במסירה',
       }),
     ).resolves.toEqual([]);
+  });
+
+  it('rejects project-owned payment terms', async () => {
+    await expect(
+      findInvalidFields({ ...APARTMENT, paymentTerms: 'prepaid' }),
+    ).resolves.toContain('paymentTerms');
   });
 
   it('rejects obsolete free-text customer and contact fields', async () => {

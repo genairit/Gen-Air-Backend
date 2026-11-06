@@ -1,6 +1,5 @@
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { resolveApartment } from './project-inheritance.utility';
-import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { IProjectMember } from '@Modules/project-member/interfaces/project-member.interface';
@@ -10,8 +9,6 @@ const BUILDING = {
   address: 'דרך נמיר 94, תל אביב-יפו',
   addressCity: 'תל אביב-יפו',
   addressPlaceId: 'ChIJ-building',
-  paymentTermsNote: null,
-  paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
 };
 
 const APARTMENT = {
@@ -19,13 +16,11 @@ const APARTMENT = {
   notes: 'גישה דרך חדר המדרגות המזרחי',
   address: null,
   addressCity: null,
-  paymentTerms: null,
   addressPlaceId: null,
-  paymentTermsNote: null,
 };
 
 describe('resolveApartment', () => {
-  it('takes the address, payment terms and notes from the building', () => {
+  it('takes the address and notes from the building', () => {
     const resolved = resolveApartment(APARTMENT, BUILDING);
 
     expect(resolved).toMatchObject({
@@ -33,30 +28,6 @@ describe('resolveApartment', () => {
       parentNotes: 'תמ״א 38',
       addressPlaceId: 'ChIJ-building',
       notes: APARTMENT.notes,
-      paymentTerms: PAYMENT_TERMS.MILESTONES_NET_60,
-    });
-    expect(resolved.inheritedFields).toEqual([
-      'address',
-      'addressCity',
-      'addressPlaceId',
-      'paymentTerms',
-      'paymentTermsNote',
-    ]);
-  });
-
-  it('keeps the apartment override and stops marking payment terms as inherited', () => {
-    const resolved = resolveApartment(
-      {
-        ...APARTMENT,
-        paymentTerms: PAYMENT_TERMS.OTHER,
-        paymentTermsNote: 'תשלום מלא במסירה',
-      },
-      BUILDING,
-    );
-
-    expect(resolved).toMatchObject({
-      paymentTerms: PAYMENT_TERMS.OTHER,
-      paymentTermsNote: 'תשלום מלא במסירה',
     });
     expect(resolved.inheritedFields).toEqual([
       'address',

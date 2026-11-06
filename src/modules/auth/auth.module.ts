@@ -5,12 +5,15 @@ import { AuthService } from './auth.service';
 import { AuthGuard } from '@Guards/auth.guard';
 import { AuthController } from './auth.controller';
 import { UserModule } from '@Modules/user/user.module';
+import { LoginAttemptService } from './login-attempt.service';
+import { DatabaseModule } from '@Providers/database/database.module';
 import { EnvironmentManager } from '@Utilities/environment-manager.utility';
 import { RolePermissionModule } from '@Modules/role-permission/role-permission.module';
 
 @Module({
   imports: [
     UserModule,
+    DatabaseModule,
     RolePermissionModule,
     JwtModule.registerAsync({
       useFactory: () => ({
@@ -19,7 +22,11 @@ import { RolePermissionModule } from '@Modules/role-permission/role-permission.m
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [
+    AuthService,
+    LoginAttemptService,
+    { provide: APP_GUARD, useClass: AuthGuard },
+  ],
   exports: [AuthService],
 })
 export class AuthModule {}

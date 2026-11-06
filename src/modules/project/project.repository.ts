@@ -231,6 +231,18 @@ export class ProjectRepository {
     return updatedCount > 0;
   }
 
+  async updateSharedDocumentFileId(
+    id: string,
+    sharedDocumentFileId: string | null,
+  ): Promise<boolean> {
+    const [updatedCount] = await Project.update(
+      { sharedDocumentFileId },
+      { where: { id, parentProjectId: null } },
+    );
+
+    return updatedCount > 0;
+  }
+
   async softDelete(id: string, transaction?: Transaction): Promise<boolean> {
     const deletedCount = await Project.destroy({ where: { id }, transaction });
 

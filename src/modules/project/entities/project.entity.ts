@@ -19,11 +19,6 @@ import {
 } from '../interfaces/project.interface';
 
 import {
-  PaymentTermsType,
-  PAYMENT_TERMS_VALUES,
-} from '@Constants/payment-terms.constant';
-
-import {
   ApartmentOwnershipType,
   APARTMENT_OWNERSHIP_VALUES,
 } from '../constants/apartment-commercial.constant';
@@ -123,6 +118,9 @@ export class Project
   @Column(DataType.STRING(FIELD_LENGTHS.DRIVE_ID))
   declare driveFolderId: string | null;
 
+  @Column(DataType.STRING(FIELD_LENGTHS.DRIVE_ID))
+  declare sharedDocumentFileId: string | null;
+
   @Column(DataType.STRING(FIELD_LENGTHS.PRIORITY_ID))
   declare priorityId: string | null;
 
@@ -158,12 +156,6 @@ export class Project
 
   @Column(DataType.STRING(FIELD_LENGTHS.BUILDING_UNIT))
   declare customerUnit: string | null;
-
-  @Column(DataType.ENUM(...PAYMENT_TERMS_VALUES))
-  declare paymentTerms: PaymentTermsType | null;
-
-  @Column(DataType.STRING(FIELD_LENGTHS.PAYMENT_TERMS_NOTE))
-  declare paymentTermsNote: string | null;
 
   @Column(DataType.STRING(FIELD_LENGTHS.FORMATTED_ADDRESS))
   declare address: string | null;

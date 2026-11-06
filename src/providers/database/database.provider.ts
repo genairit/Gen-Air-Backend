@@ -6,6 +6,7 @@ import { User } from '@Modules/user/entities/user.entity';
 import { Sequelize, SequelizeOptions } from 'sequelize-typescript';
 import { Project } from '@Modules/project/entities/project.entity';
 import { Customer } from '@Modules/customer/entities/customer.entity';
+import { UserRole } from '@Modules/user-role/entities/user-role.entity';
 import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { Permission } from '@Modules/permission/entities/permission.entity';
 import { EnvironmentManager } from '../../utilities/environment-manager.utility';
@@ -16,6 +17,7 @@ import { QuotationRule } from '@Modules/quotation-rule/entities/quotation-rule.e
 import { CatalogueItem } from '@Modules/catalogue-item/entities/catalogue-item.entity';
 import { QuotationItem } from '@Modules/quotation-item/entities/quotation-item.entity';
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
+import { UserRoleAudit } from '@Modules/user-role-audit/entities/user-role-audit.entity';
 import { RolePermission } from '@Modules/role-permission/entities/role-permission.entity';
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
@@ -24,12 +26,13 @@ import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catal
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
 import { QuestionnaireSubmission } from '@Modules/questionnaire-submission/entities/questionnaire-submission.entity';
+import { QuotationExecutionEmail } from '@Modules/quotation-execution-email/entities/quotation-execution-email.entity';
 
 const logger = new TypedLogger('DatabaseProvider');
 
 const DEFAULT_DB_PORT = '5432';
 
-const buildSequelizeOptions = (): SequelizeOptions => {
+export const buildSequelizeOptions = (): SequelizeOptions => {
   const dbName = EnvironmentManager.get('DB_NAME', { errorOnMissing: true });
   const dbUser = EnvironmentManager.get('DB_USER', { errorOnMissing: true });
   const dbPassword = EnvironmentManager.get('DB_PASS', {
@@ -40,6 +43,9 @@ const buildSequelizeOptions = (): SequelizeOptions => {
     defaultValue: DEFAULT_DB_PORT,
   });
   const useSSL = EnvironmentManager.get('DB_SSL') === 'true';
+  const certificateAuthority = useSSL
+    ? EnvironmentManager.get('DB_SSL_CA', { errorOnMissing: true })
+    : null;
 
   return {
     host: dbHost,
@@ -63,8 +69,9 @@ const buildSequelizeOptions = (): SequelizeOptions => {
       dialectOptions: {
         ssl: {
           require: true,
-          rejectUnauthorized:
-            EnvironmentManager.get('DB_SSL_REJECT_UNAUTHORIZED') !== 'false',
+          ca: certificateAuthority,
+          servername: dbHost,
+          rejectUnauthorized: true,
         },
       },
     }),
@@ -89,7 +96,10 @@ export const DatabaseProvider: Provider = {
       RolePermission,
       Task,
       TaskStatusTransition,
+      QuotationExecutionEmail,
       User,
+      UserRole,
+      UserRoleAudit,
       Project,
       Customer,
       CustomerContact,

@@ -38,6 +38,7 @@ const quotation = {
   getById: jest.fn(() => Promise.resolve({ id })),
   create: jest.fn(() => Promise.resolve({ id })),
   save: jest.fn(() => Promise.resolve({ id })),
+  delete: jest.fn(() => Promise.resolve()),
   transition: jest.fn(() => Promise.resolve({ id })),
   acknowledge: jest.fn(() => Promise.resolve({ id })),
 };
@@ -80,6 +81,7 @@ const ROUTES: [string, string, PermissionType][] = [
   ['get', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_READ],
   ['post', '/quotation', PERMISSIONS.QUOTATIONS_CREATE],
   ['put', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_UPDATE],
+  ['delete', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_DELETE],
   ['post', `/quotation/${id}/review`, PERMISSIONS.QUOTATIONS_APPROVE],
   ['post', `/quotation/${id}/warnings`, PERMISSIONS.QUOTATIONS_APPROVE],
   ['get', '/catalogue-item', PERMISSIONS.QUOTATIONS_READ],
@@ -92,6 +94,7 @@ const call = (method: string, path: string) => {
   const client = request(server());
   const operations: Record<string, () => request.Test> = {
     get: () => client.get(path),
+    delete: () => client.delete(path),
     post: () => client.post(path),
     put: () => client.put(path),
     patch: () => client.patch(path),
@@ -366,5 +369,75 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       .get(path)
       .set('Authorization', 'Bearer valid')
       .expect(400);
+  });
+});
+
+const remove = (
+  body: object = { version: 1 },
+  path: string = id,
+  token = 'valid',
+) =>
+  request(server())
+    .delete(`/quotation/${path}`)
+    .set('Authorization', `Bearer ${token}`)
+    .send(body);
+
+describe('Quotation deletion HTTP contract', () => {
+  beforeEach(() => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_DELETE],
+    };
+  });
+  test('precise delete grant delegates version and authenticated actor, returning empty 204', async () => {
+    const response = await remove().expect(204);
+    expect(response.text).toBe('');
+    expect(quotation.delete).toHaveBeenCalledWith(
+      id,
+      { version: 1 },
+      state.actor.id,
+    );
+  });
+  test('maximum safe integer version is accepted', async () => {
+    await remove({ version: Number.MAX_SAFE_INTEGER }).expect(204);
+  });
+  test.each([
+    {},
+    { version: null },
+    { version: 0 },
+    { version: -1 },
+    { version: 1.5 },
+    { version: '1' },
+    { version: Number.MAX_SAFE_INTEGER + 1 },
+    { version: true },
+    { version: 1, deletedAt: '2026-01-01' },
+    { version: 1, updatedById: randomUUID() },
+    { version: 1, status: 'approved' },
+  ])('rejects malformed version or forged fields %j', async (body) => {
+    await remove(body).expect(400);
+    expect(quotation.delete).not.toHaveBeenCalled();
+  });
+  test('invalid UUID never reaches service', async () => {
+    await remove({ version: 1 }, 'invalid').expect(400);
+    expect(quotation.delete).not.toHaveBeenCalled();
+  });
+  test('anonymous token is rejected', async () => {
+    await remove({ version: 1 }, id, 'invalid').expect(401);
+    expect(quotation.delete).not.toHaveBeenCalled();
+  });
+  test.each(
+    [
+      [],
+      [PERMISSIONS.QUOTATIONS_READ],
+      [
+        PERMISSIONS.QUOTATIONS_CREATE,
+        PERMISSIONS.QUOTATIONS_UPDATE,
+        PERMISSIONS.QUOTATIONS_APPROVE,
+      ],
+    ].map((permissions) => ({ permissions })),
+  )('other quotation grants cannot delete: %j', async ({ permissions }) => {
+    state.actor = { ...authorizedUser(), permissions };
+    await remove().expect(403);
+    expect(quotation.delete).not.toHaveBeenCalled();
   });
 });

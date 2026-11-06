@@ -1,4 +1,8 @@
-import { hashPassword, verifyPassword } from './password.utility';
+import {
+  hashPassword,
+  verifyPassword,
+  isBlockedPassword,
+} from './password.utility';
 
 describe('password utility', () => {
   it('verifies the original password against its hash', async () => {
@@ -24,5 +28,11 @@ describe('password utility', () => {
 
   it('rejects a malformed stored hash', async () => {
     await expect(verifyPassword('temp1234', 'not-a-hash')).resolves.toBe(false);
+  });
+
+  it('matches only the exact former shared password audited for rotation', () => {
+    expect(isBlockedPassword('temp1234')).toBe(true);
+    expect(isBlockedPassword('Temp1234')).toBe(false);
+    expect(isBlockedPassword(' temp1234 ')).toBe(false);
   });
 });
