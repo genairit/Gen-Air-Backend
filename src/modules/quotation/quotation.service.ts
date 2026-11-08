@@ -46,6 +46,7 @@ import { QuotationItemService } from '@Modules/quotation-item/quotation-item.ser
 import type { IQuotationStatusCounts } from './interfaces/quotation-status-counts.interface';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
+import { validateRuleConfiguration } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
 
 @Injectable()
 export class QuotationService {
@@ -87,6 +88,8 @@ export class QuotationService {
       const statuses = new Map(catalogue.map((item) => [item.id, item.status]));
       const documents = page.map((row) => ({
         ...row.toJSON(),
+        ruleConfigFingerprint: validateRuleConfiguration(row.ruleConfiguration)
+          .fingerprint,
         customerName: row.customerName,
         projectName: row.projectName,
         sections: sections
@@ -151,6 +154,9 @@ export class QuotationService {
     );
     return {
       ...quotation.toJSON(),
+      ruleConfigFingerprint: validateRuleConfiguration(
+        quotation.ruleConfiguration,
+      ).fingerprint,
       sections: sections.map((section) => ({
         ...section.toJSON(),
         items: items
@@ -203,7 +209,6 @@ export class QuotationService {
         {
           id,
           ruleConfiguration: configuration.rules,
-          ruleConfigFingerprint: configuration.fingerprint,
           number: await this.repository.nextNumber(prefix, transaction),
           customerId: customer.id,
           projectId: input.projectId ?? null,
@@ -293,7 +298,6 @@ export class QuotationService {
         {
           ...attributes,
           ruleConfiguration: configuration.rules,
-          ruleConfigFingerprint: configuration.fingerprint,
           version: version + 1,
           status: QUOTATION_STATUS.DRAFT,
           acknowledgedWarnings: [],
@@ -368,7 +372,6 @@ export class QuotationService {
         {
           status: input.status,
           ruleConfiguration: configuration.rules,
-          ruleConfigFingerprint: configuration.fingerprint,
           acknowledgedWarnings: checked.acknowledgedWarnings,
           version: current.version + 1,
           updatedById: userId,
@@ -406,7 +409,6 @@ export class QuotationService {
         id,
         {
           ruleConfiguration: configuration.rules,
-          ruleConfigFingerprint: configuration.fingerprint,
           acknowledgedWarnings: [...new Set(input.warningKeys)],
           version: current.version + 1,
           updatedById: userId,

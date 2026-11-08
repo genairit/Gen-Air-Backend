@@ -68,8 +68,6 @@ export class Quotation
   declare approvedAt: Date | null;
   @Column({ type: DataType.JSONB, allowNull: false })
   declare ruleConfiguration: IQuotationRule[];
-  @Column({ type: DataType.STRING(64), allowNull: false })
-  declare ruleConfigFingerprint: string;
   @Column(DataType.VIRTUAL)
   declare customerName: string;
   @Column(DataType.VIRTUAL)

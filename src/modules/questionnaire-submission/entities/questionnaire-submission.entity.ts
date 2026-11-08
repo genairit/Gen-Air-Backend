@@ -5,7 +5,6 @@ import {
   Default,
   DataType,
   CreatedAt,
-  UpdatedAt,
   ForeignKey,
   PrimaryKey,
 } from 'sequelize-typescript';
@@ -21,6 +20,7 @@ import { Questionnaire } from '@Modules/questionnaire/entities/questionnaire.ent
 
 @Table({
   tableName: 'questionnaire_submissions',
+  updatedAt: false,
   indexes: [
     {
       name: 'uq_questionnaire_submissions_request_id',
@@ -63,5 +63,4 @@ export class QuestionnaireSubmission
   @Column({ type: DataType.JSONB, allowNull: false })
   declare answers: IQuestionnaireAnswer[];
   @CreatedAt declare createdAt: Date;
-  @UpdatedAt declare updatedAt: Date;
 }

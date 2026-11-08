@@ -10,6 +10,7 @@ export interface IQuotationSectionDocument extends IQuotationSection {
   items: IQuotationItem[];
 }
 export interface IQuotationDocument extends IQuotation {
+  ruleConfigFingerprint: string;
   sections: IQuotationSectionDocument[];
 }
 export interface IQuotationWarning {

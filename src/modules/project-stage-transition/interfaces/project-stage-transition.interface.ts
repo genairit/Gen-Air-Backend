@@ -5,7 +5,6 @@ import { IProjectStage } from '@Modules/project-stage/interfaces/project-stage.i
 export interface IProjectStageTransition {
   id: string;
   createdAt: Date;
-  updatedAt: Date;
   projectId: string;
   changedBy?: IUser;
   toStageId: string;
