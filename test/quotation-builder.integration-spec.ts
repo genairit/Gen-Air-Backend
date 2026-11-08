@@ -30,6 +30,8 @@ import { QuotationSectionRepository } from '@Modules/quotation-section/quotation
 import { CatalogueItemUsageService } from '@Modules/catalogue-item-usage/catalogue-item-usage.service';
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
 import { CatalogueItemUsageRepository } from '@Modules/catalogue-item-usage/catalogue-item-usage.repository';
+import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
+import { QuestionnaireSubmission } from '@Modules/questionnaire-submission/entities/questionnaire-submission.entity';
 
 const actor = randomUUID(),
   otherActor = randomUUID(),
@@ -175,7 +177,16 @@ const withLine = async (
 beforeAll(async () => {
   await sequelize.authenticate();
   await sequelize.query(
-    `CREATE TYPE user_role AS ENUM('system_admin','engineer');CREATE TABLE users(id uuid PRIMARY KEY);CREATE TABLE customers(id uuid PRIMARY KEY,name text DEFAULT 'לקוח בדיקה');CREATE TABLE projects(id uuid PRIMARY KEY,name text DEFAULT 'פרויקט בדיקה');CREATE TABLE permissions(key text PRIMARY KEY,feature text,action text);CREATE TABLE role_permissions(role user_role,permission_key text,PRIMARY KEY(role,permission_key));INSERT INTO permissions VALUES('projects.read','projects','read');INSERT INTO role_permissions VALUES('system_admin','projects.read'),('engineer','projects.read');`,
+    `CREATE TYPE user_role AS ENUM('system_admin','engineer');
+     CREATE TABLE users(id uuid PRIMARY KEY);
+     CREATE TABLE customers(id uuid PRIMARY KEY,name text DEFAULT 'לקוח בדיקה');
+     CREATE TABLE projects(id uuid PRIMARY KEY,name text DEFAULT 'פרויקט בדיקה');
+     CREATE TABLE permissions(key text PRIMARY KEY,feature text NOT NULL,action text NOT NULL,CONSTRAINT chk_permissions_key CHECK(key=feature||'.'||action),CONSTRAINT uq_permissions_feature_action UNIQUE(feature,action));
+     CREATE TABLE role_permissions(role user_role,permission_key text,PRIMARY KEY(role,permission_key));
+     CREATE TABLE project_stage_transitions(id uuid PRIMARY KEY,project_id uuid NOT NULL,from_stage_id uuid,to_stage_id uuid NOT NULL,changed_by_id uuid NOT NULL,changed_by_role user_role NOT NULL,note text,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
+     CREATE TABLE questionnaire_submissions(id uuid PRIMARY KEY,questionnaire_id uuid NOT NULL,request_id uuid NOT NULL,full_name text NOT NULL,role text NOT NULL,department text NOT NULL,answers jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
+     INSERT INTO permissions VALUES('projects.read','projects','read');
+     INSERT INTO role_permissions VALUES('system_admin','projects.read'),('engineer','projects.read');`,
   );
   await sequelize.query('INSERT INTO users(id) VALUES($actor),($otherActor)', {
     bind: { actor, otherActor },
@@ -192,6 +203,24 @@ beforeAll(async () => {
       'utf8',
     ),
   );
+  const deleteGrant = await readFile(
+    join(
+      process.cwd(),
+      'migrations/20261102080605_add_quotation_delete_permission.sql',
+    ),
+    'utf8',
+  );
+  await sequelize.query(deleteGrant);
+  await sequelize.query(deleteGrant);
+  await sequelize.query(
+    await readFile(
+      join(
+        process.cwd(),
+        'migrations/2026-11-08-remove-derived-and-append-only-columns.sql',
+      ),
+      'utf8',
+    ),
+  );
   const module = await context.compile();
   services.quotation = module.get(QuotationService);
   services.catalogue = module.get(CatalogueItemService);
@@ -200,6 +229,41 @@ beforeAll(async () => {
 }, 30000);
 afterAll(async () => {
   await sequelize.close();
+});
+
+describe('Normalized append-only tables on real PostgreSQL', () => {
+  test('models and inserts use created_at without updated_at', async () => {
+    expect(
+      Reflect.getMetadata(
+        'sequelize:options',
+        ProjectStageTransition.prototype,
+      ),
+    ).toMatchObject({ updatedAt: false });
+    expect(
+      Reflect.getMetadata(
+        'sequelize:options',
+        QuestionnaireSubmission.prototype,
+      ),
+    ).toMatchObject({ updatedAt: false });
+    const stageId = randomUUID();
+    const questionnaireId = randomUUID();
+    const [stages] = await sequelize.query(
+      `INSERT INTO project_stage_transitions
+       (id,project_id,to_stage_id,changed_by_id,changed_by_role)
+       VALUES (gen_random_uuid(),$projectId,$stageId,$actor,'engineer')
+       RETURNING created_at`,
+      { bind: { projectId: randomUUID(), stageId, actor } },
+    );
+    const [submissions] = await sequelize.query(
+      `INSERT INTO questionnaire_submissions
+       (id,questionnaire_id,request_id,full_name,role,department,answers)
+       VALUES (gen_random_uuid(),$questionnaireId,gen_random_uuid(),'Name','Role','Dept','[]')
+       RETURNING created_at`,
+      { bind: { questionnaireId } },
+    );
+    expect(stages).toHaveLength(1);
+    expect(submissions).toHaveLength(1);
+  });
 });
 
 describe('Quotation status counts on real PostgreSQL', () => {
@@ -550,9 +614,7 @@ describe('Quotation aggregate on real PostgreSQL', () => {
       acknowledged.ruleConfigFingerprint,
     );
     const stored = await Quotation.findByPk(quote.id);
-    expect(stored?.ruleConfigFingerprint).toBe(
-      acknowledged.ruleConfigFingerprint,
-    );
+    expect(stored?.ruleConfiguration).toEqual(acknowledged.ruleConfiguration);
 
     await expect(
       quotationService().acknowledge(
@@ -937,22 +999,15 @@ describe('Remaining aggregate write guards', () => {
 });
 
 describe('Quotation deletion on real PostgreSQL', () => {
-  test('delete grant migration replays safely and grants only the administrator', async () => {
-    const migration = await readFile(
-      join(
-        process.cwd(),
-        'migrations/20261102080605_add_quotation_delete_permission.sql',
-      ),
-      'utf8',
-    );
-    await sequelize.query(migration);
-    await sequelize.query(migration);
+  test('delete grant survives normalized schema migration', async () => {
     const [permissions] = await sequelize.query(
-      "SELECT key, feature, action FROM permissions WHERE key = 'quotations.delete'",
+      "SELECT key FROM permissions WHERE key = 'quotations.delete'",
     );
-    expect(permissions).toEqual([
-      { key: 'quotations.delete', feature: 'quotations', action: 'delete' },
-    ]);
+    expect(permissions).toEqual([{ key: 'quotations.delete' }]);
+    const [removed] = await sequelize.query(
+      "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND (table_name, column_name) IN (('permissions','feature'),('permissions','action'),('quotations','rule_config_fingerprint'),('project_stage_transitions','updated_at'),('questionnaire_submissions','updated_at'))",
+    );
+    expect(removed).toEqual([]);
     const [grants] = await sequelize.query(
       "SELECT role FROM role_permissions WHERE permission_key = 'quotations.delete'",
     );
@@ -983,9 +1038,6 @@ describe('Quotation deletion on real PostgreSQL', () => {
       });
       expect(deleted?.deletedAt).toBeInstanceOf(Date);
       expect(deleted?.ruleConfiguration).toEqual(before?.ruleConfiguration);
-      expect(deleted?.ruleConfigFingerprint).toBe(
-        before?.ruleConfigFingerprint,
-      );
       expect(
         await QuotationSection.count({ where: { quotationId: quote.id } }),
       ).toBe(1);

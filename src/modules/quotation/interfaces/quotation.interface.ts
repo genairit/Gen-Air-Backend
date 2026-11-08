@@ -23,7 +23,6 @@ export interface IQuotation {
   status: TQuotationStatus;
   paymentTermsNote: string;
   approvedById: string | null;
-  ruleConfigFingerprint: string;
   acknowledgedWarnings: string[];
   paymentSchedule: IPaymentStage[];
   targetPretaxAmount: string | null;
