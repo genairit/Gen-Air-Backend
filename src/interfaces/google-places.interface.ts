@@ -19,4 +19,8 @@ export interface IPlaceAddress {
   city: string | null;
   formattedAddress: string;
   countryCode: string | null;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
 }

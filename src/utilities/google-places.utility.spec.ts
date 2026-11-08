@@ -7,6 +7,7 @@ import {
 } from './google-places.utility';
 
 import { AxiosError, AxiosHeaders } from 'axios';
+import { PARAN_JERUSALEM_PLACE } from '@Modules/address/testing/paran-jerusalem.fixture';
 
 const SESSION_TOKEN = '2f1c8a5e-7b3d-4c1a-9e2f-6a8b0c4d2e1f';
 
@@ -119,6 +120,16 @@ describe('toPlaceSuggestions', () => {
 });
 
 describe('toPlaceAddress', () => {
+  it('retains the coordinates of the Jerusalem result that omits a country', () => {
+    expect(toPlaceAddress(PARAN_JERUSALEM_PLACE)).toEqual({
+      placeId: PARAN_JERUSALEM_PLACE.id,
+      city: 'ירושלים',
+      countryCode: null,
+      formattedAddress: 'פארן 1, ירושלים',
+      location: PARAN_JERUSALEM_PLACE.location,
+    });
+  });
+
   it('extracts the formatted address, city and country', () => {
     const place = {
       id: 'ChIJ1',

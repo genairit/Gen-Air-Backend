@@ -8,6 +8,11 @@ import {
 } from '@nestjs/common';
 
 import {
+  GOOGLE_PLACES,
+  JERUSALEM_SERVICE_AREA,
+} from '@Constants/google-places.constant';
+
+import {
   IPlaceSearch,
   IPlaceLookup,
   IPlaceAddress,
@@ -15,7 +20,6 @@ import {
 } from '@Interfaces/google-places.interface';
 
 import { Meta, TypedLogger } from '@Logger/logger.service';
-import { GOOGLE_PLACES } from '@Constants/google-places.constant';
 import { GooglePlacesService } from '@Providers/google-places/google-places.service';
 
 @Injectable()
@@ -47,13 +51,34 @@ export class AddressService {
       (countryCode) => countryCode === address.countryCode,
     );
 
-    if (!isInServiceArea) {
+    if (!isInServiceArea && !this.isVerifiedJerusalemAddress(address)) {
       throw new BadRequestException(
         'Selected place is outside the supported service area; choose another address',
       );
     }
 
     return address;
+  }
+
+  private isVerifiedJerusalemAddress(address: IPlaceAddress): boolean {
+    const { location } = address;
+
+    if (
+      address.countryCode ||
+      address.city !== JERUSALEM_SERVICE_AREA.CITY ||
+      !location
+    ) {
+      return false;
+    }
+
+    const latitudeInCity =
+      location.latitude >= JERUSALEM_SERVICE_AREA.MIN_LATITUDE &&
+      location.latitude <= JERUSALEM_SERVICE_AREA.MAX_LATITUDE;
+    const longitudeInCity =
+      location.longitude >= JERUSALEM_SERVICE_AREA.MIN_LONGITUDE &&
+      location.longitude <= JERUSALEM_SERVICE_AREA.MAX_LONGITUDE;
+
+    return latitudeInCity && longitudeInCity;
   }
 
   private assertPlacesConfigured(): void {

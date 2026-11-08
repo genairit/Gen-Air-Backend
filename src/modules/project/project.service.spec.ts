@@ -30,6 +30,7 @@ import { APARTMENT_OWNERSHIP } from './constants/apartment-commercial.constant';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
+import { PARAN_JERUSALEM_PLACE } from '@Modules/address/testing/paran-jerusalem.fixture';
 import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
@@ -73,6 +74,7 @@ const COMPANY_DETAILS = {
 };
 
 const TEL_AVIV_PLACE_ID = 'ChIJ-tel-aviv' as const;
+const PARAN_PLACE_ID = PARAN_JERUSALEM_PLACE.id;
 const ROAD_PLACE_ID = 'ChIJ-road-without-city' as const;
 const UNKNOWN_PLACE_ID = 'ChIJ-unknown' as const;
 
@@ -82,6 +84,13 @@ const VERIFIED_ADDRESSES = {
     city: 'תל אביב-יפו',
     placeId: TEL_AVIV_PLACE_ID,
     formattedAddress: 'דרך נמיר 94, תל אביב-יפו',
+  },
+  [PARAN_PLACE_ID]: {
+    city: 'ירושלים',
+    countryCode: null,
+    placeId: PARAN_PLACE_ID,
+    formattedAddress: PARAN_JERUSALEM_PLACE.formattedAddress,
+    location: PARAN_JERUSALEM_PLACE.location,
   },
   [ROAD_PLACE_ID]: {
     city: null,
@@ -578,6 +587,24 @@ describe('ProjectService.create intake fields', () => {
       contactPhone: null,
       contactRole: null,
     });
+  });
+
+  it('stores the selected verified Paran 1 place ID and Jerusalem address', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.create(
+      { ...PROJECT, addressPlaceId: PARAN_PLACE_ID },
+      CREATOR,
+    );
+
+    expect(projectRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addressPlaceId: PARAN_PLACE_ID,
+        addressCity: 'ירושלים',
+        address: 'פארן 1, ירושלים',
+      }),
+      TRANSACTION,
+    );
   });
 
   it('rejects a project without an address', async () => {

@@ -7,7 +7,9 @@ import {
 
 import { Test } from '@nestjs/testing';
 import { AddressService } from './address.service';
+import { toPlaceAddress } from '@Utilities/google-places.utility';
 import { IPlaceAddress } from '@Interfaces/google-places.interface';
+import { PARAN_JERUSALEM_PLACE } from './testing/paran-jerusalem.fixture';
 import { GooglePlacesService } from '@Providers/google-places/google-places.service';
 
 const LOOKUP = { placeId: 'ChIJ1', sessionToken: null };
@@ -74,6 +76,29 @@ describe('AddressService.getSuggestions', () => {
 });
 
 describe('AddressService.getVerifiedAddress', () => {
+  it('accepts the provider-verified Paran 1 address despite its missing country component', async () => {
+    const address = toPlaceAddress(PARAN_JERUSALEM_PLACE);
+    const { service } = await createService({
+      findPlace: jest.fn().mockResolvedValue(address),
+    });
+
+    await expect(service.getVerifiedAddress(LOOKUP)).resolves.toEqual(address);
+  });
+
+  it('rejects a missing-country place outside Jerusalem coordinates', async () => {
+    const address = toPlaceAddress(PARAN_JERUSALEM_PLACE);
+    const { service } = await createService({
+      findPlace: jest.fn().mockResolvedValue({
+        ...address,
+        location: { latitude: 40, longitude: 35.2299901 },
+      }),
+    });
+
+    await expect(service.getVerifiedAddress(LOOKUP)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
   it('returns an Israeli place as a verified address', async () => {
     const { service } = await createService();
 
