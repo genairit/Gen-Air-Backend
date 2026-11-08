@@ -11,7 +11,7 @@ export const GOOGLE_PLACES = {
   API_KEY_HEADER: 'X-Goog-Api-Key',
   FIELD_MASK_HEADER: 'X-Goog-FieldMask',
   BASE_URL: 'https://places.googleapis.com/v1',
-  PLACE_FIELDS: 'id,formattedAddress,addressComponents',
+  PLACE_FIELDS: 'id,formattedAddress,addressComponents,location',
   REQUEST_TIMEOUT_MS: 5 * TIME_UNITS.SECONDS,
   SUGGESTION_FIELDS:
     'suggestions.placePrediction.placeId,suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat',
@@ -23,3 +23,11 @@ export const GOOGLE_PLACES_COMPONENT_TYPES = {
 } as const;
 
 export const GOOGLE_PLACE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+export const JERUSALEM_SERVICE_AREA = {
+  CITY: 'ירושלים',
+  MIN_LATITUDE: 31.7,
+  MAX_LATITUDE: 31.9,
+  MIN_LONGITUDE: 35.15,
+  MAX_LONGITUDE: 35.3,
+} as const;
