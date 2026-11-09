@@ -1,6 +1,6 @@
 # Purchasing and execution manager role
 
-Apply `2026-11-09-add-purchasing-execution-manager-role.sql` first and commit it. Then apply `2026-11-09-seed-purchasing-execution-permissions.sql`. PostgreSQL requires the new enum value to be committed before it is inserted into `role_permissions`. Both files are idempotent. Neither assigns the role to an account or changes existing user roles. Verify the eight catalog keys, the twelve new-role grants, finance and admin payment grants, and zero unexpected `user_roles` assignments before deploying matching application code.
+Apply `2026-11-09-add-purchasing-execution-manager-role.sql` first and commit it. Then apply `2026-11-09-seed-purchasing-execution-permissions.sql`. PostgreSQL requires the new enum value to be committed before it is inserted into `role_permissions`. The seed supports both the original `permissions(key, feature, action)` catalog and the newer key-only catalog. Both files are idempotent. Neither assigns the role to an account or changes existing user roles. Verify the eight catalog keys, the twelve new-role grants, finance and admin payment grants, and zero unexpected `user_roles` assignments before deploying matching application code.
 
 | Action | Manager | Finance | Admin |
 | --- | --- | --- | --- |

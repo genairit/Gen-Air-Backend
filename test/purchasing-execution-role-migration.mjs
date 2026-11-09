@@ -73,3 +73,47 @@ test('new account role and permission matrix are idempotent and preserve existin
   );
   await db.close();
 });
+
+test('permission seed also supports the original catalog with required feature and action columns', async () => {
+  const db = new PGlite();
+  await db.exec(`
+    CREATE TYPE public.user_role AS ENUM ('system_admin', 'finance');
+    CREATE TABLE public.permissions (
+      key text PRIMARY KEY,
+      feature text NOT NULL,
+      action text NOT NULL,
+      CONSTRAINT chk_permissions_key CHECK (key = feature || '.' || action),
+      CONSTRAINT uq_permissions_feature_action UNIQUE (feature, action)
+    );
+    CREATE TABLE public.role_permissions (
+      role public.user_role NOT NULL,
+      permission_key text NOT NULL REFERENCES public.permissions(key),
+      PRIMARY KEY (role, permission_key)
+    );
+    INSERT INTO public.permissions (key, feature, action) VALUES
+      ('projects.read', 'projects', 'read'),
+      ('customers.read', 'customers', 'read'),
+      ('tasks.read', 'tasks', 'read'),
+      ('employees.read', 'employees', 'read'),
+      ('drive.read', 'drive', 'read'),
+      ('quotations.read', 'quotations', 'read');
+  `);
+  await db.exec(roleMigration);
+  await db.exec(grantMigration);
+  await db.exec(grantMigration);
+  const keys = await db.query(
+    `SELECT key, feature, action FROM public.permissions WHERE key = 'purchase_orders.approve'`,
+  );
+  assert.deepEqual(keys.rows, [
+    {
+      key: 'purchase_orders.approve',
+      feature: 'purchase_orders',
+      action: 'approve',
+    },
+  ]);
+  const count = await db.query(
+    `SELECT count(*)::int AS count FROM public.role_permissions WHERE role = 'purchasing_execution_manager'`,
+  );
+  assert.equal(count.rows[0].count, 12);
+  await db.close();
+});

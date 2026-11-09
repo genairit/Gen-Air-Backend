@@ -2,16 +2,38 @@
 -- No account is assigned the new role by this migration.
 BEGIN;
 
-INSERT INTO public.permissions (key) VALUES
-  ('boq_templates.manage'),
-  ('supplier_agreements.manage'),
-  ('purchase_requests.review'),
-  ('purchase_orders.approve'),
-  ('purchase_orders.send'),
-  ('execution_handoffs.manage'),
-  ('subcontractor_settlements.approve'),
-  ('payments.record')
-ON CONFLICT (key) DO NOTHING;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'permissions' AND column_name = 'feature'
+  ) THEN
+    INSERT INTO public.permissions (key, feature, action)
+    SELECT key, split_part(key, '.', 1), split_part(key, '.', 2)
+    FROM (VALUES
+      ('boq_templates.manage'),
+      ('supplier_agreements.manage'),
+      ('purchase_requests.review'),
+      ('purchase_orders.approve'),
+      ('purchase_orders.send'),
+      ('execution_handoffs.manage'),
+      ('subcontractor_settlements.approve'),
+      ('payments.record')
+    ) AS keys(key)
+    ON CONFLICT (key) DO NOTHING;
+  ELSE
+    INSERT INTO public.permissions (key) VALUES
+      ('boq_templates.manage'),
+      ('supplier_agreements.manage'),
+      ('purchase_requests.review'),
+      ('purchase_orders.approve'),
+      ('purchase_orders.send'),
+      ('execution_handoffs.manage'),
+      ('subcontractor_settlements.approve'),
+      ('payments.record')
+    ON CONFLICT (key) DO NOTHING;
+  END IF;
+END $$;
 
 INSERT INTO public.role_permissions (role, permission_key) VALUES
   ('purchasing_execution_manager', 'projects.read'),
