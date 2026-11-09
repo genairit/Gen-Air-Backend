@@ -260,6 +260,246 @@ const buildUploadedFile = (path: string): Express.Multer.File => ({
 });
 
 describe('ProjectDriveService.provision', () => {
+  const apartment = {
+    ...PROJECT,
+    id: 'apartment-1',
+    code: 'ד-101',
+    name: 'דירה 101',
+    parentProjectId: PROJECT.id,
+  };
+
+  const createApartmentService = async () => {
+    const context = await createService();
+    type TProjectFixture = {
+      id: string;
+      code: string;
+      name: string;
+      driveFolderId: string | null;
+      parentProjectId: string | null;
+      projectType: { canHaveApartments: boolean };
+    };
+    const projects = new Map<string, TProjectFixture>([
+      [
+        PROJECT.id,
+        {
+          ...PROJECT,
+          parentProjectId: null,
+          projectType: { canHaveApartments: true },
+        },
+      ],
+      [
+        apartment.id,
+        { ...apartment, projectType: { canHaveApartments: false } },
+      ],
+    ]);
+    context.projectService.getById.mockImplementation((id: string) =>
+      Promise.resolve(projects.get(id)),
+    );
+    context.projectService.setDriveFolderId.mockImplementation(
+      (id: string, folderId: string) => {
+        const project = projects.get(id);
+        if (project) {
+          projects.set(id, { ...project, driveFolderId: folderId });
+        }
+        return Promise.resolve();
+      },
+    );
+    context.driveTemplateFolderService.getTree.mockResolvedValue([
+      ...TEMPLATE_TREE,
+      { id: 'tenants', name: 'דיירים', children: [] },
+    ]);
+    return { ...context, projects };
+  };
+
+  it('creates building tenants and a full apartment template without nested tenants', async () => {
+    const { service, googleDriveService, projectService } =
+      await createApartmentService();
+
+    await Promise.all([
+      service.handleProjectCreated({ projectId: apartment.id }),
+      service.provision(apartment.id),
+    ]);
+
+    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
+      'דיירים',
+      'id:מגדל בבלי',
+    );
+    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
+      apartment.name,
+      'id:דיירים',
+      apartment.id,
+    );
+    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
+      '01_ד-101',
+      'id:דירה 101',
+    );
+    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
+      'CAD',
+      'id:01_ד-101',
+    );
+    expect(googleDriveService.ensureFolder).not.toHaveBeenCalledWith(
+      'דיירים',
+      'id:דירה 101',
+    );
+    expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
+      apartment.id,
+      'id:דירה 101',
+    );
+    expect(projectService.setDriveFolderId).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries an apartment template failure without changing its folder ID', async () => {
+    const { service, googleDriveService, projects } =
+      await createApartmentService();
+    const failed = { once: false };
+    googleDriveService.ensureFolder.mockImplementation(async (name: string) => {
+      const apartmentRootCreated =
+        googleDriveService.ensureFolder.mock.calls.some(
+          ([folderName]) => folderName === apartment.name,
+        );
+      if (name === 'CAD' && apartmentRootCreated && !failed.once) {
+        failed.once = true;
+        throw new Error('temporary failure');
+      }
+      return `id:${name}`;
+    });
+
+    await expect(service.provision(apartment.id)).rejects.toThrow(
+      BadGatewayException,
+    );
+    expect(projects.get(apartment.id)?.driveFolderId).toBeNull();
+
+    await service.provision(apartment.id);
+
+    expect(projects.get(apartment.id)?.driveFolderId).toBe('id:דירה 101');
+    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
+      apartment.name,
+      'id:דיירים',
+      apartment.id,
+    );
+  });
+
+  it('previews and moves a linked legacy apartment folder with the same ID', async () => {
+    const { service, googleDriveService, projects } =
+      await createApartmentService();
+    await service.provision(PROJECT.id);
+    const linkedApartment = projects.get(apartment.id);
+    if (!linkedApartment) {
+      throw new Error('Missing apartment test fixture');
+    }
+    projects.set(apartment.id, {
+      ...linkedApartment,
+      driveFolderId: 'legacy-apartment',
+    });
+    const folder = { parents: [ROOT_ID] };
+    googleDriveService.listChildren.mockImplementation((id: string) =>
+      Promise.resolve(
+        id === 'id:מגדל בבלי'
+          ? [{ id: 'id:דיירים', name: 'דיירים', isFolder: true }]
+          : [],
+      ),
+    );
+    googleDriveService.getFileMetadata.mockImplementation((id: string) =>
+      Promise.resolve({
+        id,
+        name: apartment.name,
+        mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+        parents: folder.parents,
+        trashed: false,
+      }),
+    );
+    googleDriveService.moveFile.mockImplementation(() => {
+      folder.parents = ['id:דיירים'];
+      return Promise.resolve();
+    });
+
+    const preview = await service.getApartmentFolderRepair(apartment.id);
+    expect(preview).toEqual({
+      apartmentId: apartment.id,
+      buildingId: PROJECT.id,
+      sourceFolderId: 'legacy-apartment',
+      destinationFolderId: 'id:דיירים',
+      status: 'needs_move',
+    });
+    expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+    await expect(service.provision(apartment.id)).rejects.toThrow(
+      ConflictException,
+    );
+    await expect(
+      service.repairApartmentFolder(apartment.id, {
+        sourceFolderId: 'wrong-folder',
+        destinationFolderId: 'id:דיירים',
+      }),
+    ).rejects.toThrow(ConflictException);
+    expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+
+    await service.repairApartmentFolder(apartment.id, preview);
+    expect(googleDriveService.moveFile).toHaveBeenCalledWith({
+      fileId: 'legacy-apartment',
+      parentIds: [ROOT_ID],
+      destinationFolderId: 'id:דיירים',
+    });
+    expect(projects.get(apartment.id)?.driveFolderId).toBe('legacy-apartment');
+    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
+      '01_ד-101',
+      'legacy-apartment',
+    );
+    await service.repairApartmentFolder(apartment.id, preview);
+    expect(googleDriveService.moveFile).toHaveBeenCalledTimes(1);
+    expect(googleDriveService.trashFile).not.toHaveBeenCalled();
+
+    folder.parents = ['unrelated-folder'];
+    await expect(
+      service.getApartmentFolderRepair(apartment.id),
+    ).rejects.toThrow(ConflictException);
+    folder.parents = [ROOT_ID];
+    googleDriveService.listChildren.mockImplementation((id: string) =>
+      Promise.resolve(
+        id === 'id:מגדל בבלי'
+          ? [{ id: 'id:דיירים', name: 'דיירים', isFolder: true }]
+          : [{ id: 'other-apartment', name: apartment.name, isFolder: true }],
+      ),
+    );
+    await expect(
+      service.getApartmentFolderRepair(apartment.id),
+    ).rejects.toThrow(ConflictException);
+    expect(googleDriveService.moveFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects stale folder IDs while a matching repair is in progress', async () => {
+    const { service, googleDriveService } = await createService();
+    const reviewedRepair = {
+      sourceFolderId: 'reviewed-source',
+      destinationFolderId: 'reviewed-destination',
+    };
+    const preview = jest.spyOn(service, 'getApartmentFolderRepair');
+    preview.mockResolvedValue({
+      apartmentId: PROJECT.id,
+      buildingId: 'building-1',
+      ...reviewedRepair,
+      status: 'already_placed',
+    });
+
+    const first = service.repairApartmentFolder(PROJECT.id, reviewedRepair);
+    const matching = service.repairApartmentFolder(PROJECT.id, reviewedRepair);
+    await expect(
+      service.repairApartmentFolder(PROJECT.id, {
+        ...reviewedRepair,
+        sourceFolderId: 'stale-source',
+      }),
+    ).rejects.toThrow(ConflictException);
+    await expect(
+      service.repairApartmentFolder(PROJECT.id, {
+        ...reviewedRepair,
+        destinationFolderId: 'stale-destination',
+      }),
+    ).rejects.toThrow(ConflictException);
+    await Promise.all([first, matching]);
+
+    expect(preview).toHaveBeenCalledTimes(1);
+    expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+  });
+
   it('creates the project folder, saves it, and copies the template tree with tags filled in', async () => {
     const { service, projectService, googleDriveService } =
       await createService();
