@@ -268,6 +268,11 @@ export class QuotationService {
       if (current.status === QUOTATION_STATUS.APPROVED) {
         throw new ConflictException('יש לפתוח את ההצעה לעריכה לפני שינוי');
       }
+      if (!input.brands && current.brands.length > 1) {
+        throw new ConflictException(
+          'יש לרענן את העורך כדי לשמור הצעה עם מספר חברות',
+        );
+      }
       if (new Decimal(input.discountPercent).gt(100)) {
         throw new BadRequestException('אחוז ההנחה חייב להיות עד100');
       }
