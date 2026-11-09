@@ -13,8 +13,8 @@ import {
 } from '@nestjs/common';
 
 import {
-  IProject,
-  IApartmentPage,
+  TProjectRead,
+  IApartmentReadPage,
   IProjectStageCounts,
 } from './interfaces/project.interface';
 
@@ -45,7 +45,7 @@ export class ProjectController {
   @RequirePermissions(PERMISSIONS.PROJECTS_READ)
   getByFilter(
     @Query() filter: GetProjectsByFilterDto,
-  ): Promise<ICursorPage<IProject>> {
+  ): Promise<ICursorPage<TProjectRead>> {
     return this.projectService.getByFilter(filter);
   }
 
@@ -72,7 +72,7 @@ export class ProjectController {
 
   @Get(':id')
   @RequirePermissions(PERMISSIONS.PROJECTS_READ)
-  getById(@Param('id', ParseUUIDPipe) id: string): Promise<IProject> {
+  getById(@Param('id', ParseUUIDPipe) id: string): Promise<TProjectRead> {
     return this.projectService.getById(id);
   }
 
@@ -81,7 +81,7 @@ export class ProjectController {
   create(
     @Body() project: CreateProjectDto,
     @AuthenticatedUser() creator: IUser,
-  ): Promise<IProject> {
+  ): Promise<TProjectRead> {
     return this.projectService.create(project, creator);
   }
 
@@ -98,7 +98,7 @@ export class ProjectController {
   getApartments(
     @Param('id', ParseUUIDPipe) id: string,
     @Query() filter: GetApartmentsByFilterDto,
-  ): Promise<IApartmentPage> {
+  ): Promise<IApartmentReadPage> {
     return this.projectService.getApartments(id, filter);
   }
 
@@ -108,7 +108,7 @@ export class ProjectController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() apartment: CreateApartmentDto,
     @AuthenticatedUser() creator: IUser,
-  ): Promise<IProject> {
+  ): Promise<TProjectRead> {
     return this.projectService.createApartment(id, apartment, creator);
   }
 
@@ -118,7 +118,7 @@ export class ProjectController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() move: MoveProjectDto,
     @AuthenticatedUser() user: IUser,
-  ): Promise<IProject> {
+  ): Promise<TProjectRead> {
     return this.projectService.move(id, move, user);
   }
 
@@ -128,7 +128,7 @@ export class ProjectController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() changes: UpdateProjectDto,
     @AuthenticatedUser() editor: IAuthorizedUser,
-  ): Promise<IProject> {
+  ): Promise<TProjectRead> {
     return this.projectService.updateForActor(id, changes, editor);
   }
 

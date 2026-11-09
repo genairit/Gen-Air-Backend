@@ -16,3 +16,6 @@ export const FIXED_PROJECT_STATUSES = [
 ] as const;
 export const PROJECT_STATUS_MIGRATION_MESSAGE =
   'The four fixed project statuses are not configured. Apply the engineering-four-project-statuses migration.';
+export const REASON_REQUIRED_PROJECT_STATUS_IDS: readonly string[] = [
+  PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE,
+];

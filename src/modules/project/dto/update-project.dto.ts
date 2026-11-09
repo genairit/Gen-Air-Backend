@@ -10,6 +10,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+import { Trim } from '@Decorators/trim.decorator';
 import { IntersectionType } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
 import { ProjectLightingDto } from './project-lighting.dto';
@@ -48,6 +49,12 @@ export class UpdateProjectDto extends IntersectionType(
   @IsOptional()
   @IsUUID()
   declare stageId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Trim()
+  @MaxLength(FIELD_LENGTHS.TRANSITION_NOTE)
+  declare stageNote?: string;
 
   @ValidateIf((changes: object) => 'hasOwnTeam' in changes)
   @IsBoolean()

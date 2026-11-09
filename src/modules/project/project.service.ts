@@ -10,9 +10,11 @@ import {
 
 import {
   IProject,
-  IApartmentPage,
+  TProjectRead,
   INewProjectContext,
+  IApartmentReadPage,
   IProjectStageCounts,
+  IProjectWaitingReason,
   IProjectFieldSetTarget,
   IProjectCustomerDetails,
   TProjectUpdateAttributes,
@@ -55,7 +57,9 @@ import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
 import { hasAddressChanges } from './utilities/project-intake.utility';
 import { generateProjectCode } from './utilities/project-code.utility';
+import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
+import { resolveStageNote } from './utilities/project-stage-note.utility';
 import { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { GetProjectCountsByFilterDto } from './dto/get-counts-by-filter.dto';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
@@ -87,20 +91,22 @@ export class ProjectService {
     private readonly taskInitialization: ProjectTaskInitializationService,
   ) {}
 
-  async getById(id: string): Promise<IProject> {
+  async getById(id: string): Promise<TProjectRead> {
     const project = await this.getStoredById(id);
+    const [projectWithReason] = await this.withWaitingReasons([
+      this.projectApartmentService.resolveForRead(project),
+    ]);
 
-    return this.projectApartmentService.resolveForRead(project);
+    return projectWithReason;
   }
 
   async getByFilter(
     filter: GetProjectsByFilterDto,
-  ): Promise<ICursorPage<IProject>> {
+  ): Promise<ICursorPage<TProjectRead>> {
     const projectIds = await this.findManagedProjectIds(
       filter.managerId ?? null,
     );
-
-    return this.projectRepository.findByFilter(
+    const page = await this.projectRepository.findByFilter(
       {
         projectIds,
         parentProjectId: null,
@@ -110,6 +116,8 @@ export class ProjectService {
       },
       toCursorBatch(filter),
     );
+
+    return { ...page, items: await this.withWaitingReasons(page.items) };
   }
 
   async getStageCounts(
@@ -145,7 +153,10 @@ export class ProjectService {
     return this.projectRepository.isNameAvailable(name, excludeId);
   }
 
-  async create(project: CreateProjectDto, creator: IUser): Promise<IProject> {
+  async create(
+    project: CreateProjectDto,
+    creator: IUser,
+  ): Promise<TProjectRead> {
     const [initialStage, projectType] = await Promise.all([
       this.projectStageService.getInitialStage(),
       this.projectTypeService.getById(project.projectTypeId),
@@ -186,7 +197,7 @@ export class ProjectService {
     buildingId: string,
     apartment: CreateApartmentDto,
     creator: IUser,
-  ): Promise<IProject> {
+  ): Promise<TProjectRead> {
     const members = apartment.members ?? [];
     const [building, initialStage] = await Promise.all([
       this.getStoredById(buildingId),
@@ -212,17 +223,21 @@ export class ProjectService {
   async getApartments(
     buildingId: string,
     filter: GetApartmentsByFilterDto,
-  ): Promise<IApartmentPage> {
+  ): Promise<IApartmentReadPage> {
     const building = await this.getStoredById(buildingId);
+    const page = await this.projectApartmentService.findByBuilding(
+      building,
+      filter,
+    );
 
-    return this.projectApartmentService.findByBuilding(building, filter);
+    return { ...page, items: await this.withWaitingReasons(page.items) };
   }
 
   updateForActor(
     id: string,
     input: UpdateProjectDto,
     actor: IAuthorizedUser,
-  ): Promise<IProject> {
+  ): Promise<TProjectRead> {
     assertPermissions(actor, PERMISSIONS.PROJECTS_UPDATE);
     if ('stageId' in input) {
       assertPermissions(actor, PERMISSIONS.PROJECTS_STATUS_CHANGE);
@@ -235,7 +250,7 @@ export class ProjectService {
     id: string,
     changes: UpdateProjectDto,
     editor: IUser,
-  ): Promise<IProject> {
+  ): Promise<TProjectRead> {
     const [project] = await Promise.all([
       this.getStoredById(id),
       this.validateChanges(changes),
@@ -254,8 +269,8 @@ export class ProjectService {
       await this.applyStageChange(
         {
           project,
-          note: null,
           changedBy: editor,
+          note: changes.stageNote ?? null,
           toStageId: changes.stageId ?? null,
         },
         transaction,
@@ -269,7 +284,7 @@ export class ProjectService {
     id: string,
     move: MoveProjectDto,
     changedBy: IUser,
-  ): Promise<IProject> {
+  ): Promise<TProjectRead> {
     const [project] = await Promise.all([
       this.getById(id),
       this.projectStageService.getById(move.stageId),
@@ -334,13 +349,36 @@ export class ProjectService {
     }
   }
 
-  private async completeProjectCreation(projectId: string): Promise<IProject> {
+  private async completeProjectCreation(
+    projectId: string,
+  ): Promise<TProjectRead> {
     const projectCreated: IProjectCreatedEvent = { projectId };
     await this.eventEmitter.emitAsync(
       DOMAIN_EVENTS.PROJECT_CREATED,
       projectCreated,
     );
     return this.getById(projectId);
+  }
+
+  private async withWaitingReasons<T extends IProject>(
+    projects: T[],
+  ): Promise<(T & IProjectWaitingReason)[]> {
+    const waitingProjectIds = projects
+      .filter(
+        (project) =>
+          project.stageId === PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE,
+      )
+      .map((project) => project.id);
+    const reasonByProjectId =
+      await this.projectStageTransitionService.findLatestNotesInto({
+        projectIds: waitingProjectIds,
+        toStageId: PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE,
+      });
+
+    return projects.map((project) => ({
+      ...project,
+      waitingReason: reasonByProjectId.get(project.id) ?? null,
+    }));
   }
 
   private async getStoredById(id: string): Promise<IProject> {
@@ -610,6 +648,8 @@ export class ProjectService {
       return;
     }
 
+    const note = resolveStageNote({ toStageId, note: request.note });
+
     await this.projectRepository.update(
       project.id,
       { stageId: toStageId },
@@ -618,8 +658,8 @@ export class ProjectService {
 
     await this.projectStageTransitionService.record(
       {
+        note,
         toStageId,
-        note: request.note,
         projectId: project.id,
         fromStageId: project.stageId,
         changedBy: request.changedBy,

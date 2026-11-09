@@ -10,6 +10,11 @@ import {
   TProjectCreationAttributes,
 } from './interfaces/project.interface';
 
+import {
+  TNoteByProjectId,
+  ILatestNoteQuery,
+} from '@Modules/project-stage-transition/interfaces/project-stage-transition.interface';
+
 import { Test } from '@nestjs/testing';
 import { ProjectService } from './project.service';
 import { ForbiddenException } from '@nestjs/common';
@@ -19,12 +24,14 @@ import { USER_ROLES } from '@Constants/user-role.constant';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectIntakeService } from './project-intake.service';
 import { IUser } from '@Modules/user/interfaces/user.interface';
+import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { AddressService } from '@Modules/address/address.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { authorizedUser } from '../../testing/authorization.fixture';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
+import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
 import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { APARTMENT_OWNERSHIP } from './constants/apartment-commercial.constant';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
@@ -225,7 +232,12 @@ const createService = async () => {
     replaceForProject: jest.fn().mockResolvedValue(null),
     validateAssignments: jest.fn().mockResolvedValue(null),
   };
-  const transitionService = { record: jest.fn().mockResolvedValue(null) };
+  const transitionService = {
+    record: jest.fn().mockResolvedValue(null),
+    findLatestNotesInto: jest
+      .fn<Promise<TNoteByProjectId>, [ILatestNoteQuery]>()
+      .mockResolvedValue(new Map()),
+  };
   const taskInitialization = {
     ensureForProject: jest.fn().mockResolvedValue(null),
   };
@@ -450,6 +462,340 @@ describe('ProjectService.move', () => {
 
     expect(projectRepository.update).not.toHaveBeenCalled();
     expect(transitionService.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService.move waiting reason', () => {
+  const WAITING_STAGE_ID = PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE;
+  const waitingReasonRequired = {
+    response: { code: HTTP_ERROR_CODES.WAITING_REASON_REQUIRED },
+  };
+
+  it.each([
+    ['missing', {}],
+    ['empty', { note: '' }],
+    ['whitespace', { note: ' \t\n ' }],
+  ])(
+    'rejects moving to waiting with a %s reason before any write',
+    async (_case, reason) => {
+      const { service, projectRepository, transitionService } =
+        await createService();
+
+      const move = service.move(
+        PROJECT_ID,
+        { stageId: WAITING_STAGE_ID, ...reason },
+        CREATOR,
+      );
+
+      await expect(move).rejects.toBeInstanceOf(BadRequestException);
+      await expect(move).rejects.toMatchObject(waitingReasonRequired);
+      expect(projectRepository.update).not.toHaveBeenCalled();
+      expect(transitionService.record).not.toHaveBeenCalled();
+    },
+  );
+
+  it('stores the trimmed reason on the waiting transition', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+
+    await service.move(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID, note: '  ממתינים לאישור הלקוח  ' },
+      CREATOR,
+    );
+
+    expect(projectRepository.update).toHaveBeenCalledWith(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID },
+      TRANSACTION,
+    );
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toStageId: WAITING_STAGE_ID,
+        note: 'ממתינים לאישור הלקוח',
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('accepts a reason of exactly the column length after trimming', async () => {
+    const { service, transitionService } = await createService();
+    const longestReason = 'א'.repeat(FIELD_LENGTHS.TRANSITION_NOTE);
+
+    await service.move(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID, note: ` ${longestReason} ` },
+      CREATOR,
+    );
+
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ note: longestReason }),
+      TRANSACTION,
+    );
+  });
+
+  it('rejects a reason longer than the column before any write', async () => {
+    const { service, projectRepository } = await createService();
+    const tooLongReason = 'א'.repeat(FIELD_LENGTHS.TRANSITION_NOTE + 1);
+
+    const move = service.move(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID, note: tooLongReason },
+      CREATOR,
+    );
+
+    await expect(move).rejects.toBeInstanceOf(BadRequestException);
+    await expect(move).rejects.toMatchObject({
+      response: { code: HTTP_ERROR_CODES.TRANSITION_NOTE_TOO_LONG },
+    });
+    expect(projectRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the note optional for other statuses and stores a blank one as null', async () => {
+    const { service, transitionService } = await createService();
+
+    await service.move(
+      PROJECT_ID,
+      { stageId: PROJECT_STATUS_IDS.COMPLETED, note: '   ' },
+      CREATOR,
+    );
+
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        note: null,
+        toStageId: PROJECT_STATUS_IDS.COMPLETED,
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('trims an optional note on other statuses', async () => {
+    const { service, transitionService } = await createService();
+
+    await service.move(
+      PROJECT_ID,
+      { stageId: PROJECT_STATUS_IDS.IN_PROGRESS, note: '  התחלנו  ' },
+      CREATOR,
+    );
+
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ note: 'התחלנו' }),
+      TRANSACTION,
+    );
+  });
+
+  it('does not ask for a reason when the project is already waiting', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...STORED_COMPANY_PROJECT,
+      stageId: WAITING_STAGE_ID,
+    });
+
+    await service.move(PROJECT_ID, { stageId: WAITING_STAGE_ID }, CREATOR);
+
+    expect(projectRepository.update).not.toHaveBeenCalled();
+    expect(transitionService.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService.update waiting reason', () => {
+  const WAITING_STAGE_ID = PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE;
+
+  it.each([
+    ['missing', {}],
+    ['empty', { stageNote: '' }],
+    ['whitespace', { stageNote: ' \t\n ' }],
+  ])(
+    'rejects updating into waiting with a %s stageNote before the stage write',
+    async (_case, reason) => {
+      const { service, projectRepository, transitionService } =
+        await createService();
+      const update = service.update(
+        PROJECT_ID,
+        { stageId: WAITING_STAGE_ID, ...reason },
+        CREATOR,
+      );
+
+      await expect(update).rejects.toBeInstanceOf(BadRequestException);
+      await expect(update).rejects.toMatchObject({
+        response: { code: HTTP_ERROR_CODES.WAITING_REASON_REQUIRED },
+      });
+      expect(projectRepository.update).not.toHaveBeenCalledWith(
+        PROJECT_ID,
+        { stageId: WAITING_STAGE_ID },
+        TRANSACTION,
+      );
+      expect(transitionService.record).not.toHaveBeenCalled();
+    },
+  );
+
+  it('records the trimmed stageNote when updating into waiting', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+
+    await service.update(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID, stageNote: '  ממתינים לחתימה  ' },
+      CREATOR,
+    );
+
+    expect(projectRepository.update).toHaveBeenCalledWith(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID },
+      TRANSACTION,
+    );
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changedBy: CREATOR,
+        toStageId: WAITING_STAGE_ID,
+        note: 'ממתינים לחתימה',
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('rejects a stageNote longer than the column', async () => {
+    const { service, transitionService } = await createService();
+
+    await expect(
+      service.update(
+        PROJECT_ID,
+        {
+          stageId: WAITING_STAGE_ID,
+          stageNote: 'א'.repeat(FIELD_LENGTHS.TRANSITION_NOTE + 1),
+        },
+        CREATOR,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(transitionService.record).not.toHaveBeenCalled();
+  });
+
+  it('keeps stageNote optional when updating into another status', async () => {
+    const { service, transitionService } = await createService();
+
+    await service.update(
+      PROJECT_ID,
+      { stageId: PROJECT_STATUS_IDS.COMPLETED },
+      CREATOR,
+    );
+
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        note: null,
+        toStageId: PROJECT_STATUS_IDS.COMPLETED,
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('ignores a stageNote when the stage does not change', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...STORED_COMPANY_PROJECT,
+      stageId: WAITING_STAGE_ID,
+    });
+
+    await service.update(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID, stageNote: '' },
+      CREATOR,
+    );
+    await service.update(PROJECT_ID, { stageNote: 'סיבה' }, CREATOR);
+
+    expect(transitionService.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService waiting reason reads', () => {
+  const WAITING_STAGE_ID = PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE;
+  const WAITING_PROJECT = {
+    ...STORED_COMPANY_PROJECT,
+    stageId: WAITING_STAGE_ID,
+  };
+
+  it('exposes the latest waiting reason of a waiting project', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(WAITING_PROJECT);
+    transitionService.findLatestNotesInto.mockResolvedValue(
+      new Map([[PROJECT_ID, 'ממתינים לתוכניות']]),
+    );
+
+    await expect(service.getById(PROJECT_ID)).resolves.toMatchObject({
+      waitingReason: 'ממתינים לתוכניות',
+    });
+    expect(transitionService.findLatestNotesInto).toHaveBeenCalledWith({
+      projectIds: [PROJECT_ID],
+      toStageId: WAITING_STAGE_ID,
+    });
+  });
+
+  it('exposes null for a project that is not waiting, even with an old waiting note', async () => {
+    const { service, transitionService } = await createService();
+    transitionService.findLatestNotesInto.mockImplementation(({ projectIds }) =>
+      Promise.resolve(new Map(projectIds.map((id) => [id, 'סיבה ישנה']))),
+    );
+
+    await expect(service.getById(PROJECT_ID)).resolves.toMatchObject({
+      waitingReason: null,
+    });
+    expect(transitionService.findLatestNotesInto).toHaveBeenCalledWith({
+      projectIds: [],
+      toStageId: WAITING_STAGE_ID,
+    });
+  });
+
+  it('returns null after the project moves out of waiting', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById
+      .mockResolvedValueOnce(WAITING_PROJECT)
+      .mockResolvedValue({
+        ...STORED_COMPANY_PROJECT,
+        stageId: PROJECT_STATUS_IDS.IN_PROGRESS,
+      });
+
+    const moved = await service.move(
+      PROJECT_ID,
+      { stageId: PROJECT_STATUS_IDS.IN_PROGRESS },
+      CREATOR,
+    );
+
+    expect(moved.waitingReason).toBeNull();
+    expect(transitionService.findLatestNotesInto).toHaveBeenLastCalledWith({
+      projectIds: [],
+      toStageId: WAITING_STAGE_ID,
+    });
+  });
+
+  it('exposes reasons on the board list only for waiting projects', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    const otherProjectId = 'project-2';
+    projectRepository.findByFilter.mockResolvedValue({
+      items: [
+        WAITING_PROJECT,
+        { ...STORED_COMPANY_PROJECT, id: otherProjectId },
+      ],
+      nextCursor: 'cursor',
+    });
+    transitionService.findLatestNotesInto.mockResolvedValue(
+      new Map([[PROJECT_ID, 'ממתינים להצעת מחיר']]),
+    );
+
+    const page = await service.getByFilter({});
+
+    expect(page.nextCursor).toBe('cursor');
+    expect(page.items.map((item) => item.waitingReason)).toEqual([
+      'ממתינים להצעת מחיר',
+      null,
+    ]);
+    expect(transitionService.findLatestNotesInto).toHaveBeenCalledWith({
+      projectIds: [PROJECT_ID],
+      toStageId: WAITING_STAGE_ID,
+    });
   });
 });
 

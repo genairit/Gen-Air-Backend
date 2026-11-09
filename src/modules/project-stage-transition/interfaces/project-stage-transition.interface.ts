@@ -24,6 +24,18 @@ export interface IStageChange {
   fromStageId: string | null;
 }
 
+export interface ILatestNoteQuery {
+  toStageId: string;
+  projectIds: string[];
+}
+
+export type TProjectStageTransitionNote = Pick<
+  IProjectStageTransition,
+  'projectId' | 'note'
+>;
+
+export type TNoteByProjectId = Map<string, string | null>;
+
 export type TProjectStageTransitionCreationAttributes = Pick<
   IProjectStageTransition,
   | 'projectId'
