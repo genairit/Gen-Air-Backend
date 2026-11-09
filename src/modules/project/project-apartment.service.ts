@@ -32,6 +32,11 @@ import {
   APARTMENT_REQUIRED_CONTACT_FIELDS,
 } from './constants/project-apartment.constant';
 
+import {
+  resolveNewApartmentLighting,
+  resolveApartmentLightingChanges,
+} from './utilities/apartment-lighting.utility';
+
 import { Transaction } from 'sequelize';
 import { ProjectRepository } from './project.repository';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -90,6 +95,7 @@ export class ProjectApartmentService {
       apartmentOwnership: apartment.apartmentOwnership ?? null,
       apartmentCredit: apartment.apartmentCredit ?? null,
       hasOwnTeam: apartment.members != null,
+      ...resolveNewApartmentLighting(apartment),
       stageId,
       address: null,
       addressCity: null,
@@ -184,10 +190,12 @@ export class ProjectApartmentService {
 
     const contact = this.resolveContactChanges(apartment, changes);
     const team = this.resolveTeamChanges(changes);
+    const lighting = resolveApartmentLightingChanges(changes, apartment);
 
     return {
       ...contact,
       ...team,
+      ...lighting,
       name: changes.name?.trim(),
       apartmentOwnership: changes.apartmentOwnership,
       apartmentCredit: changes.apartmentCredit,

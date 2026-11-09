@@ -402,6 +402,12 @@ export class ProjectService {
       });
     }
 
+    if ('hasOwnLighting' in changes) {
+      throw new BadRequestException(
+        'Only apartments can override building lighting',
+      );
+    }
+
     return this.resolveProjectChanges(project, changes);
   }
 

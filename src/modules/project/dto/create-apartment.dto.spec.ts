@@ -19,6 +19,31 @@ const findInvalidFields = async (payload: object): Promise<string[]> => {
 };
 
 describe('CreateApartmentDto', () => {
+  it('accepts a local lighting override with a centimeter height', async () => {
+    await expect(
+      findInvalidFields({
+        ...APARTMENT,
+        hasOwnLighting: true,
+        hasGeneralLightingCeilingLowering: true,
+        generalLightingCeilingLoweringHeight: 25.5,
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('rejects malformed local lighting values', async () => {
+    await expect(
+      findInvalidFields({
+        ...APARTMENT,
+        hasOwnLighting: 'true',
+        generalLightingCeilingLoweringHeight: -2,
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        'hasOwnLighting',
+        'generalLightingCeilingLoweringHeight',
+      ]),
+    );
+  });
   it('accepts an existing customer link without repeating customer or contact text', async () => {
     await expect(findInvalidFields(APARTMENT)).resolves.toEqual([]);
   });
