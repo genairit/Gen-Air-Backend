@@ -1,7 +1,7 @@
 import {
   IStageChange,
-  ILatestNoteQuery,
   TNoteByProjectId,
+  ITargetStageNoteQuery,
   IProjectStageTransition,
 } from './interfaces/project-stage-transition.interface';
 
@@ -20,7 +20,7 @@ export class ProjectStageTransitionService {
   }
 
   async findLatestNotesByTargetStages(
-    query: ILatestNoteQuery,
+    query: ITargetStageNoteQuery,
   ): Promise<TNoteByProjectId> {
     if (query.projectIds.length === 0) {
       return new Map();

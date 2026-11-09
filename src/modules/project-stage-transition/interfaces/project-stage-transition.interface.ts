@@ -24,7 +24,7 @@ export interface IStageChange {
   fromStageId: string | null;
 }
 
-export interface ILatestNoteQuery {
+export interface ITargetStageNoteQuery {
   projectIds: string[];
   toStageIds: readonly string[];
 }

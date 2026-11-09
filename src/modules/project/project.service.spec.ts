@@ -18,7 +18,7 @@ import {
 
 import {
   TNoteByProjectId,
-  ILatestNoteQuery,
+  ITargetStageNoteQuery,
 } from '@Modules/project-stage-transition/interfaces/project-stage-transition.interface';
 
 import { Test } from '@nestjs/testing';
@@ -55,6 +55,11 @@ const ORDER_STAGE_ID = 'stage-order';
 const COMPANY_TYPE_ID = 'type-company';
 const PRIVATE_TYPE_ID = 'type-private';
 const CUSTOMER_ID = 'customer-1';
+const WAITING_STAGE_ID = PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE;
+
+const waitingReasonRequired = {
+  response: { code: HTTP_ERROR_CODES.WAITING_REASON_REQUIRED },
+};
 
 const LINKED_CUSTOMER = {
   name: 'בבלי נדל״ן',
@@ -239,7 +244,7 @@ const createService = async () => {
   const transitionService = {
     record: jest.fn().mockResolvedValue(null),
     findLatestNotesByTargetStages: jest
-      .fn<Promise<TNoteByProjectId>, [ILatestNoteQuery]>()
+      .fn<Promise<TNoteByProjectId>, [ITargetStageNoteQuery]>()
       .mockResolvedValue(new Map()),
   };
   const taskInitialization = {
@@ -470,11 +475,6 @@ describe('ProjectService.move', () => {
 });
 
 describe('ProjectService.move waiting reason', () => {
-  const WAITING_STAGE_ID = PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE;
-  const waitingReasonRequired = {
-    response: { code: HTTP_ERROR_CODES.WAITING_REASON_REQUIRED },
-  };
-
   it.each([
     ['missing', {}],
     ['empty', { note: '' }],
@@ -555,8 +555,6 @@ describe('ProjectService.move waiting reason', () => {
 });
 
 describe('ProjectService.update waiting reason', () => {
-  const WAITING_STAGE_ID = PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE;
-
   it.each([
     ['missing', {}],
     ['empty', { stageNote: '' }],
@@ -572,9 +570,7 @@ describe('ProjectService.update waiting reason', () => {
       );
 
       await expect(update).rejects.toBeInstanceOf(BadRequestException);
-      await expect(update).rejects.toMatchObject({
-        response: { code: HTTP_ERROR_CODES.WAITING_REASON_REQUIRED },
-      });
+      await expect(update).rejects.toMatchObject(waitingReasonRequired);
       expect(projectRepository.update).not.toHaveBeenCalled();
       expect(transitionService.record).not.toHaveBeenCalled();
     },
@@ -643,7 +639,6 @@ describe('ProjectService.update waiting reason', () => {
 });
 
 describe('ProjectService waiting reason reads', () => {
-  const WAITING_STAGE_ID = PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE;
   const WAITING_PROJECT = {
     ...STORED_COMPANY_PROJECT,
     stageId: WAITING_STAGE_ID,
@@ -1424,6 +1419,43 @@ describe('ProjectService.update apartment', () => {
       ),
     ).rejects.toThrow('addressPlaceId, projectTypeId, customerId');
     expect(projectRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('moves an apartment into waiting through a generic update with its stageNote', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+
+    await service.update(
+      STORED_APARTMENT.id,
+      { stageId: WAITING_STAGE_ID, stageNote: 'ממתינים לבעל הדירה' },
+      CREATOR,
+    );
+
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: STORED_APARTMENT.id,
+        toStageId: WAITING_STAGE_ID,
+        note: 'ממתינים לבעל הדירה',
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('rejects a generic update moving an apartment into waiting without a stageNote', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+
+    await expect(
+      service.update(
+        STORED_APARTMENT.id,
+        { stageId: WAITING_STAGE_ID },
+        CREATOR,
+      ),
+    ).rejects.toMatchObject(waitingReasonRequired);
+    expect(projectRepository.update).not.toHaveBeenCalled();
+    expect(transitionService.record).not.toHaveBeenCalled();
   });
 
   it('updates the end customer and contact without asking for building fields', async () => {

@@ -1,15 +1,19 @@
 import 'reflect-metadata';
 import { validate } from 'class-validator';
 import { MoveProjectDto } from './move-project.dto';
-import { plainToInstance } from 'class-transformer';
 import { UpdateProjectDto } from './update-project.dto';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
+import { plainToInstance, ClassConstructor } from 'class-transformer';
 import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 
 const STAGE_ID = PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE;
+const TOO_LONG_NOTE = 'א'.repeat(FIELD_LENGTHS.TRANSITION_NOTE + 1);
 
-const findInvalidFields = async (payload: object): Promise<string[]> => {
-  const errors = await validate(plainToInstance(MoveProjectDto, payload), {
+const findInvalidFields = async (
+  dto: ClassConstructor<object>,
+  payload: object,
+): Promise<string[]> => {
+  const errors = await validate(plainToInstance(dto, payload), {
     whitelist: true,
     forbidNonWhitelisted: true,
   });
@@ -28,22 +32,25 @@ describe('MoveProjectDto', () => {
   });
 
   it('keeps the note optional so the service decides when it is required', async () => {
-    await expect(findInvalidFields({ stageId: STAGE_ID })).resolves.toEqual([]);
+    await expect(
+      findInvalidFields(MoveProjectDto, { stageId: STAGE_ID }),
+    ).resolves.toEqual([]);
   });
 
   it('accepts a note padded beyond the limit when its trimmed text fits', async () => {
     const note = ` ${'א'.repeat(FIELD_LENGTHS.TRANSITION_NOTE)} `;
 
     await expect(
-      findInvalidFields({ stageId: STAGE_ID, note }),
+      findInvalidFields(MoveProjectDto, { stageId: STAGE_ID, note }),
     ).resolves.toEqual([]);
   });
 
   it('rejects a note longer than the stored column', async () => {
-    const note = 'א'.repeat(FIELD_LENGTHS.TRANSITION_NOTE + 1);
-
     await expect(
-      findInvalidFields({ stageId: STAGE_ID, note }),
+      findInvalidFields(MoveProjectDto, {
+        stageId: STAGE_ID,
+        note: TOO_LONG_NOTE,
+      }),
     ).resolves.toEqual(['note']);
   });
 });
@@ -59,14 +66,11 @@ describe('UpdateProjectDto stageNote', () => {
   });
 
   it('rejects a stage note longer than the stored column', async () => {
-    const errors = await validate(
-      plainToInstance(UpdateProjectDto, {
+    await expect(
+      findInvalidFields(UpdateProjectDto, {
         stageId: STAGE_ID,
-        stageNote: 'א'.repeat(FIELD_LENGTHS.TRANSITION_NOTE + 1),
+        stageNote: TOO_LONG_NOTE,
       }),
-      { whitelist: true, forbidNonWhitelisted: true },
-    );
-
-    expect(errors.map((error) => error.property)).toEqual(['stageNote']);
+    ).resolves.toEqual(['stageNote']);
   });
 });

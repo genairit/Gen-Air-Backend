@@ -5,7 +5,7 @@ import {
 } from '@Constants/project-status.constant';
 
 import {
-  ILatestNoteQuery,
+  ITargetStageNoteQuery,
   TProjectStageTransitionNote,
 } from './interfaces/project-stage-transition.interface';
 
@@ -23,7 +23,7 @@ const ON_HOLD = ARCHIVED_PROJECT_STATUS_IDS.ON_HOLD;
 const createService = (transitions: IStoredTransition[]) => {
   const repository = {
     findNotesByTargetStages: jest.fn(
-      ({ projectIds, toStageIds }: ILatestNoteQuery) =>
+      ({ projectIds, toStageIds }: ITargetStageNoteQuery) =>
         Promise.resolve(
           transitions
             .filter(

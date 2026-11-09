@@ -1,5 +1,5 @@
 import {
-  ILatestNoteQuery,
+  ITargetStageNoteQuery,
   TProjectStageTransitionNote,
   TProjectStageTransitionCreationAttributes,
 } from './interfaces/project-stage-transition.interface';
@@ -27,7 +27,7 @@ export class ProjectStageTransitionRepository {
   findNotesByTargetStages({
     projectIds,
     toStageIds,
-  }: ILatestNoteQuery): Promise<TProjectStageTransitionNote[]> {
+  }: ITargetStageNoteQuery): Promise<TProjectStageTransitionNote[]> {
     return ProjectStageTransition.findAll({
       attributes: ['projectId', 'note'],
       where: {
