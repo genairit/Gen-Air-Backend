@@ -11,7 +11,7 @@ The active, read-only status catalogue becomes exactly:
 
 New projects and apartments start at טרם בעבודה. Existing Draft and Waiting projects map to טרם בעבודה; In Progress stays בעבודה; On Hold maps to מחכה לתשובה; Completed maps to הושלם. The same mapping covers soft-deleted projects. The migration does not touch task or quotation statuses and does not generate user transition events. It leaves `projects.updated_at` unchanged.
 
-The old Draft, Waiting, On Hold, and Completed definitions are archived with their original IDs and names. Transition history joins those archived definitions, so historical labels remain as originally recorded. Only בעבודה retains its prior active ID. `project_status_change_snapshots` records the previous status ID and timestamp for each remapped project. A rerun leaves later status changes untouched.
+The old Draft, Waiting, On Hold, and Completed definitions are archived with their original IDs and names. Transition history joins those archived definitions, so historical labels remain as originally recorded. Only בעבודה retains its prior active ID. `project_status_change_snapshots` records the previous status ID and timestamp for each remapped project. The snapshot table has RLS enabled and no PUBLIC, `anon`, or `authenticated` grants. A rerun leaves later status changes untouched.
 
 ## Verify
 

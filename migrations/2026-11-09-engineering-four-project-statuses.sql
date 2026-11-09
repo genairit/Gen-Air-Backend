@@ -10,6 +10,18 @@ CREATE TABLE IF NOT EXISTS public.project_status_change_snapshots (
   migrated_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE public.project_status_change_snapshots ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.project_status_change_snapshots FROM PUBLIC;
+
+DO $$
+DECLARE api_role text;
+BEGIN
+  FOR api_role IN SELECT rolname FROM pg_roles WHERE rolname IN ('anon', 'authenticated') LOOP
+    EXECUTE format('REVOKE ALL ON TABLE public.project_status_change_snapshots FROM %I', api_role);
+  END LOOP;
+END;
+$$;
+
 DO $$
 BEGIN
   IF EXISTS (

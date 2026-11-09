@@ -361,7 +361,7 @@ Table project_status_change_snapshots {
   previous_stage_id uuid [not null, ref: > project_stages.id, note: 'Previous status ID for exact recovery']
   previous_updated_at timestamptz(3) [not null, note: 'Previous project timestamp']
   migrated_at timestamptz(3) [not null, default: `now()`, note: 'When the assignment was remapped']
-  Note: 'Recovery record for the 2026-11-09 status migration. Includes active and soft-deleted projects whose status ID changed. Deleted with its project.'
+  Note: 'Recovery record for the 2026-11-09 status migration. Includes active and soft-deleted projects whose status ID changed. Deleted with its project. RLS enabled; no public or API-role grants.'
 }
 
 Table permissions {

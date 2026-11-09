@@ -16,6 +16,9 @@ await test('four project statuses preserve assignments and historical names', as
   suite.after(async () => database.close());
 
   await database.exec(`
+    CREATE ROLE anon;
+    CREATE ROLE authenticated;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO PUBLIC, anon, authenticated;
     CREATE TABLE project_stages (
       id uuid PRIMARY KEY,
       name text NOT NULL,
@@ -98,6 +101,21 @@ await test('four project statuses preserve assignments and historical names', as
     'SELECT count(*)::integer AS count FROM project_status_change_snapshots',
   );
   assert.equal(snapshots.rows[0].count, 4);
+  const access = await database.query(`
+    SELECT c.relrowsecurity AS rls_enabled,
+      has_table_privilege('anon', c.oid, 'SELECT') AS anon_select,
+      has_table_privilege('authenticated', c.oid, 'SELECT') AS authenticated_select,
+      EXISTS (SELECT 1 FROM aclexplode(c.relacl) WHERE grantee = 0 AND privilege_type = 'SELECT') AS public_select
+    FROM pg_class c WHERE c.oid = 'public.project_status_change_snapshots'::regclass
+  `);
+  assert.deepEqual(access.rows, [
+    {
+      rls_enabled: true,
+      anon_select: false,
+      authenticated_select: false,
+      public_select: false,
+    },
+  ]);
 
   await database.exec(`UPDATE projects SET stage_id='6502a045-2a7d-4bc8-8ba1-36eaedc49a07'
     WHERE id='10000000-0000-4000-8000-000000000000'`);
