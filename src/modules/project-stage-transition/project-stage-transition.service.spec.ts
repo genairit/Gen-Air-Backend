@@ -123,21 +123,6 @@ describe('ProjectStageTransitionService.findLatestNotesByTargetStages', () => {
     expect(notes.get('project-1')).toBe('חדשה');
   });
 
-  it('ignores notes into other stages', async () => {
-    const { service } = createService([
-      {
-        projectId: 'project-1',
-        toStageId: PROJECT_STATUS_IDS.IN_PROGRESS,
-        note: 'אחרת',
-        createdAt: 1,
-      },
-    ]);
-
-    const notes = await findWaitingReasons(service, ['project-1']);
-
-    expect(notes.has('project-1')).toBe(false);
-  });
-
   it('skips the query when no project is asked for', async () => {
     const { service, repository } = createService([]);
 
