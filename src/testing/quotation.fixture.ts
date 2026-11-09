@@ -4,6 +4,7 @@ import {
 } from '@Modules/quotation-rule/constants/quotation-rule.constant';
 
 import { randomUUID } from 'node:crypto';
+import { WARNING_SCOPE_VERSION } from '@Modules/quotation/constants/quotation.constant';
 import type { IQuotationRule } from '@Modules/quotation-rule/interfaces/quotation-rule.interface';
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
 import { validateRuleConfiguration } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
@@ -65,6 +66,8 @@ export const quotationDocumentFixture = (
     status: 'draft',
     date: '2026-10-31',
     brand: 'אלקטרה',
+    brands: ['אלקטרה'],
+    warningScopeVersion: WARNING_SCOPE_VERSION.PER_SYSTEM,
     paymentTerms: 'prepaid',
     paymentTermsNote: '',
     paymentSchedule: [],
@@ -89,6 +92,7 @@ export const quotationDocumentFixture = (
         quotationId: 'quotation',
         title: 'מערכת',
         systemType: 'GEN',
+        brand: 'אלקטרה',
         displayOrder: 0,
         createdAt: new Date(),
         updatedAt: new Date(),

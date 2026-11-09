@@ -12,6 +12,7 @@ export interface IQuotation {
   version: number;
   createdAt: Date;
   updatedAt: Date;
+  brands: string[];
   customerId: string;
   createdById: string;
   updatedById: string;
@@ -22,6 +23,7 @@ export interface IQuotation {
   projectId: string | null;
   status: TQuotationStatus;
   paymentTermsNote: string;
+  warningScopeVersion: number;
   approvedById: string | null;
   acknowledgedWarnings: string[];
   paymentSchedule: IPaymentStage[];

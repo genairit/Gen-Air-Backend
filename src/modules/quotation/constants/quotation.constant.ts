@@ -5,6 +5,7 @@ export const QUOTATION_STATUS = {
   REVIEW: 'review',
   APPROVED: 'approved',
 } as const;
+export const WARNING_SCOPE_VERSION = { LEGACY: 1, PER_SYSTEM: 2 } as const;
 export const SYSTEM_TYPE = {
   VRF: 'VRF',
   MULTI: 'MULTI',
