@@ -16,6 +16,7 @@ import {
 
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
+import { toDialablePhone } from '@Utilities/phone.utility';
 import { isValidIsraeliCompanyNumber } from '@Utilities/israeli-id.utility';
 import { CreateCustomerDto } from '@Modules/customer/dto/create-customer.dto';
 import { APARTMENT_IMPORT_COLUMNS } from '../constants/apartment-import.constant';
@@ -78,6 +79,9 @@ export const prepareApartmentImportCustomer = async (
     const header = getImportFieldHeader(field ?? property);
     return `${header}: חסר ערך נדרש או שהערך אינו תקין`;
   });
+  if (!customer.contactName && (customer.phone || customer.email)) {
+    errors.push('איש קשר של הלקוח: נדרש שם כאשר הוזנו טלפון או דוא״ל לקוח');
+  }
   if (errors.length > 0) {
     return { customer: null, errors };
   }
@@ -94,7 +98,7 @@ const CUSTOMER_FIELD_NORMALIZERS = {
   [APARTMENT_IMPORT_CUSTOMER_COMPARISON.EMAIL]: (value: string): string =>
     value.trim().toLowerCase(),
   [APARTMENT_IMPORT_CUSTOMER_COMPARISON.PHONE]: (value: string): string =>
-    value.trim().replace(/-/g, ''),
+    toDialablePhone(value) ?? value.trim(),
   [APARTMENT_IMPORT_CUSTOMER_COMPARISON.TYPE]: (value: string): string =>
     value.trim(),
 };
@@ -115,7 +119,7 @@ export const compareApartmentImportCustomer = ({
 
       const normalizedInput = normalizeCustomerComparisonInput(input, mode);
       const normalizedStored = CUSTOMER_FIELD_NORMALIZERS[mode](
-        customer[field],
+        customer[field] ?? '',
       );
       return normalizedInput !== normalizedStored;
     },

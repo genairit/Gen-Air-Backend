@@ -97,6 +97,14 @@ describe('CustomerService.getSyncStatusCounts', () => {
 });
 
 describe('CustomerService.update', () => {
+  it('keeps primary contact fields managed by the directory', async () => {
+    const { service, customerRepository } = await createService();
+    await expect(
+      service.update(CUSTOMER.id, { phone: '+442071838750' }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(customerRepository.update).not.toHaveBeenCalled();
+  });
+
   it('does not check availability when the tax id is unchanged', async () => {
     const { service, customerRepository } = await createService();
 
@@ -173,6 +181,11 @@ describe('CustomerService.create', () => {
       },
       dependencies.transaction,
     );
+    expect(customerRepository.update).toHaveBeenCalledWith(
+      CUSTOMER.id,
+      { primaryContactId: 'contact-1' },
+      dependencies.transaction,
+    );
     expect(customerRepository.findById).toHaveBeenCalledWith(CUSTOMER.id);
   });
 
@@ -182,6 +195,24 @@ describe('CustomerService.create', () => {
     dependencies.contacts.resolveForImport.mockRejectedValueOnce(failure);
     await expect(service.create(input, 'trusted-user')).rejects.toBe(failure);
     expect(customerRepository.findById).not.toHaveBeenCalled();
+  });
+
+  it('creates a customer without a primary contact or placeholder values', async () => {
+    const { service, customerRepository, dependencies } = await createService();
+    const withoutContact = {
+      ...input,
+      contactName: null,
+      phone: null,
+      email: null,
+    };
+    await expect(
+      service.create(withoutContact, 'trusted-user'),
+    ).resolves.toEqual(CUSTOMER);
+    expect(customerRepository.create).toHaveBeenCalledWith(
+      { ...withoutContact, createdById: 'trusted-user', paymentTerms: null },
+      dependencies.transaction,
+    );
+    expect(dependencies.contacts.resolveForImport).not.toHaveBeenCalled();
   });
 
   it('rejects an existing registration number before writing', async () => {

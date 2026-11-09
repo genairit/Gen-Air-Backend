@@ -15,9 +15,11 @@ import { ProjectTypeModule } from '@Modules/project-type/project-type.module';
 import { ProjectStageModule } from '@Modules/project-stage/project-stage.module';
 import { ProjectApartmentImportService } from './project-apartment-import.service';
 import { ProjectMemberModule } from '@Modules/project-member/project-member.module';
+import { ProjectContactService } from '@Modules/project-contact/project-contact.service';
 import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { ProjectApartmentImportController } from './project-apartment-import.controller';
 import { CustomerContactModule } from '@Modules/customer-contact/customer-contact.module';
+import { ProjectContactController } from '@Modules/project-contact/project-contact.controller';
 import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/project-stage-transition.module';
 
 @Module({
@@ -36,10 +38,12 @@ import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/
     ProjectController,
     ProjectApartmentImportController,
     CustomerProjectController,
+    ProjectContactController,
   ],
   providers: [
     ProjectService,
     CustomerProjectService,
+    ProjectContactService,
     CustomerProjectRepository,
     ProjectTaskInitializationService,
     ProjectRepository,

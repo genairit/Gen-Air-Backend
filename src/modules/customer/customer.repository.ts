@@ -29,7 +29,11 @@ export class CustomerRepository {
 
   findById(id: string): Promise<Customer | null> {
     return Customer.findByPk(id, {
-      include: [{ model: User, paranoid: false }, { model: CustomerContact }],
+      include: [
+        { model: User, paranoid: false },
+        { model: CustomerContact, as: 'contacts' },
+        { model: CustomerContact, as: 'primaryContact' },
+      ],
     });
   }
 
@@ -51,8 +55,10 @@ export class CustomerRepository {
     const rows = await Customer.findAll({
       bind: { customerContactSearch: toContainsPattern(filter.search ?? '') },
       include: [
+        { model: CustomerContact, as: 'primaryContact' },
         {
           model: CustomerContact,
+          as: 'contacts',
           separate: true,
           order: [
             ['createdAt', 'ASC'],
@@ -129,6 +135,8 @@ export class CustomerRepository {
       [Op.or]: [
         { name: { [Op.iLike]: pattern } },
         { taxId: { [Op.iLike]: pattern } },
+        { phone: { [Op.iLike]: pattern } },
+        { email: { [Op.iLike]: pattern } },
         this.buildContactSearchWhere(),
         { priorityId: { [Op.iLike]: pattern } },
       ],
@@ -147,7 +155,8 @@ export class CustomerRepository {
       .join('.');
     return literal(`EXISTS (
       SELECT 1 FROM ${table} AS "searchContact"
-      WHERE "searchContact"."customer_id" = "Customer"."id"
+      WHERE ("searchContact"."customer_id" = "Customer"."id"
+        OR "searchContact"."id" = "Customer"."primary_contact_id")
         AND "searchContact"."deleted_at" IS NULL
         AND (
           "searchContact"."name" ILIKE $customerContactSearch

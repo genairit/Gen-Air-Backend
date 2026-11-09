@@ -40,6 +40,7 @@ describe('customer-owned contacts API', () => {
       .mockResolvedValue({ ...STORED_CONTACT, get: () => STORED_CONTACT }),
     create: jest.fn().mockResolvedValue(STORED_CONTACT),
     update: jest.fn().mockResolvedValue(null),
+    syncPrimarySnapshot: jest.fn().mockResolvedValue(null),
   };
   const runTransaction = jest.fn(
     (work: (value: Transaction) => Promise<unknown>) => work(transaction),

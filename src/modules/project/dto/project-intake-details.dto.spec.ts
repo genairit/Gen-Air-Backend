@@ -28,10 +28,13 @@ describe('ProjectIntakeDetailsDto', () => {
     ).resolves.toEqual([]);
   });
 
-  it('rejects a landline as the contact phone', async () => {
+  it('accepts an international or Israeli landline as the contact phone', async () => {
     await expect(
       findInvalidFields({ contactPhone: '03-1234567' }),
-    ).resolves.toEqual(['contactPhone']);
+    ).resolves.toEqual([]);
+    await expect(
+      findInvalidFields({ contactPhone: '+442071838750' }),
+    ).resolves.toEqual([]);
   });
 
   it('rejects a one-character contact name', async () => {

@@ -14,6 +14,13 @@ const CUSTOMER_INPUT = {
   customerType: PROJECT_DETAIL_FIELD_SETS.COMPANY,
 };
 
+const CUSTOMER_WITHOUT_CONTACT = {
+  taxId: CUSTOMER_INPUT.taxId,
+  name: CUSTOMER_INPUT.name,
+  address: CUSTOMER_INPUT.address,
+  customerType: CUSTOMER_INPUT.customerType,
+};
+
 const invalidFields = async (input: object): Promise<string[]> => {
   const errors = await validate(plainToInstance(CreateCustomerDto, input));
   return errors.map((error) => error.property);
@@ -26,6 +33,9 @@ describe('CreateCustomerDto', () => {
     '052-1234567',
     '0521234567',
     '077-1234567',
+    '+442071838750',
+    '+12025550123',
+    '052 1234567',
   ])('accepts a complete customer with phone %s', async (phone) => {
     await expect(invalidFields({ ...CUSTOMER_INPUT, phone })).resolves.toEqual(
       [],
@@ -53,15 +63,18 @@ describe('CreateCustomerDto', () => {
     expect(customer).toEqual(CUSTOMER_INPUT);
   });
 
-  it.each(Object.keys(CUSTOMER_INPUT))('requires %s', async (field) => {
-    const missing = Object.fromEntries(
-      Object.entries(CUSTOMER_INPUT).filter(([key]) => key !== field),
-    );
-    await expect(invalidFields(missing)).resolves.toEqual([field]);
-  });
+  it.each(['taxId', 'name', 'address', 'customerType'])(
+    'requires %s',
+    async (field) => {
+      const missing = Object.fromEntries(
+        Object.entries(CUSTOMER_INPUT).filter(([key]) => key !== field),
+      );
+      await expect(invalidFields(missing)).resolves.toEqual([field]);
+    },
+  );
 
   it.each(
-    Object.keys(CUSTOMER_INPUT).flatMap((field) =>
+    ['taxId', 'name', 'address', 'customerType'].flatMap((field) =>
       [null, '', '   ', 123, {}, []].map((value) => ({ field, value })),
     ),
   )('rejects $field = $value', async ({ field, value }) => {
@@ -85,12 +98,35 @@ describe('CreateCustomerDto', () => {
     ['email', 'bad email@example.com'],
     ['email', `${'a'.repeat(FIELD_LENGTHS.EMAIL)}@example.com`],
     ['phone', '1234567'],
-    ['phone', '052 1234567'],
-    ['phone', '+972521234567'],
+    ['phone', '+44123'],
+    ['phone', '+44x2071838750'],
     ['customerType', 'unrecognized'],
   ])('rejects invalid %s = %p', async (field, value) => {
     await expect(
       invalidFields({ ...CUSTOMER_INPUT, [field]: value }),
     ).resolves.toEqual([field]);
+  });
+
+  it('allows a customer without any primary contact fields', async () => {
+    await expect(invalidFields(CUSTOMER_WITHOUT_CONTACT)).resolves.toEqual([]);
+    await expect(
+      invalidFields({
+        ...CUSTOMER_WITHOUT_CONTACT,
+        contactName: null,
+        phone: null,
+        email: null,
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('treats blank optional contact fields as absent', async () => {
+    await expect(
+      invalidFields({
+        ...CUSTOMER_WITHOUT_CONTACT,
+        contactName: '  ',
+        phone: '',
+        email: ' ',
+      }),
+    ).resolves.toEqual([]);
   });
 });
