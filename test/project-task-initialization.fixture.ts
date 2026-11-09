@@ -156,7 +156,7 @@ export const createProjectTaskEnvironment = async () => {
       code: 'LEGACY-1',
       customerId: customer.id,
       projectTypeId: standaloneType.id,
-      stageId: PROJECT_STATUS_IDS.WAITING,
+      stageId: '6502a045-2a7d-4bc8-8ba1-36eaedc49a01',
       createdById: creator.id,
     });
     await sequelize.query(
@@ -190,10 +190,6 @@ export const createProjectTaskEnvironment = async () => {
       'SELECT id,project_id,customer_id,title,description,status,due_date,created_at,updated_at FROM public.tasks ORDER BY id',
       { type: QueryTypes.SELECT },
     );
-    const beforeProject = await sequelize.query(
-      'SELECT id,stage_id,updated_at FROM public.projects ORDER BY id',
-      { type: QueryTypes.SELECT },
-    );
     const beforeHistory = await sequelize.query(
       'SELECT * FROM public.task_status_transitions ORDER BY id',
       { type: QueryTypes.SELECT },
@@ -201,6 +197,19 @@ export const createProjectTaskEnvironment = async () => {
     const migration = await readFile(MIGRATION_FILE, 'utf8');
     await sequelize.query(migration);
     await sequelize.query(migration);
+    await sequelize.query(
+      await readFile(
+        resolve(
+          __dirname,
+          '../migrations/2026-11-09-engineering-four-project-statuses.sql',
+        ),
+        'utf8',
+      ),
+    );
+    const beforeProject = await sequelize.query(
+      'SELECT id,stage_id,updated_at FROM public.projects ORDER BY id',
+      { type: QueryTypes.SELECT },
+    );
     const events = { emitAsync: jest.fn().mockResolvedValue([]) };
     const module = await Test.createTestingModule({
       providers: [
@@ -261,7 +270,7 @@ export const createProjectTaskEnvironment = async () => {
         code: randomUUID().slice(0, 8),
         createdById: creator.id,
         customerId: customer.id,
-        stageId: PROJECT_STATUS_IDS.WAITING,
+        stageId: PROJECT_STATUS_IDS.NOT_STARTED,
         projectTypeId: canHaveApartments ? buildingType.id : standaloneType.id,
       });
     const counts = async () =>

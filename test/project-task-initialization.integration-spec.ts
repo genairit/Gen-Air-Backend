@@ -94,9 +94,9 @@ describe('project task initialization against isolated PostgreSQL', () => {
     ).toBe(true);
     expect(
       (await environment.stages.getAll()).map((stage) => stage.name),
-    ).toEqual(['טיוטה', 'ממתין', 'בעבודה', 'להמתין', 'הסתיים']);
+    ).toEqual(['טרם בעבודה', 'בעבודה', 'מחכה לתשובה', 'הושלם']);
     expect((await environment.stages.getInitialStage()).id).toBe(
-      PROJECT_STATUS_IDS.DRAFT,
+      PROJECT_STATUS_IDS.NOT_STARTED,
     );
     const rls = await environment.sequelize.query(
       "SELECT relrowsecurity FROM pg_class WHERE oid='public.tasks'::regclass",
@@ -115,11 +115,13 @@ describe('project task initialization against isolated PostgreSQL', () => {
       { type: QueryTypes.SELECT },
     );
     expect(defaultValue).toHaveLength(1);
-    expect(defaultValue[0]?.column_default).toContain(PROJECT_STATUS_IDS.DRAFT);
+    expect(defaultValue[0]?.column_default).toContain(
+      PROJECT_STATUS_IDS.NOT_STARTED,
+    );
     await expect(
       environment.sequelize.query(
         "UPDATE public.project_stages SET name='שינוי אסור' WHERE id=$id",
-        { bind: { id: PROJECT_STATUS_IDS.DRAFT } },
+        { bind: { id: PROJECT_STATUS_IDS.NOT_STARTED } },
       ),
     ).rejects.toThrow('Project status definitions are fixed');
   });
@@ -132,7 +134,7 @@ describe('project task initialization against isolated PostgreSQL', () => {
         environment.projectInput(name),
         environment.creator,
       );
-      expect(project.stageId).toBe(PROJECT_STATUS_IDS.DRAFT);
+      expect(project.stageId).toBe(PROJECT_STATUS_IDS.NOT_STARTED);
       const tasks = await expectProtectedPair(project.id, name);
       expect(
         tasks.find((task) => task.taskType === TASK_TYPES.QUOTATION)?.title,
@@ -159,7 +161,7 @@ describe('project task initialization against isolated PostgreSQL', () => {
       },
       environment.creator,
     );
-    expect(apartment.stageId).toBe(PROJECT_STATUS_IDS.DRAFT);
+    expect(apartment.stageId).toBe(PROJECT_STATUS_IDS.NOT_STARTED);
     await expectProtectedPair(apartment.id, apartment.name);
     expect(await Task.count({ where: { projectId: building.id } })).toBe(0);
   });
@@ -184,7 +186,7 @@ describe('project task initialization against isolated PostgreSQL', () => {
     if (!apartment) {
       throw new Error('The imported apartment was not persisted');
     }
-    expect(apartment.stageId).toBe(PROJECT_STATUS_IDS.DRAFT);
+    expect(apartment.stageId).toBe(PROJECT_STATUS_IDS.NOT_STARTED);
     const tasks = await expectProtectedPair(apartment.id, apartment.name);
     const retry = await environment.imports.import(
       building.id,

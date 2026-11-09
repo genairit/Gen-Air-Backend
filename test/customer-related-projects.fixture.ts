@@ -85,7 +85,7 @@ const createCustomerProjectFixtures = async (base: TProjectTaskEnvironment) => {
       name: input.name ?? `פרויקט בדיקה ${sequence.project}`,
       updatedAt: new Date(input.updatedAt ?? '2026-10-30T12:00:00.000Z'),
       projectTypeId: input.projectTypeId ?? standalone.id,
-      stageId: input.stageId ?? PROJECT_STATUS_IDS.DRAFT,
+      stageId: input.stageId ?? PROJECT_STATUS_IDS.NOT_STARTED,
       createdById: base.creator.id,
     };
 
