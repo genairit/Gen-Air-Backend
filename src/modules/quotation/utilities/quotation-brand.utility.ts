@@ -48,5 +48,12 @@ export const resolveQuotationBrandGroups = (
     return { ...section, brand };
   });
 
-  return { brands, sections };
+  const groupOrder = (brand: string | null): number =>
+    brand === null ? brands.length : brands.indexOf(brand);
+  return {
+    brands,
+    sections: sections.sort(
+      (left, right) => groupOrder(left.brand) - groupOrder(right.brand),
+    ),
+  };
 };

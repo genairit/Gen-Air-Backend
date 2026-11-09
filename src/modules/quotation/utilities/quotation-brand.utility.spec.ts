@@ -24,6 +24,19 @@ describe('quotation brand groups', () => {
     ]);
   });
 
+  it('stores sections in tab order while keeping order within each brand', () => {
+    const source = input();
+    const result = resolveQuotationBrandGroups({
+      ...source,
+      sections: [source.sections[2], source.sections[0], source.sections[1]],
+    });
+    expect(result.sections.map((section) => section.id)).toEqual([
+      'a',
+      'b',
+      'g',
+    ]);
+  });
+
   it('rejects duplicate, missing, and mismatched brands', () => {
     expect(() =>
       resolveQuotationBrandGroups(input({ brands: ['אלקטרה', 'אלקטרה'] })),
