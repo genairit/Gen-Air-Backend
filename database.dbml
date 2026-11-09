@@ -384,7 +384,7 @@ Table catalogue_items {
   unit varchar(40) [not null, note: 'Unit the item is sold in, for example יח or מטר']
   price numeric(16,4) [not null, note: 'List price per unit in ILS, 4 decimal places; nonnegative, and used as the starting point for the price actually quoted on a line']
   capacity_btu integer [note: 'Cooling capacity in BTU/h for units; null for items without a capacity. Search ranks candidates by distance from the requested capacity']
-  brand varchar(100) [not null, note: 'Manufacturer, for example LG or הייסנס; empty means the item fits any brand, since a quotation is built for one brand']
+  brand varchar(100) [not null, note: 'Manufacturer, for example LG or הייסנס; empty means the item fits any brand tab and is required for the General tab']
   system_type varchar(10) [note: 'System the item belongs to: VRF, MULTI or SINGLE. Null fits any system type; the seeded catalogue also stores an empty string, which the item picker does not match when a system is filtered on']
   equipment_role varchar(30) [not null, note: 'What the item is in the system: indoor, outdoor, unit, control, central, header, pipe or other']
   equipment_types jsonb [not null, note: 'Array of finer product variants, for example קסטה or לחץ גבוה; the first entry becomes the default on a new quotation line']
