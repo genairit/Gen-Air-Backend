@@ -28,10 +28,12 @@ import type { IDriveItem } from '@Interfaces/google-drive.interface';
 import { ApiTags, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
 import { DRIVE_UPLOAD_POLICY } from '@Constants/drive-upload.constant';
 import { ISharedDocument } from './interfaces/shared-document.interface';
+import { ApartmentFolderRepairDto } from './dto/apartment-folder-repair.dto';
 import { IProjectDriveContents } from './interfaces/project-drive.interface';
 import type { IProject } from '@Modules/project/interfaces/project.interface';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 import { SharedDocumentSelectionDto } from './dto/shared-document-selection.dto';
+import { IApartmentFolderRepair } from './interfaces/apartment-folder-repair.interface';
 import { UploadCleanupInterceptor } from '../../interceptors/upload-cleanup.interceptor';
 import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
 
@@ -128,5 +130,22 @@ export class ProjectDriveController {
     @Param('projectId', ParseUUIDPipe) projectId: string,
   ): Promise<IProject> {
     return this.projectDriveService.provision(projectId);
+  }
+
+  @Get(':projectId/apartment-folder-repair')
+  @RequirePermissions(PERMISSIONS.DRIVE_PROVISION)
+  getApartmentFolderRepair(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+  ): Promise<IApartmentFolderRepair> {
+    return this.projectDriveService.getApartmentFolderRepair(projectId);
+  }
+
+  @Post(':projectId/apartment-folder-repair')
+  @RequirePermissions(PERMISSIONS.DRIVE_PROVISION)
+  repairApartmentFolder(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Body() repair: ApartmentFolderRepairDto,
+  ): Promise<IProject> {
+    return this.projectDriveService.repairApartmentFolder(projectId, repair);
   }
 }

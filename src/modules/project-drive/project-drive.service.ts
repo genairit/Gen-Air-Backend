@@ -11,6 +11,7 @@ import {
 
 import {
   MAX_FOLDER_DEPTH,
+  APARTMENTS_FOLDER_NAME,
   PROJECT_ROOT_FOLDER_NAME,
   PROJECT_DRIVE_ERROR_CODES,
 } from './constants/project-drive.constant';
@@ -31,6 +32,7 @@ import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { decodeUploadedFileName } from '@Utilities/upload.utility';
 import { IProject } from '@Modules/project/interfaces/project.interface';
 import { ISharedDocument } from './interfaces/shared-document.interface';
+import { ApartmentFolderRepairDto } from './dto/apartment-folder-repair.dto';
 import { IProjectDriveContents } from './interfaces/project-drive.interface';
 import { SHARED_DOCUMENT_STATUS } from './constants/shared-document.constant';
 import { renderDriveFolderName } from './utilities/drive-folder-name.utility';
@@ -38,6 +40,7 @@ import { toProjectDriveFolder } from './utilities/drive-folder-status.utility';
 import type { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { validateDriveUploads } from '@Utilities/validate-drive-upload.utility';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
+import { IApartmentFolderRepair } from './interfaces/apartment-folder-repair.interface';
 import { DRIVE_CONNECTION_STATUS } from '@Providers/google-drive/constants/drive-connection.constant';
 import { getDriveConnectionFailure } from '@Providers/google-drive/utilities/drive-connection.utility';
 import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
@@ -49,6 +52,7 @@ export class ProjectDriveService {
   private readonly logger = new TypedLogger<Meta>(ProjectDriveService.name);
 
   private readonly provisioning = new Map<string, Promise<IProject>>();
+  private readonly repairs = new Map<string, Promise<IProject>>();
 
   constructor(
     private readonly projectService: ProjectService,
@@ -93,6 +97,151 @@ export class ProjectDriveService {
     });
     this.provisioning.set(projectId, operation);
     return operation;
+  }
+
+  async getApartmentFolderRepair(
+    projectId: string,
+  ): Promise<IApartmentFolderRepair> {
+    this.assertDriveConfigured();
+    const apartment = await this.projectService.getById(projectId);
+    if (!apartment.parentProjectId) {
+      throw new BadRequestException('Select an apartment project');
+    }
+
+    if (!apartment.driveFolderId) {
+      throw new ConflictException('Provision this apartment first');
+    }
+
+    const building = await this.projectService.getById(
+      apartment.parentProjectId,
+    );
+    const buildingFolderId = building.driveFolderId;
+    if (!buildingFolderId) {
+      throw new ConflictException('Provision the building first');
+    }
+
+    const destination =
+      await this.getApartmentsFolderForRepair(buildingFolderId);
+    const source = await this.requireLiveItem(apartment.driveFolderId);
+    if (source.mimeType !== GOOGLE_DRIVE.FOLDER_MIME_TYPE) {
+      throw new ConflictException('The apartment Drive link is not a folder');
+    }
+
+    const isAlreadyPlaced = this.isRepairableApartmentFolder(
+      source,
+      destination.id,
+    );
+    if (!isAlreadyPlaced) {
+      await this.assertNoApartmentFolderCollision(
+        source.name ?? apartment.name,
+        destination.id,
+      );
+    }
+
+    return {
+      apartmentId: apartment.id,
+      buildingId: building.id,
+      sourceFolderId: source.id,
+      destinationFolderId: destination.id,
+      status: isAlreadyPlaced ? 'already_placed' : 'needs_move',
+    };
+  }
+
+  private async getApartmentsFolderForRepair(
+    buildingFolderId: string,
+  ): Promise<IDriveItem> {
+    const children = await this.callDrive(() =>
+      this.googleDriveService.listChildren(buildingFolderId),
+    );
+    const destinations = children.filter(
+      (child) => child.isFolder && child.name === APARTMENTS_FOLDER_NAME,
+    );
+    if (destinations.length !== 1) {
+      throw new ConflictException(
+        'Provision the building or resolve duplicate apartment folders first',
+      );
+    }
+
+    return destinations[0];
+  }
+
+  private isRepairableApartmentFolder(
+    source: IDriveFileMetadata,
+    destinationFolderId: string,
+  ): boolean {
+    const isAlreadyPlaced =
+      source.parents.length === 1 && source.parents[0] === destinationFolderId;
+    const isLegacyRoot =
+      source.parents.length === 1 &&
+      source.parents[0] === this.getProjectsRootFolderId();
+    if (!isAlreadyPlaced && !isLegacyRoot) {
+      throw new ConflictException(
+        'The apartment folder is outside the expected legacy root',
+      );
+    }
+
+    return isAlreadyPlaced;
+  }
+
+  private async assertNoApartmentFolderCollision(
+    sourceName: string,
+    destinationFolderId: string,
+  ): Promise<void> {
+    const children = await this.callDrive(() =>
+      this.googleDriveService.listChildren(destinationFolderId),
+    );
+    const hasNameCollision = children.some(
+      (child) => child.isFolder && child.name === sourceName,
+    );
+    if (hasNameCollision) {
+      throw new ConflictException(
+        'An apartment folder with this name already exists',
+      );
+    }
+  }
+
+  repairApartmentFolder(
+    projectId: string,
+    repair: ApartmentFolderRepairDto,
+  ): Promise<IProject> {
+    const pending = this.repairs.get(projectId);
+    if (pending) {
+      return pending;
+    }
+
+    const operation = this.performApartmentFolderRepair(
+      projectId,
+      repair,
+    ).finally(() => this.repairs.delete(projectId));
+    this.repairs.set(projectId, operation);
+    return operation;
+  }
+
+  private async performApartmentFolderRepair(
+    projectId: string,
+    repair: ApartmentFolderRepairDto,
+  ): Promise<IProject> {
+    const preview = await this.getApartmentFolderRepair(projectId);
+    const matchesSource = preview.sourceFolderId === repair.sourceFolderId;
+    const matchesDestination =
+      preview.destinationFolderId === repair.destinationFolderId;
+    if (!matchesSource || !matchesDestination) {
+      throw new ConflictException(
+        'The apartment folder repair plan has changed',
+      );
+    }
+
+    if (preview.status === 'needs_move') {
+      await this.callDrive(() =>
+        this.googleDriveService.moveFile({
+          fileId: preview.sourceFolderId,
+          parentIds: [this.getProjectsRootFolderId()],
+          destinationFolderId: preview.destinationFolderId,
+        }),
+      );
+    }
+
+    return this.provision(projectId);
   }
 
   async getContents(
@@ -300,13 +449,31 @@ export class ProjectDriveService {
       this.projectService.getById(projectId),
       this.driveTemplateFolderService.getTree(),
     ]);
+    const parentFolderId = project.parentProjectId
+      ? await this.getApartmentsFolderId(project.parentProjectId)
+      : projectsRootFolderId;
     const projectFolderId = await this.ensureProjectFolder(
       project,
-      projectsRootFolderId,
+      parentFolderId,
     );
+    if (project.parentProjectId && project.driveFolderId) {
+      await this.assertApartmentFolderLocation(projectFolderId, parentFolderId);
+    }
+
+    const templateNodes = project.parentProjectId
+      ? templateTree.filter((node) => node.name !== APARTMENTS_FOLDER_NAME)
+      : templateTree;
     await this.callDrive(() =>
-      this.createTemplateFolders(project, templateTree, projectFolderId),
+      this.createTemplateFolders(project, templateNodes, projectFolderId),
     );
+    if (!project.parentProjectId && project.projectType?.canHaveApartments) {
+      await this.callDrive(() =>
+        this.googleDriveService.ensureFolder(
+          APARTMENTS_FOLDER_NAME,
+          projectFolderId,
+        ),
+      );
+    }
 
     if (!project.driveFolderId) {
       await this.projectService.setDriveFolderId(project.id, projectFolderId);
@@ -316,7 +483,7 @@ export class ProjectDriveService {
 
   private async ensureProjectFolder(
     project: IProject,
-    projectsRootFolderId: string,
+    parentFolderId: string,
   ): Promise<string> {
     if (project.driveFolderId) {
       return project.driveFolderId;
@@ -325,12 +492,46 @@ export class ProjectDriveService {
     const projectFolderId = await this.callDrive(() =>
       this.googleDriveService.ensureFolder(
         renderDriveFolderName(PROJECT_ROOT_FOLDER_NAME, project),
-        projectsRootFolderId,
+        parentFolderId,
         project.id,
       ),
     );
 
     return projectFolderId;
+  }
+
+  private async getApartmentsFolderId(buildingId: string): Promise<string> {
+    const building = await this.provision(buildingId);
+    const buildingFolderId = building.driveFolderId;
+    if (!buildingFolderId) {
+      throw new ConflictException('The building Drive folder is unavailable');
+    }
+
+    return this.callDrive(() =>
+      this.googleDriveService.ensureFolder(
+        APARTMENTS_FOLDER_NAME,
+        buildingFolderId,
+      ),
+    );
+  }
+
+  private async assertApartmentFolderLocation(
+    folderId: string,
+    apartmentsFolderId: string,
+  ): Promise<void> {
+    const folder = await this.requireLiveItem(folderId);
+    if (folder.mimeType !== GOOGLE_DRIVE.FOLDER_MIME_TYPE) {
+      throw new ConflictException('The apartment Drive link is not a folder');
+    }
+
+    const isInsideApartmentsFolder =
+      folder.parents.length === 1 && folder.parents[0] === apartmentsFolderId;
+    if (!isInsideApartmentsFolder) {
+      throw new ConflictException({
+        code: PROJECT_DRIVE_ERROR_CODES.APARTMENT_REPAIR_REQUIRED,
+        message: 'Review and repair the apartment Drive folder location',
+      });
+    }
   }
 
   private async createTemplateFolders(
