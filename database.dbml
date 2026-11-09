@@ -364,14 +364,6 @@ Table task_status_transitions {
 Ref: task_status_transitions.task_id > tasks.id [delete: restrict]
 Ref: task_status_transitions.changed_by_id > users.id [delete: restrict]
 
-Table project_stage_reset_snapshots {
-  project_id uuid [pk, ref: > projects.id, note: 'The project whose stage was rewritten by the migration']
-  previous_stage_id uuid [not null, ref: > project_stages.id, note: 'Stage the project sat in before the migration, used to restore it if needed']
-  previous_updated_at timestamptz(3) [not null, note: 'The updated_at the project carried before the migration touched it']
-  migrated_at timestamptz(3) [not null, default: `now()`, note: 'When the migration rewrote this project']
-  Note: 'One-time recovery snapshot for the 2026-10-16 fixed-status migration. Includes all pre-existing projects, including apartments and soft-deleted records; not a user-generated transition.'
-}
-
 Table project_status_change_snapshots {
   project_id uuid [pk, ref: > projects.id, note: 'Project remapped by the engineering four-status migration']
   previous_stage_id uuid [not null, ref: > project_stages.id, note: 'Previous status ID for exact recovery']
