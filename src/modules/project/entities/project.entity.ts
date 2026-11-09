@@ -91,6 +91,10 @@ export class Project
   @Column(DataType.DOUBLE)
   declare generalLightingCeilingLoweringHeight: number | null;
 
+  @Default(false)
+  @Column({ allowNull: false, type: DataType.BOOLEAN })
+  declare hasOwnLighting: boolean;
+
   @ForeignKey(() => ProjectType)
   @Column({ allowNull: false, type: DataType.UUID })
   declare projectTypeId: string;

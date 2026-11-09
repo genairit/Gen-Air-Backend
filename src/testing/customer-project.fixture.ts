@@ -73,6 +73,7 @@ export const makeCustomerProjectParent = (
   name: 'בניין אחר',
   hasGeneralLightingCeilingLowering: false,
   generalLightingCeilingLoweringHeight: null,
+  hasOwnLighting: false,
   code: 'BLDG-1',
   stageId: PROJECT_STATUS_IDS.WAITING,
   createdAt: new Date('2026-10-01T10:00:00.000Z'),

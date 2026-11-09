@@ -30,6 +30,12 @@ export const resolveApartment = <TApartment extends TApartmentInheritanceInput>(
     parentNotes: building.notes,
     addressCity: building.addressCity,
     addressPlaceId: building.addressPlaceId,
+    hasGeneralLightingCeilingLowering: apartment.hasOwnLighting
+      ? apartment.hasGeneralLightingCeilingLowering
+      : building.hasGeneralLightingCeilingLowering,
+    generalLightingCeilingLoweringHeight: apartment.hasOwnLighting
+      ? apartment.generalLightingCeilingLoweringHeight
+      : building.generalLightingCeilingLoweringHeight,
     inheritedFields: [...ADDRESS_INHERITED_FIELDS],
   };
 };

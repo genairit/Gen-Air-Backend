@@ -9,6 +9,8 @@ const BUILDING = {
   address: 'דרך נמיר 94, תל אביב-יפו',
   addressCity: 'תל אביב-יפו',
   addressPlaceId: 'ChIJ-building',
+  hasGeneralLightingCeilingLowering: true,
+  generalLightingCeilingLoweringHeight: 25,
 };
 
 const APARTMENT = {
@@ -17,6 +19,9 @@ const APARTMENT = {
   address: null,
   addressCity: null,
   addressPlaceId: null,
+  hasOwnLighting: false,
+  hasGeneralLightingCeilingLowering: false,
+  generalLightingCeilingLoweringHeight: null,
 };
 
 describe('resolveApartment', () => {
@@ -34,6 +39,32 @@ describe('resolveApartment', () => {
       'addressCity',
       'addressPlaceId',
     ]);
+  });
+});
+
+describe('resolveApartment lighting inheritance', () => {
+  it('reads the current building value while inherited', () => {
+    expect(resolveApartment(APARTMENT, BUILDING)).toMatchObject({
+      hasOwnLighting: false,
+      hasGeneralLightingCeilingLowering: true,
+      generalLightingCeilingLoweringHeight: 25,
+    });
+    expect(
+      resolveApartment(APARTMENT, {
+        ...BUILDING,
+        generalLightingCeilingLoweringHeight: 30,
+      }).generalLightingCeilingLoweringHeight,
+    ).toBe(30);
+  });
+
+  it('keeps a local off override when the building is enabled', () => {
+    expect(
+      resolveApartment({ ...APARTMENT, hasOwnLighting: true }, BUILDING),
+    ).toMatchObject({
+      hasOwnLighting: true,
+      hasGeneralLightingCeilingLowering: false,
+      generalLightingCeilingLoweringHeight: null,
+    });
   });
 });
 

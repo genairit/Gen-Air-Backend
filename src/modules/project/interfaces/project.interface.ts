@@ -71,6 +71,7 @@ export interface IProject
   stage?: IProjectStage;
   projectTypeId: string;
   deletedAt: Date | null;
+  hasOwnLighting: boolean;
   parentProject?: IProject;
   customerId: string | null;
   priorityId: string | null;
@@ -105,6 +106,7 @@ export type TProjectCreationAttributes = IProjectCustomerDetails &
       | 'customerId'
       | 'parentProjectId'
       | 'hasOwnTeam'
+      | 'hasOwnLighting'
       | 'notes'
       | 'apartmentCredit'
       | 'apartmentOwnership'
@@ -122,6 +124,7 @@ export type TProjectUpdateAttributes = Partial<IProjectLighting> &
         | 'stageId'
         | 'customerId'
         | 'hasOwnTeam'
+        | 'hasOwnLighting'
         | 'apartmentCredit'
         | 'apartmentOwnership'
         | 'notes'
@@ -140,7 +143,7 @@ export type TInheritedProjectField = keyof Pick<
 
 export type TBuildingInheritance = Pick<
   IProject,
-  TInheritedProjectField | 'notes' | 'members'
+  TInheritedProjectField | 'notes' | 'members' | keyof IProjectLighting
 >;
 
 export interface IApartmentInheritance {
@@ -151,7 +154,11 @@ export interface IApartmentInheritance {
 
 export type TApartmentInheritanceInput = Pick<
   IProject,
-  TInheritedProjectField | 'hasOwnTeam' | 'members'
+  | TInheritedProjectField
+  | 'hasOwnTeam'
+  | 'members'
+  | 'hasOwnLighting'
+  | keyof IProjectLighting
 > &
   Partial<Pick<IProject, 'customer'>>;
 
