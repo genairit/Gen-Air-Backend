@@ -47,12 +47,18 @@ import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive
 import { DriveTemplateFolderService } from '@Modules/drive-template-folder/drive-template-folder.service';
 import { IDriveTemplateFolderNode } from '@Modules/drive-template-folder/interfaces/drive-template-folder.interface';
 
+type TPendingApartmentFolderRepair = {
+  sourceFolderId: string;
+  destinationFolderId: string;
+  operation: Promise<IProject>;
+};
+
 @Injectable()
 export class ProjectDriveService {
   private readonly logger = new TypedLogger<Meta>(ProjectDriveService.name);
 
   private readonly provisioning = new Map<string, Promise<IProject>>();
-  private readonly repairs = new Map<string, Promise<IProject>>();
+  private readonly repairs = new Map<string, TPendingApartmentFolderRepair>();
 
   constructor(
     private readonly projectService: ProjectService,
@@ -200,20 +206,33 @@ export class ProjectDriveService {
     }
   }
 
-  repairApartmentFolder(
+  async repairApartmentFolder(
     projectId: string,
     repair: ApartmentFolderRepairDto,
   ): Promise<IProject> {
     const pending = this.repairs.get(projectId);
     if (pending) {
-      return pending;
+      const matchesSource = pending.sourceFolderId === repair.sourceFolderId;
+      const matchesDestination =
+        pending.destinationFolderId === repair.destinationFolderId;
+      if (!matchesSource || !matchesDestination) {
+        throw new ConflictException(
+          'A different apartment folder repair is already in progress',
+        );
+      }
+
+      return pending.operation;
     }
 
+    const reviewedRepair = {
+      sourceFolderId: repair.sourceFolderId,
+      destinationFolderId: repair.destinationFolderId,
+    };
     const operation = this.performApartmentFolderRepair(
       projectId,
-      repair,
+      reviewedRepair,
     ).finally(() => this.repairs.delete(projectId));
-    this.repairs.set(projectId, operation);
+    this.repairs.set(projectId, { ...reviewedRepair, operation });
     return operation;
   }
 

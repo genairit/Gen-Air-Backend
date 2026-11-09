@@ -466,6 +466,40 @@ describe('ProjectDriveService.provision', () => {
     expect(googleDriveService.moveFile).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects stale folder IDs while a matching repair is in progress', async () => {
+    const { service, googleDriveService } = await createService();
+    const reviewedRepair = {
+      sourceFolderId: 'reviewed-source',
+      destinationFolderId: 'reviewed-destination',
+    };
+    const preview = jest.spyOn(service, 'getApartmentFolderRepair');
+    preview.mockResolvedValue({
+      apartmentId: PROJECT.id,
+      buildingId: 'building-1',
+      ...reviewedRepair,
+      status: 'already_placed',
+    });
+
+    const first = service.repairApartmentFolder(PROJECT.id, reviewedRepair);
+    const matching = service.repairApartmentFolder(PROJECT.id, reviewedRepair);
+    await expect(
+      service.repairApartmentFolder(PROJECT.id, {
+        ...reviewedRepair,
+        sourceFolderId: 'stale-source',
+      }),
+    ).rejects.toThrow(ConflictException);
+    await expect(
+      service.repairApartmentFolder(PROJECT.id, {
+        ...reviewedRepair,
+        destinationFolderId: 'stale-destination',
+      }),
+    ).rejects.toThrow(ConflictException);
+    await Promise.all([first, matching]);
+
+    expect(preview).toHaveBeenCalledTimes(1);
+    expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+  });
+
   it('creates the project folder, saves it, and copies the template tree with tags filled in', async () => {
     const { service, projectService, googleDriveService } =
       await createService();
