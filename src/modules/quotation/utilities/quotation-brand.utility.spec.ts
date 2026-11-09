@@ -1,3 +1,4 @@
+import { SYSTEM_TYPE } from '../constants/quotation.constant';
 import type { SaveQuotationDto } from '../dto/save-quotation.dto';
 import { resolveQuotationBrandGroups } from './quotation-brand.utility';
 
@@ -8,7 +9,13 @@ const input = (changes: Partial<SaveQuotationDto> = {}): SaveQuotationDto =>
     sections: [
       { id: 'a', title: '', systemType: 'VRF', brand: 'אלקטרה', items: [] },
       { id: 'b', title: '', systemType: 'VRF', brand: 'תדיראן', items: [] },
-      { id: 'g', title: '', systemType: 'GEN', brand: null, items: [] },
+      {
+        id: 'g',
+        title: '',
+        systemType: SYSTEM_TYPE.GENERAL,
+        brand: null,
+        items: [],
+      },
     ],
     ...changes,
   }) as SaveQuotationDto;
@@ -65,12 +72,11 @@ describe('quotation brand groups', () => {
         }),
       ),
     ).toThrow();
-    const legacy = resolveQuotationBrandGroups(
-      input({
-        brands: undefined,
-        sections: [{ id: 'a', title: '', systemType: 'VRF', items: [] }],
-      }),
-    );
+    const legacyInput = input({
+      sections: [{ id: 'a', title: '', systemType: 'VRF', items: [] }],
+    });
+    Reflect.deleteProperty(legacyInput, 'brands');
+    const legacy = resolveQuotationBrandGroups(legacyInput);
     expect(legacy.brands).toEqual(['אלקטרה']);
     expect(legacy.sections[0].brand).toBe('אלקטרה');
   });

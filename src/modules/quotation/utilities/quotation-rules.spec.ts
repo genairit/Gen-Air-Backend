@@ -4,6 +4,11 @@ import {
 } from './quotation-calculation.utility';
 
 import {
+  QUOTATION_STATUS,
+  WARNING_SCOPE_VERSION,
+} from '../constants/quotation.constant';
+
+import {
   quotationRuleFixture,
   quotationItemFixture,
   quotationDocumentFixture,
@@ -243,7 +248,55 @@ test('VRF circuit totals stay separate when two brand tabs both use circuit A', 
   quote.brands = ['אלקטרה', 'תדיראן'];
   quote.sections = [first, second];
   expect(quotationCircuits(quote)).toEqual([
-    { name: 'אלקטרה · A', indoor: '24000', outdoor: '0' },
-    { name: 'תדיראן · A', indoor: '0', outdoor: '24000' },
+    { name: 'אלקטרה · מערכת 1 · A', indoor: '24000', outdoor: '0' },
+    { name: 'תדיראן · מערכת 2 · A', indoor: '0', outdoor: '24000' },
   ]);
+});
+
+test('VRF warnings stay separate for two systems of the same brand and circuit', () => {
+  const quote = quotationDocumentFixture([
+    QUOTATION_RULE.MISSING_OUTDOOR,
+    QUOTATION_RULE.MISSING_INDOOR,
+  ]);
+  const first = quote.sections[0];
+  first.systemType = 'VRF';
+  first.title = 'קומה ראשונה';
+  first.items = [
+    { ...quotationItemFixture(), equipmentRole: 'indoor', circuit: 'A' },
+  ];
+  const second = {
+    ...first,
+    id: 'second',
+    title: 'קומה שנייה',
+    items: [
+      { ...quotationItemFixture(), equipmentRole: 'outdoor', circuit: 'A' },
+    ],
+  };
+  quote.sections = [first, second];
+  expect(quotationCircuits(quote).map((circuit) => circuit.name)).toEqual([
+    'קומה ראשונה 1 · A',
+    'קומה שנייה 2 · A',
+  ]);
+  expect(quotationWarnings(quote)).toHaveLength(2);
+});
+
+test('approved legacy quotations retain their original circuit warning acknowledgement', () => {
+  const quote = quotationDocumentFixture([QUOTATION_RULE.MISSING_OUTDOOR]);
+  quote.status = QUOTATION_STATUS.APPROVED;
+  quote.warningScopeVersion = WARNING_SCOPE_VERSION.LEGACY;
+  quote.sections[0].systemType = 'VRF';
+  quote.sections[0].items = [
+    { ...quotationItemFixture(), equipmentRole: 'indoor', circuit: 'A' },
+  ];
+  quote.sections.push({
+    ...quote.sections[0],
+    id: 'second',
+    items: [],
+  });
+  expect(quotationCircuits(quote)[0].name).toBe('A');
+  const warning = quotationWarnings(quote)[0];
+  quote.acknowledgedWarnings = [warning.key];
+  expect(quotationWarnings(quote)[0].acknowledged).toBe(true);
+  quote.warningScopeVersion = WARNING_SCOPE_VERSION.PER_SYSTEM;
+  expect(quotationWarnings(quote)[0].acknowledged).toBe(false);
 });

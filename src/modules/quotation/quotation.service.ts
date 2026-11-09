@@ -27,6 +27,11 @@ import type {
   IQuotationDocument,
 } from './interfaces/quotation-document.interface';
 
+import {
+  QUOTATION_STATUS,
+  WARNING_SCOPE_VERSION,
+} from '@Modules/quotation/constants/quotation.constant';
+
 import Decimal from 'decimal.js';
 import { Transaction } from 'sequelize';
 import { randomUUID } from 'node:crypto';
@@ -40,7 +45,6 @@ import { QuotationSelectionService } from './quotation-selection.service';
 import type { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
 import { quotationPaymentIssues } from './utilities/quotation-payment.utility';
 import { resolveQuotationBrandGroups } from './utilities/quotation-brand.utility';
-import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
@@ -217,6 +221,7 @@ export class QuotationService {
           date,
           brand: '',
           brands: [],
+          warningScopeVersion: WARNING_SCOPE_VERSION.PER_SYSTEM,
           paymentTerms: customer.paymentTerms ?? null,
           paymentTermsNote: '',
           paymentSchedule: [],
@@ -306,6 +311,7 @@ export class QuotationService {
         {
           ...attributes,
           brands,
+          warningScopeVersion: WARNING_SCOPE_VERSION.PER_SYSTEM,
           ruleConfiguration: configuration.rules,
           version: version + 1,
           status: QUOTATION_STATUS.DRAFT,

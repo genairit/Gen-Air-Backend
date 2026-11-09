@@ -23,7 +23,7 @@ test('quotation brand tabs migration preserves old section ownership and line pr
     );
     await database.exec(migration);
     const quote = await database.query(
-      'SELECT brands FROM quotations WHERE id = $1',
+      'SELECT brands, warning_scope_version FROM quotations WHERE id = $1',
       ['quote'],
     );
     const section = await database.query(
@@ -39,6 +39,7 @@ test('quotation brand tabs migration preserves old section ownership and line pr
       ['item'],
     );
     assert.deepEqual(quote.rows[0].brands, ['אלקטרה']);
+    assert.equal(quote.rows[0].warning_scope_version, 1);
     assert.equal(section.rows[0].brand, 'אלקטרה');
     assert.equal(blank.rows[0].brand, null);
     assert.equal(price.rows[0].quoted_price, '123.45');

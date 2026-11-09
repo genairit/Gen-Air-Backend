@@ -23,6 +23,7 @@ export interface IQuotation {
   projectId: string | null;
   status: TQuotationStatus;
   paymentTermsNote: string;
+  warningScopeVersion: number;
   approvedById: string | null;
   acknowledgedWarnings: string[];
   paymentSchedule: IPaymentStage[];

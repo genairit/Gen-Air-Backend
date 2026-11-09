@@ -1,7 +1,8 @@
 BEGIN;
 
 ALTER TABLE quotations
-  ADD COLUMN brands jsonb NOT NULL DEFAULT '[]'::jsonb;
+  ADD COLUMN brands jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN warning_scope_version smallint NOT NULL DEFAULT 1;
 
 UPDATE quotations
 SET brands = jsonb_build_array(brand)

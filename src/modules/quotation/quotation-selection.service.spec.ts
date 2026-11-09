@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { mock } from 'jest-mock-extended';
 import type { Transaction } from 'sequelize';
+import { SYSTEM_TYPE } from './constants/quotation.constant';
 import type { SaveQuotationDto } from './dto/save-quotation.dto';
 import { QuotationSelectionService } from './quotation-selection.service';
 import { quotationDocumentFixture } from '../../testing/quotation.fixture';
+import { CatalogueItem } from '@Modules/catalogue-item/entities/catalogue-item.entity';
 import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import type { ICatalogueItem } from '@Modules/catalogue-item/interfaces/catalogue-item.interface';
 import type { CatalogueItemUsageService } from '@Modules/catalogue-item-usage/catalogue-item-usage.service';
@@ -30,7 +33,7 @@ const catalogue = (brand: string): ICatalogueItem => ({
 const selection = (item: ICatalogueItem, brand: string | null) => ({
   id: randomUUID(),
   title: '',
-  systemType: 'GEN' as const,
+  systemType: SYSTEM_TYPE.GENERAL,
   brand,
   items: [
     {
@@ -51,17 +54,21 @@ describe('quotation selection across brand tabs', () => {
   const alpha = catalogue('אלקטרה');
   const beta = catalogue('תדיראן');
   const general = catalogue('');
-  const getByIds = jest.fn(() => Promise.resolve([alpha, beta, general]));
-  const record = jest.fn(() => Promise.resolve(undefined));
-  const service = new QuotationSelectionService(
-    { getByIds } as unknown as CatalogueItemService,
-    { record } as unknown as CatalogueItemUsageService,
-  );
+  const catalogueService = mock<CatalogueItemService>();
+  const usageService = mock<CatalogueItemUsageService>();
+  const transaction = mock<Transaction>();
+  catalogueService.getByIds.mockResolvedValue([
+    mock<CatalogueItem>(alpha),
+    mock<CatalogueItem>(beta),
+    mock<CatalogueItem>(general),
+  ]);
+  usageService.record.mockImplementation(() => Promise.resolve());
+  const service = new QuotationSelectionService(catalogueService, usageService);
   const run = (sections: ReturnType<typeof selection>[]) =>
     service.snapshots({
       current: quotationDocumentFixture([]),
       userId: randomUUID(),
-      transaction: {} as Transaction,
+      transaction,
       input: {
         brand: 'אלקטרה',
         brands: ['אלקטרה', 'תדיראן'],
@@ -70,8 +77,8 @@ describe('quotation selection across brand tabs', () => {
     });
 
   beforeEach(() => {
-    getByIds.mockClear();
-    record.mockClear();
+    catalogueService.getByIds.mockClear();
+    usageService.record.mockClear();
   });
 
   it('accepts each brand and unbranded General item while preserving line snapshots', async () => {
@@ -97,6 +104,6 @@ describe('quotation selection across brand tabs', () => {
     await expect(run([selection(alpha, 'תדיראן')])).rejects.toThrow(
       'חברת המיזוג',
     );
-    expect(record).not.toHaveBeenCalled();
+    expect(usageService.record.mock.calls).toHaveLength(0);
   });
 });
