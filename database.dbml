@@ -16,6 +16,7 @@ Enum user_role {
   project_manager [note: 'מנהל פרויקט']
   finance         [note: 'מחלקת כספים']
   installer       [note: 'מתקין / טכנאי שטח']
+  purchasing_execution_manager [note: 'מנהל רכש וביצוע; company-wide account role, never a project slot']
 }
 
 Table users {

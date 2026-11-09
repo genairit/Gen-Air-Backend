@@ -5,6 +5,7 @@ export const USER_ROLES = {
   SECRETARY: 'secretary',
   SYSTEM_ADMIN: 'system_admin',
   PROJECT_MANAGER: 'project_manager',
+  PURCHASING_EXECUTION_MANAGER: 'purchasing_execution_manager',
 } as const;
 
 export type UserRoleType = (typeof USER_ROLES)[keyof typeof USER_ROLES];
