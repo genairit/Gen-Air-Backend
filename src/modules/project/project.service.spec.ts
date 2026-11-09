@@ -11,6 +11,12 @@ import {
 } from './interfaces/project.interface';
 
 import {
+  PROJECT_STATUS_IDS,
+  ARCHIVED_PROJECT_STATUS_IDS,
+  WAITING_REASON_SOURCE_STATUS_IDS,
+} from '@Constants/project-status.constant';
+
+import {
   TNoteByProjectId,
   ILatestNoteQuery,
 } from '@Modules/project-stage-transition/interfaces/project-stage-transition.interface';
@@ -32,7 +38,6 @@ import { authorizedUser } from '../../testing/authorization.fixture';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
 import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
-import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { APARTMENT_OWNERSHIP } from './constants/apartment-commercial.constant';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
@@ -728,8 +733,25 @@ describe('ProjectService waiting reason reads', () => {
     });
     expect(transitionService.findLatestNotesInto).toHaveBeenCalledWith({
       projectIds: [PROJECT_ID],
-      toStageId: WAITING_STAGE_ID,
+      toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
     });
+  });
+
+  it('exposes the archived On Hold reason of a migration-remapped waiting project', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(WAITING_PROJECT);
+    transitionService.findLatestNotesInto.mockResolvedValue(
+      new Map([[PROJECT_ID, 'סיבה מלהמתין']]),
+    );
+
+    await expect(service.getById(PROJECT_ID)).resolves.toMatchObject({
+      waitingReason: 'סיבה מלהמתין',
+    });
+    expect(WAITING_REASON_SOURCE_STATUS_IDS).toEqual([
+      PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE,
+      ARCHIVED_PROJECT_STATUS_IDS.ON_HOLD,
+    ]);
   });
 
   it('exposes null for a project that is not waiting, even with an old waiting note', async () => {
@@ -743,7 +765,7 @@ describe('ProjectService waiting reason reads', () => {
     });
     expect(transitionService.findLatestNotesInto).toHaveBeenCalledWith({
       projectIds: [],
-      toStageId: WAITING_STAGE_ID,
+      toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
     });
   });
 
@@ -766,7 +788,7 @@ describe('ProjectService waiting reason reads', () => {
     expect(moved.waitingReason).toBeNull();
     expect(transitionService.findLatestNotesInto).toHaveBeenLastCalledWith({
       projectIds: [],
-      toStageId: WAITING_STAGE_ID,
+      toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
     });
   });
 
@@ -794,7 +816,7 @@ describe('ProjectService waiting reason reads', () => {
     ]);
     expect(transitionService.findLatestNotesInto).toHaveBeenCalledWith({
       projectIds: [PROJECT_ID],
-      toStageId: WAITING_STAGE_ID,
+      toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
     });
   });
 });

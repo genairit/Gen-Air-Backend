@@ -23,6 +23,11 @@ import {
 } from './interfaces/project.interface';
 
 import {
+  PROJECT_STATUS_IDS,
+  WAITING_REASON_SOURCE_STATUS_IDS,
+} from '@Constants/project-status.constant';
+
+import {
   resolveProjectLighting,
   resolveProjectLightingChanges,
 } from './utilities/project-lighting.utility';
@@ -57,7 +62,6 @@ import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
 import { hasAddressChanges } from './utilities/project-intake.utility';
 import { generateProjectCode } from './utilities/project-code.utility';
-import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { resolveStageNote } from './utilities/project-stage-note.utility';
 import { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
@@ -372,7 +376,7 @@ export class ProjectService {
     const reasonByProjectId =
       await this.projectStageTransitionService.findLatestNotesInto({
         projectIds: waitingProjectIds,
-        toStageId: PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE,
+        toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
       });
 
     return projects.map((project) => ({

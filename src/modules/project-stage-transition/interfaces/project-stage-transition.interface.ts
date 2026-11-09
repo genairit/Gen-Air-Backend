@@ -25,8 +25,8 @@ export interface IStageChange {
 }
 
 export interface ILatestNoteQuery {
-  toStageId: string;
   projectIds: string[];
+  toStageIds: readonly string[];
 }
 
 export type TProjectStageTransitionNote = Pick<

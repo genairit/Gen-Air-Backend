@@ -1,16 +1,38 @@
-import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
+import {
+  PROJECT_STATUS_IDS,
+  ARCHIVED_PROJECT_STATUS_IDS,
+  WAITING_REASON_SOURCE_STATUS_IDS,
+} from '@Constants/project-status.constant';
+
+import {
+  ILatestNoteQuery,
+  TProjectStageTransitionNote,
+} from './interfaces/project-stage-transition.interface';
+
 import { ProjectStageTransitionService } from './project-stage-transition.service';
 import { ProjectStageTransitionRepository } from './project-stage-transition.repository';
 
-const WAITING_STAGE_ID = PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE;
+interface IStoredTransition extends TProjectStageTransitionNote {
+  createdAt: number;
+  toStageId: string;
+}
 
-const createService = () => {
+const WAITING = PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE;
+const ON_HOLD = ARCHIVED_PROJECT_STATUS_IDS.ON_HOLD;
+
+const createService = (transitions: IStoredTransition[]) => {
   const repository = {
-    findNotesInto: jest.fn().mockResolvedValue([
-      { projectId: 'project-1', note: 'סיבה ישנה' },
-      { projectId: 'project-2', note: 'סיבה יחידה' },
-      { projectId: 'project-1', note: 'סיבה עדכנית' },
-    ]),
+    findNotesInto: jest.fn(({ projectIds, toStageIds }: ILatestNoteQuery) =>
+      Promise.resolve(
+        transitions
+          .filter(
+            (transition) =>
+              projectIds.includes(transition.projectId) &&
+              toStageIds.includes(transition.toStageId),
+          )
+          .toSorted((first, second) => first.createdAt - second.createdAt),
+      ),
+    ),
   };
   const service = new ProjectStageTransitionService(
     Object.assign(new ProjectStageTransitionRepository(), repository),
@@ -19,30 +41,106 @@ const createService = () => {
   return { service, repository };
 };
 
+const findWaitingReasons = (
+  service: ProjectStageTransitionService,
+  projectIds: string[],
+) =>
+  service.findLatestNotesInto({
+    projectIds,
+    toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
+  });
+
 describe('ProjectStageTransitionService.findLatestNotesInto', () => {
-  it('maps every project to its newest note into the stage', async () => {
-    const { service, repository } = createService();
-    const query = {
-      projectIds: ['project-1', 'project-2'],
-      toStageId: WAITING_STAGE_ID,
-    };
+  it('maps every project to its newest note into the stages', async () => {
+    const { service, repository } = createService([
+      {
+        projectId: 'project-1',
+        toStageId: WAITING,
+        note: 'ישנה',
+        createdAt: 1,
+      },
+      {
+        projectId: 'project-2',
+        toStageId: WAITING,
+        note: 'יחידה',
+        createdAt: 2,
+      },
+      {
+        projectId: 'project-1',
+        toStageId: WAITING,
+        note: 'עדכנית',
+        createdAt: 3,
+      },
+    ]);
+    const projectIds = ['project-1', 'project-2'];
 
-    const notes = await service.findLatestNotesInto(query);
+    const notes = await findWaitingReasons(service, projectIds);
 
-    expect(repository.findNotesInto).toHaveBeenCalledWith(query);
+    expect(repository.findNotesInto).toHaveBeenCalledWith({
+      projectIds,
+      toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
+    });
     expect(Object.fromEntries(notes)).toEqual({
-      'project-1': 'סיבה עדכנית',
-      'project-2': 'סיבה יחידה',
+      'project-1': 'עדכנית',
+      'project-2': 'יחידה',
     });
   });
 
-  it('skips the query when no project is asked for', async () => {
-    const { service, repository } = createService();
+  it('returns the archived On Hold note of a remapped project', async () => {
+    const { service } = createService([
+      {
+        projectId: 'project-1',
+        toStageId: ON_HOLD,
+        note: 'מלהמתין',
+        createdAt: 1,
+      },
+    ]);
 
-    const notes = await service.findLatestNotesInto({
-      projectIds: [],
-      toStageId: WAITING_STAGE_ID,
-    });
+    const notes = await findWaitingReasons(service, ['project-1']);
+
+    expect(notes.get('project-1')).toBe('מלהמתין');
+  });
+
+  it('prefers a newer waiting note over an older On Hold one', async () => {
+    const { service } = createService([
+      {
+        projectId: 'project-1',
+        toStageId: ON_HOLD,
+        note: 'ישנה',
+        createdAt: 1,
+      },
+      {
+        projectId: 'project-1',
+        toStageId: WAITING,
+        note: 'חדשה',
+        createdAt: 2,
+      },
+    ]);
+
+    const notes = await findWaitingReasons(service, ['project-1']);
+
+    expect(notes.get('project-1')).toBe('חדשה');
+  });
+
+  it('ignores notes into other stages', async () => {
+    const { service } = createService([
+      {
+        projectId: 'project-1',
+        toStageId: PROJECT_STATUS_IDS.IN_PROGRESS,
+        note: 'אחרת',
+        createdAt: 1,
+      },
+    ]);
+
+    const notes = await findWaitingReasons(service, ['project-1']);
+
+    expect(notes.has('project-1')).toBe(false);
+  });
+
+  it('skips the query when no project is asked for', async () => {
+    const { service, repository } = createService([]);
+
+    const notes = await findWaitingReasons(service, []);
 
     expect(notes.size).toBe(0);
     expect(repository.findNotesInto).not.toHaveBeenCalled();

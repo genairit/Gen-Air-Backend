@@ -25,12 +25,15 @@ export class ProjectStageTransitionRepository {
   }
 
   findNotesInto({
-    toStageId,
     projectIds,
+    toStageIds,
   }: ILatestNoteQuery): Promise<TProjectStageTransitionNote[]> {
     return ProjectStageTransition.findAll({
       attributes: ['projectId', 'note'],
-      where: { toStageId, projectId: { [Op.in]: projectIds } },
+      where: {
+        toStageId: { [Op.in]: toStageIds },
+        projectId: { [Op.in]: projectIds },
+      },
       order: [['createdAt', 'ASC']],
       raw: true,
     });
