@@ -52,16 +52,25 @@ export const quotationCircuits = (
 ): IQuotationCircuit[] => {
   const equipment = quotation.sections
     .filter((section) => section.systemType === SYSTEM_TYPE.VRF)
-    .flatMap((section) => section.items)
-    .filter((item) =>
+    .flatMap((section) =>
+      section.items.map((item) => ({
+        item,
+        brand: section.brand ?? quotation.brand,
+      })),
+    )
+    .filter(({ item }) =>
       [EQUIPMENT_ROLE.INDOOR, EQUIPMENT_ROLE.OUTDOOR].some(
         (role) => role === item.equipmentRole,
       ),
     );
+  const hasMultipleBrands =
+    new Set(equipment.map(({ brand }) => brand)).size > 1;
   const circuits = equipment.reduce<Record<string, IQuotationCircuit>>(
-    (result, item) => {
-      const name = item.circuit ?? 'A';
-      const previous = result[name] ?? { name, indoor: '0', outdoor: '0' };
+    (result, { item, brand }) => {
+      const circuit = item.circuit ?? 'A';
+      const key = JSON.stringify([brand, circuit]);
+      const name = hasMultipleBrands ? `${brand} · ${circuit}` : circuit;
+      const previous = result[key] ?? { name, indoor: '0', outdoor: '0' };
       const capacity = new Decimal(item.capacityBtu ?? 0).times(item.quantity);
       const updated =
         item.equipmentRole === EQUIPMENT_ROLE.INDOOR
@@ -70,7 +79,7 @@ export const quotationCircuits = (
               ...previous,
               outdoor: capacity.plus(previous.outdoor).toString(),
             };
-      return { ...result, [name]: updated };
+      return { ...result, [key]: updated };
     },
     {},
   );

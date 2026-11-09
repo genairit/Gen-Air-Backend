@@ -14,6 +14,7 @@ import {
   type TQuotationRuleKey,
 } from '@Modules/quotation-rule/constants/quotation-rule.constant';
 
+import { quotationCircuits } from './quotation-rule-evaluators.utility';
 import type { IQuotationDocument } from '../interfaces/quotation-document.interface';
 import { validateRuleConfiguration } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
 
@@ -221,4 +222,28 @@ describe('All configured checks are required warnings', () => {
       ),
     ).toThrow();
   });
+});
+
+test('VRF circuit totals stay separate when two brand tabs both use circuit A', () => {
+  const quote = quotationDocumentFixture([]);
+  const first = quote.sections[0];
+  first.systemType = 'VRF';
+  first.brand = 'אלקטרה';
+  first.items = [
+    { ...quotationItemFixture(), equipmentRole: 'indoor', circuit: 'A' },
+  ];
+  const second = {
+    ...first,
+    id: 'second',
+    brand: 'תדיראן',
+    items: [
+      { ...quotationItemFixture(), equipmentRole: 'outdoor', circuit: 'A' },
+    ],
+  };
+  quote.brands = ['אלקטרה', 'תדיראן'];
+  quote.sections = [first, second];
+  expect(quotationCircuits(quote)).toEqual([
+    { name: 'אלקטרה · A', indoor: '24000', outdoor: '0' },
+    { name: 'תדיראן · A', indoor: '0', outdoor: '24000' },
+  ]);
 });

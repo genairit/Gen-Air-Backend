@@ -39,6 +39,7 @@ import { CustomerService } from '@Modules/customer/customer.service';
 import { QuotationSelectionService } from './quotation-selection.service';
 import type { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
 import { quotationPaymentIssues } from './utilities/quotation-payment.utility';
+import { resolveQuotationBrandGroups } from './utilities/quotation-brand.utility';
 import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
@@ -215,6 +216,7 @@ export class QuotationService {
           status: QUOTATION_STATUS.DRAFT,
           date,
           brand: '',
+          brands: [],
           paymentTerms: customer.paymentTerms ?? null,
           paymentTermsNote: '',
           paymentSchedule: [],
@@ -270,10 +272,10 @@ export class QuotationService {
         throw new BadRequestException('אחוז ההנחה חייב להיות עד100');
       }
       const configuration = await this.rules.configuration(transaction);
-      const sections = input.sections;
+      const { brands, sections } = resolveQuotationBrandGroups(input);
       const snapshots = await this.selection.snapshots({
         current,
-        input,
+        input: { ...input, brands, sections },
         userId,
         transaction,
       });
@@ -285,6 +287,7 @@ export class QuotationService {
           id: section.id,
           quotationId: id,
           title: section.title,
+          brand: section.brand,
           systemType: section.systemType,
           displayOrder,
         })),
@@ -297,6 +300,7 @@ export class QuotationService {
         id,
         {
           ...attributes,
+          brands,
           ruleConfiguration: configuration.rules,
           version: version + 1,
           status: QUOTATION_STATUS.DRAFT,
@@ -337,12 +341,9 @@ export class QuotationService {
       }
       if (
         input.status === QUOTATION_STATUS.REVIEW &&
-        (!current.brand ||
-          !current.sections.some((section) => section.items.length))
+        !current.sections.some((section) => section.items.length)
       ) {
-        throw new BadRequestException(
-          'יש לבחור חברה ולהוסיף פריטים לפני בדיקה',
-        );
+        throw new BadRequestException('יש להוסיף פריטים לפני בדיקה');
       }
       if (input.status === QUOTATION_STATUS.APPROVED) {
         const paymentIssues = quotationPaymentIssues(checked);

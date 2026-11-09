@@ -71,6 +71,10 @@ export class QuotationSectionDto {
   declare title: string;
   @IsIn(SYSTEM_TYPES)
   declare systemType: TSystemType;
+  @ValidateIf((_o, v) => v !== null && v != null)
+  @IsString()
+  @MaxLength(100)
+  declare brand?: string | null;
   @IsArray()
   @ArrayMaxSize(MAX_ITEMS_PER_SECTION)
   @ValidateNested({ each: true })
@@ -99,6 +103,12 @@ export class SaveQuotationDto {
   @IsString()
   @MaxLength(100)
   declare brand: string;
+  @ValidateIf((_o, v) => v != null)
+  @IsArray()
+  @ArrayMaxSize(14)
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  declare brands?: string[];
   @ValidateIf((_o, v) => v !== null)
   @IsIn(PAYMENT_TERMS_VALUES)
   declare paymentTerms: PaymentTermsType | null;

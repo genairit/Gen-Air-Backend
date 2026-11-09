@@ -31,6 +31,8 @@ export class QuotationSection
   declare title: string;
   @Column({ type: DataType.STRING(10), allowNull: false })
   declare systemType: TSystemType;
+  @Column({ type: DataType.STRING(100), allowNull: true })
+  declare brand: string | null;
   @Column({ type: DataType.INTEGER, allowNull: false })
   declare displayOrder: number;
   @CreatedAt

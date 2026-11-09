@@ -40,6 +40,8 @@ export class Quotation
   declare date: string;
   @Column({ type: DataType.STRING(100), allowNull: false })
   declare brand: string;
+  @Column({ type: DataType.JSONB, allowNull: false })
+  declare brands: string[];
   @Column({ type: DataType.STRING(40), allowNull: true })
   declare paymentTerms: PaymentTermsType | null;
   @Column({ type: DataType.STRING(1000), allowNull: false })
