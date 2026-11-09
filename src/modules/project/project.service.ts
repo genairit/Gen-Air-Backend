@@ -153,6 +153,12 @@ export class ProjectService {
       this.assertLinkableCustomer(project.customerId),
     ]);
 
+    this.assertBuildingEngineerNotAssigned(
+      projectType.canHaveApartments,
+      null,
+      project.members,
+    );
+
     const customerDetails = this.resolveCustomerDetails(
       pickCustomerDetails(project),
       projectType.detailFieldSet,
@@ -187,7 +193,12 @@ export class ProjectService {
     apartment: CreateApartmentDto,
     creator: IUser,
   ): Promise<IProject> {
-    const members = apartment.members ?? [];
+    const members = [
+      ...(apartment.members ?? []),
+      ...(apartment.engineerUserId
+        ? [{ role: USER_ROLES.ENGINEER, userId: apartment.engineerUserId }]
+        : []),
+    ];
     const [building, initialStage] = await Promise.all([
       this.getStoredById(buildingId),
       this.projectStageService.getInitialStage(),
@@ -240,16 +251,29 @@ export class ProjectService {
       this.getStoredById(id),
       this.validateChanges(changes),
     ]);
+    const targetType = changes.projectTypeId
+      ? await this.projectTypeService.getById(changes.projectTypeId)
+      : (project.projectType ??
+        (await this.projectTypeService.getById(project.projectTypeId)));
+    this.assertBuildingEngineerNotAssigned(
+      targetType.canHaveApartments,
+      project.parentProjectId,
+      changes.members ?? project.members ?? [],
+    );
     const attributes = await this.resolveUpdateAttributes(project, changes);
 
     await this.databaseTransactionService.run(async (transaction) => {
       await this.projectRepository.update(id, attributes, transaction);
 
-      await this.replaceMembersWhenProvided(
-        id,
-        changes.hasOwnTeam === false ? [] : (changes.members ?? null),
-        transaction,
-      );
+      if (project.parentProjectId) {
+        await this.updateApartmentMembers(id, changes, transaction);
+      } else {
+        await this.replaceMembersWhenProvided(
+          id,
+          changes.members ?? null,
+          transaction,
+        );
+      }
 
       await this.applyStageChange(
         {
@@ -421,6 +445,10 @@ export class ProjectService {
       );
     }
 
+    if ('engineerUserId' in changes) {
+      throw new BadRequestException('Only apartments can assign an engineer');
+    }
+
     if ('hasOwnTeam' in changes) {
       throw new BadRequestException(
         'Team inheritance can only be changed for apartments',
@@ -524,7 +552,29 @@ export class ProjectService {
       changes.members
         ? this.projectMemberService.validateAssignments(changes.members)
         : null,
+      changes.engineerUserId
+        ? this.projectMemberService.validateAssignments([
+            { userId: changes.engineerUserId, role: USER_ROLES.ENGINEER },
+          ])
+        : null,
     ]);
+  }
+
+  private assertBuildingEngineerNotAssigned(
+    canHaveApartments: boolean,
+    parentProjectId: string | null,
+    members: readonly { role: string }[],
+  ): void {
+    const isResidentialBuilding = canHaveApartments && !parentProjectId;
+    const hasEngineer = members.some(
+      (member) => member.role === USER_ROLES.ENGINEER,
+    );
+
+    if (isResidentialBuilding && hasEngineer) {
+      throw new BadRequestException(
+        'Assign engineering workers to apartments, not their parent building',
+      );
+    }
   }
 
   private async findTargetFieldSet(
@@ -597,6 +647,34 @@ export class ProjectService {
       members,
       transaction,
     );
+  }
+
+  private async updateApartmentMembers(
+    projectId: string,
+    changes: UpdateProjectDto,
+    transaction: Transaction,
+  ): Promise<void> {
+    const team = changes.hasOwnTeam === false ? [] : (changes.members ?? null);
+    const legacyEngineer = changes.members?.find(
+      (member) => member.role === USER_ROLES.ENGINEER,
+    );
+    const engineerChanged = 'engineerUserId' in changes || legacyEngineer;
+
+    if (team) {
+      await this.projectMemberService.replaceApartmentTeam(
+        projectId,
+        team,
+        transaction,
+      );
+    }
+
+    if (engineerChanged) {
+      await this.projectMemberService.setApartmentEngineer(
+        projectId,
+        changes.engineerUserId ?? legacyEngineer?.userId ?? null,
+        transaction,
+      );
+    }
   }
 
   private async applyStageChange(

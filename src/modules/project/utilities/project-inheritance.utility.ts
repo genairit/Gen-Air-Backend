@@ -4,6 +4,7 @@ import {
   TApartmentInheritanceInput,
 } from '../interfaces/project.interface';
 
+import { USER_ROLES } from '@Constants/user-role.constant';
 import { ADDRESS_INHERITED_FIELDS } from '../constants/project-inheritance.constant';
 
 export const resolveApartment = <TApartment extends TApartmentInheritanceInput>(
@@ -25,7 +26,14 @@ export const resolveApartment = <TApartment extends TApartmentInheritanceInput>(
     ...customerDetails,
     members: apartment.hasOwnTeam
       ? (apartment.members ?? [])
-      : (building.members ?? []),
+      : [
+          ...(building.members ?? []).filter(
+            (member) => member.role !== USER_ROLES.ENGINEER,
+          ),
+          ...(apartment.members ?? []).filter(
+            (member) => member.role === USER_ROLES.ENGINEER,
+          ),
+        ],
     address: building.address,
     parentNotes: building.notes,
     addressCity: building.addressCity,
