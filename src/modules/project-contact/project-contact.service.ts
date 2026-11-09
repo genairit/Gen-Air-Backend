@@ -60,18 +60,27 @@ export class ProjectContactService {
           },
           { transaction },
         );
-        return existing;
+      } else {
+        await ProjectContactLink.create(
+          {
+            projectId,
+            contactId: input.contactId,
+            role: input.role ?? null,
+            isPrimary: input.isPrimary ?? false,
+          },
+          { transaction },
+        );
       }
 
-      return ProjectContactLink.create(
-        {
-          projectId,
-          contactId: input.contactId,
-          role: input.role ?? null,
-          isPrimary: input.isPrimary ?? false,
-        },
-        { transaction },
-      );
+      const linked = await ProjectContactLink.findOne({
+        where: { projectId, contactId: input.contactId },
+        include: [CustomerContact],
+        transaction,
+      });
+      if (!linked) {
+        throw new NotFoundException('Project contact link was not found');
+      }
+      return linked;
     });
   }
 
