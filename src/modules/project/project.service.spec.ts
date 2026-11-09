@@ -43,6 +43,7 @@ const DRAFT_STAGE_ID = PROJECT_STATUS_IDS.NOT_STARTED;
 const ORDER_STAGE_ID = 'stage-order';
 const COMPANY_TYPE_ID = 'type-company';
 const PRIVATE_TYPE_ID = 'type-private';
+const BUILDING_TYPE_ID = 'type-building';
 const CUSTOMER_ID = 'customer-1';
 
 const LINKED_CUSTOMER = {
@@ -62,6 +63,12 @@ const PROJECT_TYPES = {
     name: 'לקוחות פרטיים',
     canHaveApartments: false,
     detailFieldSet: PROJECT_DETAIL_FIELD_SETS.PRIVATE_CLIENT,
+  },
+  [BUILDING_TYPE_ID]: {
+    id: BUILDING_TYPE_ID,
+    name: 'בנייה רוויה',
+    canHaveApartments: true,
+    detailFieldSet: PROJECT_DETAIL_FIELD_SETS.COMPANY,
   },
 };
 
@@ -832,7 +839,7 @@ const BUILDING = {
   ...STORED_INTAKE_PROJECT,
   id: BUILDING_ID,
   code: 'GA-84811',
-  projectTypeId: 'type-building',
+  projectTypeId: BUILDING_TYPE_ID,
   projectType: {
     name: 'בנייה רוויה',
     canHaveApartments: true,
@@ -1213,6 +1220,31 @@ describe('ProjectService customer link', () => {
 });
 
 describe('ProjectService building guards', () => {
+  it('removes a standalone engineer before converting to a residential building', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...STORED_INTAKE_PROJECT,
+      projectType: PROJECT_TYPES[COMPANY_TYPE_ID],
+      members: [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }],
+    });
+
+    await service.update(
+      PROJECT_ID,
+      { projectTypeId: BUILDING_TYPE_ID, members: [] },
+      CREATOR,
+    );
+
+    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+      PROJECT_ID,
+      [],
+      TRANSACTION,
+    );
+    expect(
+      projectMemberService.replaceForProject.mock.invocationCallOrder[0],
+    ).toBeLessThan(projectRepository.update.mock.invocationCallOrder[0]);
+  });
+
   it('refuses to delete a building that still has apartments', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.countLiveApartments.mockResolvedValue(3);
@@ -1364,6 +1396,25 @@ describe('ProjectService apartment contact', () => {
 });
 
 describe('ProjectService apartment team changes', () => {
+  it('honors an explicit null engineer even when legacy members include an engineer', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    await service.update(
+      STORED_APARTMENT.id,
+      {
+        engineerUserId: null,
+        members: [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }],
+      },
+      CREATOR,
+    );
+    expect(projectMemberService.setApartmentEngineer).toHaveBeenCalledWith(
+      STORED_APARTMENT.id,
+      null,
+      TRANSACTION,
+    );
+  });
+
   it('assigns an apartment engineer without overriding inherited non-engineering roles', async () => {
     const { service, projectRepository, projectMemberService } =
       await createService();

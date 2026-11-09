@@ -261,13 +261,26 @@ export class ProjectService {
       changes.members ?? project.members ?? [],
     );
     const attributes = await this.resolveUpdateAttributes(project, changes);
+    const removeEngineerBeforeTypeChange =
+      !project.parentProjectId &&
+      targetType.canHaveApartments &&
+      changes.projectTypeId !== undefined &&
+      project.members?.some((member) => member.role === USER_ROLES.ENGINEER) &&
+      changes.members !== undefined;
 
     await this.databaseTransactionService.run(async (transaction) => {
+      if (removeEngineerBeforeTypeChange) {
+        await this.replaceMembersWhenProvided(
+          id,
+          changes.members ?? null,
+          transaction,
+        );
+      }
       await this.projectRepository.update(id, attributes, transaction);
 
       if (project.parentProjectId) {
         await this.updateApartmentMembers(id, changes, transaction);
-      } else {
+      } else if (!removeEngineerBeforeTypeChange) {
         await this.replaceMembersWhenProvided(
           id,
           changes.members ?? null,
@@ -671,7 +684,9 @@ export class ProjectService {
     if (engineerChanged) {
       await this.projectMemberService.setApartmentEngineer(
         projectId,
-        changes.engineerUserId ?? legacyEngineer?.userId ?? null,
+        'engineerUserId' in changes
+          ? (changes.engineerUserId ?? null)
+          : (legacyEngineer?.userId ?? null),
         transaction,
       );
     }
