@@ -3,7 +3,7 @@ import { ProjectStageTransition } from './entities/project-stage-transition.enti
 import { WAITING_REASON_SOURCE_STATUS_IDS } from '@Constants/project-status.constant';
 import { ProjectStageTransitionRepository } from './project-stage-transition.repository';
 
-describe('ProjectStageTransitionRepository.findNotesInto', () => {
+describe('ProjectStageTransitionRepository.findNotesByTargetStages', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
@@ -13,7 +13,7 @@ describe('ProjectStageTransitionRepository.findNotesInto', () => {
       .spyOn(ProjectStageTransition, 'findAll')
       .mockResolvedValue([]);
 
-    await new ProjectStageTransitionRepository().findNotesInto({
+    await new ProjectStageTransitionRepository().findNotesByTargetStages({
       projectIds: ['project-1'],
       toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
     });

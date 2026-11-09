@@ -12,7 +12,7 @@ import {
   IProject,
   TProjectRead,
   INewProjectContext,
-  IApartmentReadPage,
+  TApartmentReadPage,
   IProjectStageCounts,
   IProjectWaitingReason,
   IProjectFieldSetTarget,
@@ -31,6 +31,11 @@ import {
   resolveProjectLighting,
   resolveProjectLightingChanges,
 } from './utilities/project-lighting.utility';
+
+import {
+  resolveStageNote,
+  findChangingStageId,
+} from './utilities/project-stage-note.utility';
 
 import {
   pickCustomerDetails,
@@ -63,7 +68,6 @@ import { ProjectApartmentService } from './project-apartment.service';
 import { hasAddressChanges } from './utilities/project-intake.utility';
 import { generateProjectCode } from './utilities/project-code.utility';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
-import { resolveStageNote } from './utilities/project-stage-note.utility';
 import { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { GetProjectCountsByFilterDto } from './dto/get-counts-by-filter.dto';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
@@ -227,7 +231,7 @@ export class ProjectService {
   async getApartments(
     buildingId: string,
     filter: GetApartmentsByFilterDto,
-  ): Promise<IApartmentReadPage> {
+  ): Promise<TApartmentReadPage> {
     const building = await this.getStoredById(buildingId);
     const page = await this.projectApartmentService.findByBuilding(
       building,
@@ -259,6 +263,12 @@ export class ProjectService {
       this.getStoredById(id),
       this.validateChanges(changes),
     ]);
+    const stageChange = this.resolveStageChange({
+      project,
+      changedBy: editor,
+      note: changes.stageNote ?? null,
+      toStageId: changes.stageId ?? null,
+    });
     const attributes = await this.resolveUpdateAttributes(project, changes);
 
     await this.databaseTransactionService.run(async (transaction) => {
@@ -270,15 +280,7 @@ export class ProjectService {
         transaction,
       );
 
-      await this.applyStageChange(
-        {
-          project,
-          changedBy: editor,
-          note: changes.stageNote ?? null,
-          toStageId: changes.stageId ?? null,
-        },
-        transaction,
-      );
+      await this.applyStageChange(stageChange, transaction);
     });
 
     return this.getById(id);
@@ -290,20 +292,18 @@ export class ProjectService {
     changedBy: IUser,
   ): Promise<TProjectRead> {
     const [project] = await Promise.all([
-      this.getById(id),
+      this.getStoredById(id),
       this.projectStageService.getById(move.stageId),
     ]);
+    const stageChange = this.resolveStageChange({
+      project,
+      changedBy,
+      note: move.note ?? null,
+      toStageId: move.stageId,
+    });
 
     await this.databaseTransactionService.run((transaction) =>
-      this.applyStageChange(
-        {
-          project,
-          changedBy,
-          note: move.note ?? null,
-          toStageId: move.stageId,
-        },
-        transaction,
-      ),
+      this.applyStageChange(stageChange, transaction),
     );
 
     return this.getById(id);
@@ -374,7 +374,7 @@ export class ProjectService {
       )
       .map((project) => project.id);
     const reasonByProjectId =
-      await this.projectStageTransitionService.findLatestNotesInto({
+      await this.projectStageTransitionService.findLatestNotesByTargetStages({
         projectIds: waitingProjectIds,
         toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
       });
@@ -641,18 +641,31 @@ export class ProjectService {
     );
   }
 
+  private resolveStageChange(
+    request: IProjectStageChangeRequest,
+  ): IProjectStageChangeRequest {
+    const toStageId = findChangingStageId(request);
+
+    if (!toStageId) {
+      return request;
+    }
+
+    return {
+      ...request,
+      note: resolveStageNote({ toStageId, note: request.note }),
+    };
+  }
+
   private async applyStageChange(
     request: IProjectStageChangeRequest,
     transaction: Transaction,
   ): Promise<void> {
-    const { project, toStageId } = request;
-    const isStageChanging = toStageId !== null && toStageId !== project.stageId;
+    const { project, note } = request;
+    const toStageId = findChangingStageId(request);
 
-    if (!isStageChanging) {
+    if (!toStageId) {
       return;
     }
-
-    const note = resolveStageNote({ toStageId, note: request.note });
 
     await this.projectRepository.update(
       project.id,

@@ -51,10 +51,11 @@ describe('waiting-for-response reason API', () => {
   };
   const transitionService = {
     record: jest.fn().mockResolvedValue(null),
-    findLatestNotesInto: jest.fn(({ projectIds }: { projectIds: string[] }) =>
-      Promise.resolve(
-        new Map(projectIds.map((id) => [id, 'ממתינים לאישור הלקוח'])),
-      ),
+    findLatestNotesByTargetStages: jest.fn(
+      ({ projectIds }: { projectIds: string[] }) =>
+        Promise.resolve(
+          new Map(projectIds.map((id) => [id, 'ממתינים לאישור הלקוח'])),
+        ),
     ),
   };
   const server = () => state.app!.getHttpServer();
@@ -153,13 +154,33 @@ describe('waiting-for-response reason API', () => {
     },
   );
 
-  it('rejects a reason longer than the stored column', async () => {
-    await moveAsAdmin({
+  it('rejects a reason longer than the stored column through validation', async () => {
+    const response = await moveAsAdmin({
       stageId: WAITING_STAGE_ID,
       note: 'א'.repeat(FIELD_LENGTHS.TRANSITION_NOTE + 1),
     }).expect(400);
 
+    expect(response.body).toEqual({
+      statusCode: 400,
+      message: [
+        `note must be shorter than or equal to ${FIELD_LENGTHS.TRANSITION_NOTE} characters`,
+      ],
+    });
     expect(projectRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('accepts a reason that fits the column once trimmed', async () => {
+    const longestReason = 'א'.repeat(FIELD_LENGTHS.TRANSITION_NOTE);
+
+    await moveAsAdmin({
+      stageId: WAITING_STAGE_ID,
+      note: `  ${longestReason}  `,
+    }).expect(200);
+
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ note: longestReason }),
+      {},
+    );
   });
 
   it('moves to waiting with the trimmed reason and returns it', async () => {
@@ -211,12 +232,18 @@ describe('waiting-for-response reason API', () => {
     },
   );
 
-  it('rejects a generic-update stageNote longer than the stored column', async () => {
-    await patchAsAdmin(ENDPOINTS.UPDATE, {
+  it('rejects a generic-update stageNote longer than the stored column through validation', async () => {
+    const response = await patchAsAdmin(ENDPOINTS.UPDATE, {
       stageId: WAITING_STAGE_ID,
       stageNote: 'א'.repeat(FIELD_LENGTHS.TRANSITION_NOTE + 1),
     }).expect(400);
 
+    expect(response.body).toEqual({
+      statusCode: 400,
+      message: [
+        `stageNote must be shorter than or equal to ${FIELD_LENGTHS.TRANSITION_NOTE} characters`,
+      ],
+    });
     expect(transitionService.record).not.toHaveBeenCalled();
   });
 

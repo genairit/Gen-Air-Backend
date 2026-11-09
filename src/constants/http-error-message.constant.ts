@@ -3,8 +3,6 @@ import {
   HttpErrorCodeType,
 } from './http-error-code.constant';
 
-import { FIELD_LENGTHS } from './field-length.constant';
-
 export const HTTP_ERROR_MESSAGES = {
   [HTTP_ERROR_CODES.INVALID_CURRENT_PASSWORD]: 'Current password is incorrect',
   [HTTP_ERROR_CODES.PROJECT_NAME_ALREADY_EXISTS]:
@@ -25,5 +23,4 @@ export const HTTP_ERROR_MESSAGES = {
     'Apartment import requires an eligible residential building',
   [HTTP_ERROR_CODES.WAITING_REASON_REQUIRED]:
     'יש להזין סיבה למעבר לסטטוס "מחכה לתשובה"',
-  [HTTP_ERROR_CODES.TRANSITION_NOTE_TOO_LONG]: `הסיבה ארוכה מדי (עד ${FIELD_LENGTHS.TRANSITION_NOTE} תווים)`,
 } as const satisfies Record<HttpErrorCodeType, string>;

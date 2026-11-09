@@ -22,16 +22,17 @@ const ON_HOLD = ARCHIVED_PROJECT_STATUS_IDS.ON_HOLD;
 
 const createService = (transitions: IStoredTransition[]) => {
   const repository = {
-    findNotesInto: jest.fn(({ projectIds, toStageIds }: ILatestNoteQuery) =>
-      Promise.resolve(
-        transitions
-          .filter(
-            (transition) =>
-              projectIds.includes(transition.projectId) &&
-              toStageIds.includes(transition.toStageId),
-          )
-          .toSorted((first, second) => first.createdAt - second.createdAt),
-      ),
+    findNotesByTargetStages: jest.fn(
+      ({ projectIds, toStageIds }: ILatestNoteQuery) =>
+        Promise.resolve(
+          transitions
+            .filter(
+              (transition) =>
+                projectIds.includes(transition.projectId) &&
+                toStageIds.includes(transition.toStageId),
+            )
+            .toSorted((first, second) => first.createdAt - second.createdAt),
+        ),
     ),
   };
   const service = new ProjectStageTransitionService(
@@ -45,12 +46,12 @@ const findWaitingReasons = (
   service: ProjectStageTransitionService,
   projectIds: string[],
 ) =>
-  service.findLatestNotesInto({
+  service.findLatestNotesByTargetStages({
     projectIds,
     toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
   });
 
-describe('ProjectStageTransitionService.findLatestNotesInto', () => {
+describe('ProjectStageTransitionService.findLatestNotesByTargetStages', () => {
   it('maps every project to its newest note into the stages', async () => {
     const { service, repository } = createService([
       {
@@ -76,7 +77,7 @@ describe('ProjectStageTransitionService.findLatestNotesInto', () => {
 
     const notes = await findWaitingReasons(service, projectIds);
 
-    expect(repository.findNotesInto).toHaveBeenCalledWith({
+    expect(repository.findNotesByTargetStages).toHaveBeenCalledWith({
       projectIds,
       toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
     });
@@ -143,6 +144,6 @@ describe('ProjectStageTransitionService.findLatestNotesInto', () => {
     const notes = await findWaitingReasons(service, []);
 
     expect(notes.size).toBe(0);
-    expect(repository.findNotesInto).not.toHaveBeenCalled();
+    expect(repository.findNotesByTargetStages).not.toHaveBeenCalled();
   });
 });

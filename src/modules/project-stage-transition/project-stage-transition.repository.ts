@@ -24,7 +24,7 @@ export class ProjectStageTransitionRepository {
     });
   }
 
-  findNotesInto({
+  findNotesByTargetStages({
     projectIds,
     toStageIds,
   }: ILatestNoteQuery): Promise<TProjectStageTransitionNote[]> {

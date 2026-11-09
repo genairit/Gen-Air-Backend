@@ -174,11 +174,8 @@ export interface IApartmentPage extends ICursorPage<TResolvedApartment> {
   total: number;
 }
 
-export interface IApartmentReadPage extends ICursorPage<
-  TResolvedApartment & IProjectWaitingReason
-> {
-  total: number;
-}
+export type TApartmentReadPage = Omit<IApartmentPage, 'items'> &
+  ICursorPage<TResolvedApartment & IProjectWaitingReason>;
 
 export interface IProjectStageChangeRequest {
   changedBy: IUser;

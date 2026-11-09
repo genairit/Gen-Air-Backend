@@ -1,6 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
 import { resolveStageNote } from './project-stage-note.utility';
-import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
 import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 
@@ -19,7 +18,7 @@ const errorResponseOf = (resolve: () => unknown): unknown => {
 };
 
 describe('resolveStageNote', () => {
-  it.each([null, '', '  \t\n '])(
+  it.each([null, ''])(
     'requires a reason to wait for a response: %p',
     (note) => {
       expect(
@@ -30,20 +29,10 @@ describe('resolveStageNote', () => {
     },
   );
 
-  it('returns the trimmed waiting reason', () => {
+  it('returns the waiting reason as given', () => {
     expect(
-      resolveStageNote({ toStageId: WAITING_STAGE_ID, note: '  סיבה  ' }),
+      resolveStageNote({ toStageId: WAITING_STAGE_ID, note: 'סיבה' }),
     ).toBe('סיבה');
-  });
-
-  it('rejects a note longer than the stored column for any status', () => {
-    const note = 'א'.repeat(FIELD_LENGTHS.TRANSITION_NOTE + 1);
-
-    expect(
-      errorResponseOf(() =>
-        resolveStageNote({ toStageId: PROJECT_STATUS_IDS.COMPLETED, note }),
-      ),
-    ).toMatchObject({ code: HTTP_ERROR_CODES.TRANSITION_NOTE_TOO_LONG });
   });
 
   it.each([
@@ -52,6 +41,6 @@ describe('resolveStageNote', () => {
     PROJECT_STATUS_IDS.COMPLETED,
   ])('keeps the note optional for %s and stores blank as null', (toStageId) => {
     expect(resolveStageNote({ toStageId, note: null })).toBeNull();
-    expect(resolveStageNote({ toStageId, note: '   ' })).toBeNull();
+    expect(resolveStageNote({ toStageId, note: '' })).toBeNull();
   });
 });

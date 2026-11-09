@@ -14,7 +14,7 @@ import {
 
 import {
   TProjectRead,
-  IApartmentReadPage,
+  TApartmentReadPage,
   IProjectStageCounts,
 } from './interfaces/project.interface';
 
@@ -98,7 +98,7 @@ export class ProjectController {
   getApartments(
     @Param('id', ParseUUIDPipe) id: string,
     @Query() filter: GetApartmentsByFilterDto,
-  ): Promise<IApartmentReadPage> {
+  ): Promise<TApartmentReadPage> {
     return this.projectService.getApartments(id, filter);
   }
 

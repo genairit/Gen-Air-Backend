@@ -19,7 +19,7 @@ export class ProjectStageTransitionService {
     return this.projectStageTransitionRepository.findByProject(projectId);
   }
 
-  async findLatestNotesInto(
+  async findLatestNotesByTargetStages(
     query: ILatestNoteQuery,
   ): Promise<TNoteByProjectId> {
     if (query.projectIds.length === 0) {
@@ -27,7 +27,9 @@ export class ProjectStageTransitionService {
     }
 
     const notes =
-      await this.projectStageTransitionRepository.findNotesInto(query);
+      await this.projectStageTransitionRepository.findNotesByTargetStages(
+        query,
+      );
 
     // Notes arrive oldest first, so each project's newest note overwrites its older ones.
     return new Map(notes.map(({ projectId, note }) => [projectId, note]));
