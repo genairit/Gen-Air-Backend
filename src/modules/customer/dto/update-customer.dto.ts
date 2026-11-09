@@ -1,7 +1,6 @@
 import {
   IsIn,
   IsEmail,
-  Matches,
   IsString,
   MinLength,
   MaxLength,
@@ -21,7 +20,8 @@ import {
 
 import { ValidateIf } from 'class-validator';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
-import { FIELD_VALIDATION_REGEX } from '@Constants/field-validation.constant';
+import { NullIfBlank } from '@Decorators/null-if-blank.decorator';
+import { IsDialablePhone } from '@Decorators/is-dialable-phone.decorator';
 import { IsIsraeliCompanyNumber } from '@Decorators/is-israeli-company-number.decorator';
 
 export class UpdateCustomerDto {
@@ -54,17 +54,16 @@ export class UpdateCustomerDto {
   @IsString()
   @MinLength(FIELD_LENGTHS.CONTACT_NAME_MIN)
   @MaxLength(FIELD_LENGTHS.CONTACT_NAME)
-  declare contactName?: string;
+  declare contactName?: string | null;
 
   @IsOptional()
-  @IsString()
-  @Matches(FIELD_VALIDATION_REGEX.ISRAELI_PHONE, {
-    message: 'phone must be an Israeli phone number, e.g. 052-1234567',
-  })
-  declare phone?: string;
+  @NullIfBlank()
+  @IsDialablePhone()
+  @MaxLength(FIELD_LENGTHS.PHONE)
+  declare phone?: string | null;
 
   @IsOptional()
   @IsEmail()
   @MaxLength(FIELD_LENGTHS.EMAIL)
-  declare email?: string;
+  declare email?: string | null;
 }

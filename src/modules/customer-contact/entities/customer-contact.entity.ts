@@ -52,8 +52,8 @@ export class CustomerContact
   declare id: string;
 
   @ForeignKey(() => Customer)
-  @Column({ allowNull: false, type: DataType.UUID })
-  declare customerId: string;
+  @Column({ allowNull: true, type: DataType.UUID })
+  declare customerId: string | null;
 
   @Column({
     allowNull: false,

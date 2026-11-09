@@ -7,7 +7,9 @@ export const createCustomerDependencyFixtures = () => {
     new Sequelize({ dialect: 'postgres', logging: false }),
     {},
   );
-  const contacts = { resolveForImport: jest.fn().mockResolvedValue(null) };
+  const contacts = {
+    resolveForImport: jest.fn().mockResolvedValue({ id: 'contact-1' }),
+  };
   const transactions = {
     run: jest.fn((work: (value: Transaction) => Promise<unknown>) =>
       work(transaction),

@@ -22,6 +22,7 @@ import { RolePermission } from '@Modules/role-permission/entities/role-permissio
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { QuotationSection } from '@Modules/quotation-section/entities/quotation-section.entity';
+import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
@@ -103,6 +104,7 @@ export const DatabaseProvider: Provider = {
       Project,
       Customer,
       CustomerContact,
+      ProjectContactLink,
       ProjectType,
       ProjectStage,
       ProjectMember,

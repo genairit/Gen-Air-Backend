@@ -8,7 +8,6 @@ import {
   IsNotEmpty,
   ArrayUnique,
   ArrayNotEmpty,
-  IsPhoneNumber,
 } from 'class-validator';
 
 import {
@@ -17,6 +16,7 @@ import {
 } from '@Constants/user-role.constant';
 
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
+import { IsDialablePhone } from '@Decorators/is-dialable-phone.decorator';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -37,7 +37,7 @@ export class UpdateUserDto {
   declare email?: string;
 
   @IsOptional()
-  @IsPhoneNumber('IL')
+  @IsDialablePhone()
   @MaxLength(FIELD_LENGTHS.PHONE)
   declare phone?: string;
 

@@ -1,6 +1,5 @@
 import {
   Length,
-  Matches,
   IsString,
   MaxLength,
   IsNotEmpty,
@@ -8,8 +7,9 @@ import {
 } from 'class-validator';
 
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
+import { NullIfBlank } from '@Decorators/null-if-blank.decorator';
+import { IsDialablePhone } from '@Decorators/is-dialable-phone.decorator';
 import { IsGooglePlaceId } from '@Decorators/is-google-place-id.decorator';
-import { FIELD_VALIDATION_REGEX } from '@Constants/field-validation.constant';
 
 export class ProjectIntakeDetailsDto {
   @IsOptional()
@@ -22,10 +22,9 @@ export class ProjectIntakeDetailsDto {
   declare contactName?: string | null;
 
   @IsOptional()
+  @NullIfBlank()
   @IsString()
-  @Matches(FIELD_VALIDATION_REGEX.ISRAELI_MOBILE_PHONE, {
-    message: 'contactPhone must be an Israeli mobile number, e.g. 052-1234567',
-  })
+  @IsDialablePhone()
   declare contactPhone?: string | null;
 
   @IsOptional()
