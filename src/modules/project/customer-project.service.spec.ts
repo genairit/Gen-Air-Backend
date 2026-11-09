@@ -92,7 +92,7 @@ describe('customer related project orchestration', () => {
     state.projects.findPage.mockResolvedValue(rows);
     state.projects.countAll.mockResolvedValue(30);
     state.projects.countByStage.mockResolvedValue([
-      { stageId: PROJECT_STATUS_IDS.WAITING, count: 30 },
+      { stageId: PROJECT_STATUS_IDS.NOT_STARTED, count: 30 },
     ]);
     const page = await state.service.getPage(
       CUSTOMER_PROJECT_TEST_IDS.CUSTOMER,
@@ -123,14 +123,14 @@ describe('customer related project orchestration', () => {
     state.projects.findPage.mockResolvedValue([makeCustomerProjectSource()]);
     state.projects.countAll.mockResolvedValue(19);
     state.projects.countByStage.mockResolvedValue([
-      { stageId: PROJECT_STATUS_IDS.WAITING, count: 3 },
+      { stageId: PROJECT_STATUS_IDS.NOT_STARTED, count: 3 },
       { stageId: PROJECT_STATUS_IDS.IN_PROGRESS, count: 11 },
     ]);
     const page = await state.service.getPage(
       CUSTOMER_PROJECT_TEST_IDS.CUSTOMER,
       {
         search: '  בניין  ',
-        stageId: PROJECT_STATUS_IDS.WAITING,
+        stageId: PROJECT_STATUS_IDS.NOT_STARTED,
         batchSize: 10,
       },
     );
@@ -138,7 +138,7 @@ describe('customer related project orchestration', () => {
     expect(page.counts).toEqual({
       total: 14,
       byStage: {
-        [PROJECT_STATUS_IDS.WAITING]: 3,
+        [PROJECT_STATUS_IDS.NOT_STARTED]: 3,
         [PROJECT_STATUS_IDS.IN_PROGRESS]: 11,
       },
     });
@@ -147,7 +147,7 @@ describe('customer related project orchestration', () => {
       {
         customerId: CUSTOMER_PROJECT_TEST_IDS.CUSTOMER,
         search: 'בניין',
-        stageId: PROJECT_STATUS_IDS.WAITING,
+        stageId: PROJECT_STATUS_IDS.NOT_STARTED,
       },
       { size: 10, cursor: null },
     );
@@ -160,7 +160,7 @@ describe('customer related project orchestration', () => {
       const position = {
         customerId: CUSTOMER_PROJECT_TEST_IDS.CUSTOMER,
         search: 'בניין',
-        stageId: PROJECT_STATUS_IDS.WAITING,
+        stageId: PROJECT_STATUS_IDS.NOT_STARTED,
         id: CUSTOMER_PROJECT_TEST_IDS.PROJECT,
         name: 'שם',
         updatedAt: new Date('2026-10-20T12:00:00.000Z'),
@@ -196,7 +196,7 @@ describe('customer related project orchestration', () => {
       .mockResolvedValueOnce([rows[8]]);
     state.projects.countAll.mockResolvedValue(rows.length);
     state.projects.countByStage.mockResolvedValue([
-      { stageId: PROJECT_STATUS_IDS.WAITING, count: rows.length },
+      { stageId: PROJECT_STATUS_IDS.NOT_STARTED, count: rows.length },
     ]);
     const first = await state.service.getPage(
       CUSTOMER_PROJECT_TEST_IDS.CUSTOMER,

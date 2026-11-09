@@ -39,7 +39,7 @@ import { ProjectStageTransitionService } from '@Modules/project-stage-transition
 const TRANSACTION = { id: 'transaction' };
 const PROJECT_ID = 'project-1';
 const QUOTE_STAGE_ID = 'stage-quote';
-const DRAFT_STAGE_ID = PROJECT_STATUS_IDS.DRAFT;
+const DRAFT_STAGE_ID = PROJECT_STATUS_IDS.NOT_STARTED;
 const ORDER_STAGE_ID = 'stage-order';
 const COMPANY_TYPE_ID = 'type-company';
 const PRIVATE_TYPE_ID = 'type-private';

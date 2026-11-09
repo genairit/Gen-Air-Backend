@@ -77,7 +77,7 @@ const setup = async () => {
         useValue: {
           getInitialStage: jest
             .fn()
-            .mockResolvedValue({ id: PROJECT_STATUS_IDS.DRAFT }),
+            .mockResolvedValue({ id: PROJECT_STATUS_IDS.NOT_STARTED }),
         },
       },
       { provide: ProjectStageTransitionService, useValue: transitions },
@@ -150,7 +150,7 @@ describe('transactional apartment importer orchestration', () => {
       state.transaction,
     );
     expect(state.transitions.record).toHaveBeenCalledWith(
-      expect.objectContaining({ toStageId: PROJECT_STATUS_IDS.DRAFT }),
+      expect.objectContaining({ toStageId: PROJECT_STATUS_IDS.NOT_STARTED }),
       state.transaction,
     );
     expect(state.events.emitAsync).toHaveBeenCalledTimes(1);

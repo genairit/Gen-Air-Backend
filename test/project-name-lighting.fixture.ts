@@ -46,7 +46,7 @@ const seedRawProject = async (base: TProjectTaskEnvironment, name: string) => {
         name,
         code: randomUUID().slice(0, 8),
         typeId: base.legacyProject.projectTypeId,
-        stageId: PROJECT_STATUS_IDS.WAITING,
+        stageId: PROJECT_STATUS_IDS.NOT_STARTED,
         creatorId: base.creator.id,
         customerId: base.customer.id,
       },

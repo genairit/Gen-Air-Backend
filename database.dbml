@@ -148,7 +148,7 @@ Table project_stages {
   created_at  timestamptz(3)  [not null, default: `now()`, note: 'When the stage was defined']
   updated_at  timestamptz(3)  [not null, default: `now()`, note: 'When the stage definition last changed']
   deleted_at  timestamptz(3)  [note: 'Set when a stage is retired; retired stages stay for historical transitions']
-  Note: 'The columns of the project board — the lifecycle status a project sits in. Fixed active catalog: טיוטה, ממתין, בעבודה, להמתין, הסתיים, positions 0–4. New projects start Draft; existing projects keep their status. Definition writes blocked by project_stages_readonly trigger. Retired rows retained for historical transitions.'
+  Note: 'The project and apartment board statuses. Fixed active catalog: טרם בעבודה, בעבודה, מחכה לתשובה, הושלם, positions 0–3. New projects start טרם בעבודה. Definition writes blocked by project_stages_readonly trigger. Retired rows retain their names for historical transitions.'
 }
 
 Table project_types {
@@ -173,7 +173,7 @@ Table projects {
   has_general_lighting_ceiling_lowering boolean [not null, default: false, note: 'Whether the whole site lowers the ceiling for general lighting; chk_projects_lighting_height pairs it with the height']
   general_lighting_ceiling_lowering_height double [note: 'Centimeters: finite nonnegative number required when enabled; null when disabled (chk_projects_lighting_height)']
   project_type_id uuid         [not null, ref: > project_types.id, note: 'The kind of project, which decides the required customer detail fields']
-  stage_id        uuid         [not null, ref: > project_stages.id, default: '6502a045-2a7d-4bc8-8ba1-36eaedc49a00', note: 'Insert/assignment trigger rejects archived status IDs']
+  stage_id        uuid         [not null, ref: > project_stages.id, default: '6502a045-2a7d-4bc8-8ba1-36eaedc49a05', note: 'Insert/assignment trigger rejects archived status IDs']
   customer_id     uuid         [ref: > customers.id, note: 'Linked customer for a project or apartment; legacy apartments retain inline customer/contact fields']
   has_own_team boolean [not null, default: false, note: 'Apartments inherit the building team unless explicitly overridden, including an empty override']
   parent_project_id uuid       [ref: > projects.id, note: 'The building an apartment belongs to; one level only (trigger trg_projects_single_level_nesting)']
@@ -354,6 +354,14 @@ Table project_stage_reset_snapshots {
   previous_updated_at timestamptz(3) [not null, note: 'The updated_at the project carried before the migration touched it']
   migrated_at timestamptz(3) [not null, default: `now()`, note: 'When the migration rewrote this project']
   Note: 'One-time recovery snapshot for the 2026-10-16 fixed-status migration. Includes all pre-existing projects, including apartments and soft-deleted records; not a user-generated transition.'
+}
+
+Table project_status_change_snapshots {
+  project_id uuid [pk, ref: > projects.id, note: 'Project remapped by the engineering four-status migration']
+  previous_stage_id uuid [not null, ref: > project_stages.id, note: 'Previous status ID for exact recovery']
+  previous_updated_at timestamptz(3) [not null, note: 'Previous project timestamp']
+  migrated_at timestamptz(3) [not null, default: `now()`, note: 'When the assignment was remapped']
+  Note: 'Recovery record for the 2026-11-09 status migration. Includes active and soft-deleted projects whose status ID changed. Deleted with its project.'
 }
 
 Table permissions {
