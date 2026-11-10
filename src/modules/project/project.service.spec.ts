@@ -478,6 +478,7 @@ describe('ProjectService.move waiting reason', () => {
   it.each([
     ['missing', {}],
     ['empty', { note: '' }],
+    ['whitespace', { note: '   ' }],
   ])(
     'rejects moving to waiting with a %s reason before any write',
     async (_case, reason) => {
@@ -558,6 +559,7 @@ describe('ProjectService.update waiting reason', () => {
   it.each([
     ['missing', {}],
     ['empty', { stageNote: '' }],
+    ['whitespace', { stageNote: '   ' }],
   ])(
     'rejects updating into waiting with a %s stageNote before any write',
     async (_case, reason) => {

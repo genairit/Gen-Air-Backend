@@ -25,7 +25,8 @@ export const resolveStageNote = ({
   toStageId,
   note,
 }: IStageNoteRequest): string | null => {
-  const isNoteMissing = (note ?? '') === '';
+  const normalizedNote = note?.trim() ?? null;
+  const isNoteMissing = normalizedNote === null || normalizedNote === '';
 
   if (isNoteMissing && isReasonRequiredStage(toStageId)) {
     throw new BadRequestException(
@@ -33,5 +34,5 @@ export const resolveStageNote = ({
     );
   }
 
-  return isNoteMissing ? null : note;
+  return isNoteMissing ? null : normalizedNote;
 };

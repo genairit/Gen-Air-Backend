@@ -18,7 +18,7 @@ const errorResponseOf = (resolve: () => unknown): unknown => {
 };
 
 describe('resolveStageNote', () => {
-  it.each([null, ''])(
+  it.each([null, '', '   '])(
     'requires a reason to wait for a response: %p',
     (note) => {
       expect(
@@ -35,6 +35,12 @@ describe('resolveStageNote', () => {
     ).toBe('סיבה');
   });
 
+  it('stores a trimmed waiting reason', () => {
+    expect(
+      resolveStageNote({ toStageId: WAITING_STAGE_ID, note: '  סיבה  ' }),
+    ).toBe('סיבה');
+  });
+
   it.each([
     PROJECT_STATUS_IDS.NOT_STARTED,
     PROJECT_STATUS_IDS.IN_PROGRESS,
@@ -42,5 +48,6 @@ describe('resolveStageNote', () => {
   ])('keeps the note optional for %s and stores blank as null', (toStageId) => {
     expect(resolveStageNote({ toStageId, note: null })).toBeNull();
     expect(resolveStageNote({ toStageId, note: '' })).toBeNull();
+    expect(resolveStageNote({ toStageId, note: '   ' })).toBeNull();
   });
 });
