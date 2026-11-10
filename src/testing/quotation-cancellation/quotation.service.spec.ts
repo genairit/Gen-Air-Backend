@@ -26,10 +26,11 @@ import type { QuotationRuleService } from '@Modules/quotation-rule/quotation-rul
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import type { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import type { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
 import type { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 import type { QuotationSelectionService } from '../../modules/quotation/quotation-selection.service';
-import type { IQuotationView } from '../../modules/quotation/interfaces/quotation-document.interface';
 import type { IQuotationDocument } from '../../modules/quotation/interfaces/quotation-document.interface';
+import type { IQuotationDetailView } from '../../modules/quotation/interfaces/quotation-document.interface';
 
 const quotationId = 'quotation-selected';
 const projectId = 'project-linked';
@@ -91,6 +92,7 @@ const createService = (
   const selection = mock<QuotationSelectionService>();
   const customers = mock<CustomerService>();
   const projects = mock<ProjectService>();
+  const links = mock<QuotationProjectService>();
   const transactions = mock<DatabaseTransactionService>();
 
   transactions.run.mockImplementation(async (work) => {
@@ -145,10 +147,13 @@ const createService = (
     selection,
     customers,
     projects,
+    links,
     transactions,
   );
   jest.spyOn(service, 'document').mockResolvedValue(quotation);
-  jest.spyOn(service, 'getById').mockResolvedValue(mock<IQuotationView>());
+  jest
+    .spyOn(service, 'getById')
+    .mockResolvedValue(mock<IQuotationDetailView>());
   return { service, repository, rules, transactions };
 };
 

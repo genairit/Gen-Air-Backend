@@ -1165,7 +1165,17 @@ describe('Quotation deletion on real PostgreSQL', () => {
       const failure = outcomes.find((outcome) => outcome.status === 'rejected');
       expect(failure?.status).toBe('rejected');
       if (failure?.status === 'rejected') {
-        expect([404, 409]).toContain(failure.reason.status);
+        const reason: unknown = failure.reason;
+        if (
+          typeof reason !== 'object' ||
+          reason === null ||
+          !('status' in reason)
+        ) {
+          throw new Error(
+            'Expected a rejected quotation mutation with an HTTP status',
+          );
+        }
+        expect([404, 409]).toContain(reason.status);
       }
       const stored = await Quotation.findByPk(current.id, { paranoid: false });
       expect(stored?.version).toBe(current.version + 1);

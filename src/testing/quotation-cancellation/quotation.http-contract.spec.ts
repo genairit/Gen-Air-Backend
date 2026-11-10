@@ -25,6 +25,7 @@ import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.ser
 import { QUOTATION_STATUS } from '../../modules/quotation/constants/quotation.constant';
 import { CatalogueItemController } from '@Modules/catalogue-item/catalogue-item.controller';
 import { QuotationRuleController } from '@Modules/quotation-rule/quotation-rule.controller';
+import type { IQuotationDetailView } from '../../modules/quotation/interfaces/quotation-document.interface';
 
 const id = randomUUID(),
   customerId = randomUUID();
@@ -37,7 +38,7 @@ const quotation = {
   ),
   getById: jest.fn(() => Promise.resolve({ id })),
   getForActor: jest.fn(() => Promise.resolve({ id })),
-  projectDetailsForActor: jest.fn((detail) => detail),
+  projectDetailsForActor: jest.fn((detail: IQuotationDetailView) => detail),
   create: jest.fn(() => Promise.resolve({ id })),
   save: jest.fn(() => Promise.resolve({ id })),
   delete: jest.fn(() => Promise.resolve()),

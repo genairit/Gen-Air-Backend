@@ -662,11 +662,11 @@ export class QuotationService {
         })),
     }));
     const views = documents.map((document) => {
-      const isApproved = hasApprovedQuotationSnapshot(document);
-      const current = isApproved
+      const usesApprovedSnapshot = hasApprovedQuotationSnapshot(document);
+      const current = usesApprovedSnapshot
         ? document
         : this.overlayCatalogueStatuses(document, statuses);
-      const rules = isApproved
+      const rules = usesApprovedSnapshot
         ? {
             rules: document.ruleConfiguration,
             fingerprint: document.ruleConfigFingerprint,
