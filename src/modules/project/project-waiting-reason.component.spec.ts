@@ -94,7 +94,13 @@ describe('waiting-for-response reason API', () => {
         },
         { provide: EventEmitter2, useValue: {} },
         { provide: CustomerService, useValue: {} },
-        { provide: ProjectTypeService, useValue: {} },
+        {
+          provide: ProjectTypeService,
+          useValue: {
+            getById: (id: string) =>
+              Promise.resolve({ id, canHaveApartments: false }),
+          },
+        },
         {
           provide: ProjectIntakeService,
           useValue: { resolveChanges: () => Promise.resolve({}) },
