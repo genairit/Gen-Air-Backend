@@ -115,21 +115,23 @@ export class QuotationController {
   }
   @Post(':id/cancel')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE)
-  cancel(
+  async cancel(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() input: CancelQuotationDto,
-    @AuthenticatedUser() user: IUser,
+    @AuthenticatedUser() user: IAuthorizedUser,
   ): ReturnType<QuotationService['cancel']> {
-    return this.service.cancel(id, input, user);
+    const quotation = await this.service.cancel(id, input, user);
+    return this.service.projectDetailsForActor(quotation, user);
   }
   @Post(':id/restore')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE)
-  restore(
+  async restore(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() input: QuotationCancellationDto,
-    @AuthenticatedUser() user: IUser,
+    @AuthenticatedUser() user: IAuthorizedUser,
   ): ReturnType<QuotationService['restore']> {
-    return this.service.restore(id, input, user);
+    const quotation = await this.service.restore(id, input, user);
+    return this.service.projectDetailsForActor(quotation, user);
   }
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)

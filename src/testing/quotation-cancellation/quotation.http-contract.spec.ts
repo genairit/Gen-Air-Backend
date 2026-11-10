@@ -38,7 +38,12 @@ const quotation = {
   ),
   getById: jest.fn(() => Promise.resolve({ id })),
   getForActor: jest.fn(() => Promise.resolve({ id })),
-  projectDetailsForActor: jest.fn((detail: IQuotationDetailView) => detail),
+  projectDetailsForActor: jest.fn(
+    (detail: IQuotationDetailView, actor: IAuthorizedUser) =>
+      actor.permissions.includes(PERMISSIONS.PROJECTS_READ)
+        ? detail
+        : { ...detail, primaryProject: null, apartmentLinks: [] },
+  ),
   create: jest.fn(() => Promise.resolve({ id })),
   save: jest.fn(() => Promise.resolve({ id })),
   delete: jest.fn(() => Promise.resolve()),
@@ -615,6 +620,57 @@ describe('Quotation order and cancellation HTTP contract', () => {
       state.actor,
     );
   });
+
+  test.each(['cancel', 'restore'] as const)(
+    '%s response hides linked project metadata without projects.read',
+    async (action) => {
+      const detail = {
+        id,
+        primaryProject: { id: randomUUID(), name: 'Private project' },
+        apartmentLinks: [{ apartmentId: randomUUID(), apartmentNumber: '7' }],
+      };
+      const body =
+        action === 'cancel'
+          ? { version: 4, reason: 'Project withdrawn' }
+          : { version: 4 };
+      quotation[action].mockResolvedValueOnce(detail);
+      state.actor = {
+        ...authorizedUser(),
+        permissions: [PERMISSIONS.QUOTATIONS_UPDATE],
+      };
+
+      const redacted = await request(server())
+        .post(`/quotation/${id}/${action}`)
+        .set('Authorization', 'Bearer valid')
+        .send(body)
+        .expect(201);
+      expect(redacted.body).toEqual({
+        id,
+        primaryProject: null,
+        apartmentLinks: [],
+      });
+      expect(quotation.projectDetailsForActor).toHaveBeenCalledWith(
+        detail,
+        state.actor,
+      );
+
+      quotation[action].mockResolvedValueOnce(detail);
+      state.actor = {
+        ...authorizedUser(),
+        permissions: [PERMISSIONS.QUOTATIONS_UPDATE, PERMISSIONS.PROJECTS_READ],
+      };
+      const projectReader = await request(server())
+        .post(`/quotation/${id}/${action}`)
+        .set('Authorization', 'Bearer valid')
+        .send(body)
+        .expect(201);
+      expect(projectReader.body).toEqual(detail);
+      expect(quotation.projectDetailsForActor).toHaveBeenCalledWith(
+        detail,
+        state.actor,
+      );
+    },
+  );
 
   test('manual cancellation rejects missing and blank reasons', async () => {
     state.actor = {

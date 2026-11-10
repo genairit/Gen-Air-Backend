@@ -517,7 +517,7 @@ export class QuotationService {
     id: string,
     input: CancelQuotationDto,
     user: IUser,
-  ): Promise<IQuotationView> {
+  ): Promise<IQuotationDetailView> {
     this.assertCancellationManager(user);
     const reason = input.reason?.trim();
     if (!reason || reason.length > MAX_QUOTATION_CANCELLATION_REASON_LENGTH) {
@@ -550,7 +550,7 @@ export class QuotationService {
     id: string,
     input: QuotationCancellationDto,
     user: IUser,
-  ): Promise<IQuotationView> {
+  ): Promise<IQuotationDetailView> {
     if (user.role !== USER_ROLES.SYSTEM_ADMIN) {
       throw new ForbiddenException('רק מנהל מערכת רשאי לשחזר הצעת מחיר');
     }
