@@ -85,6 +85,12 @@ export interface IProject
   apartmentOwnership: ApartmentOwnershipType | null;
 }
 
+export interface IProjectWaitingReason {
+  waitingReason: string | null;
+}
+
+export type TProjectRead = IProject & IProjectWaitingReason;
+
 export interface IProjectFilter {
   search: string | null;
   stageId: string | null;
@@ -167,6 +173,9 @@ export type TResolvedApartment = IProject & IApartmentInheritance;
 export interface IApartmentPage extends ICursorPage<TResolvedApartment> {
   total: number;
 }
+
+export type TApartmentReadPage = Omit<IApartmentPage, 'items'> &
+  ICursorPage<TResolvedApartment & IProjectWaitingReason>;
 
 export interface IProjectStageChangeRequest {
   changedBy: IUser;
