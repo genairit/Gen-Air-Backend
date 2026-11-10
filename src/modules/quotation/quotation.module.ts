@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { QuotationService } from './quotation.service';
 import { UserModule } from '@Modules/user/user.module';
 import { QuotationRepository } from './quotation.repository';
@@ -19,6 +20,7 @@ import { CatalogueItemUsageModule } from '@Modules/catalogue-item-usage/catalogu
 
 @Module({
   imports: [
+    ConfigModule,
     DatabaseModule,
     QuotationRuleModule,
     CustomerModule,
