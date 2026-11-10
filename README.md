@@ -72,3 +72,10 @@ Commit statuses read/write, Metadata read. It runs no Playwright and does not ob
 feature gates. Recheck feature QA evidence manually after backend dev changes.
 See Gen-Air-Automation `docs/release-gate-rollout.md` before changing required checks or deploying
 this workflow. Releases must wait for backend promotion and notifier completion.
+
+## Standalone background worker
+
+[`services/gen-air-worker`](services/gen-air-worker/README.md) is an independent
+NestJS service with its own dependencies, configuration and local RabbitMQ demo.
+The whole folder can move into a future worker repository. It has no database
+access and is not yet wired into the main application's request paths.

@@ -37,5 +37,6 @@
     "noImplicitThis": true,
     "alwaysStrict": true,
     "noFallthroughCasesInSwitch": false
-  }
+  },
+  "exclude": ["node_modules", "dist", "services"]
 }

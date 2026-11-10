@@ -1,0 +1,31 @@
+import { TIME } from './time.constant.js';
+
+export const WORKER = {
+  VERSION: 1,
+  JOB_TYPE: 'report.csv.v1',
+  MAX_ATTEMPTS: 3,
+  HEARTBEAT_SECONDS: TIME.MINUTE_SECONDS / 2,
+  MAX_MESSAGE_BYTES: 1024 * 1024,
+  MAX_RESULT_BYTES: 4 * 1024 * 1024,
+  MAX_ROWS: 10_000,
+  MAX_COLUMNS: 50,
+  MAX_CELL_LENGTH: 1_000,
+  RETRY_DELAY_MS: 5 * TIME.SECOND_MS,
+  JOB_TIMEOUT_MS: 30 * TIME.SECOND_MS,
+  PUBLISH_TIMEOUT_MS: 10 * TIME.SECOND_MS,
+  SHUTDOWN_TIMEOUT_MS: 45 * TIME.SECOND_MS,
+  CONTENT_TYPE: 'application/json',
+  QUEUE_TYPE: 'quorum',
+} as const;
+
+export const JOB_STATUS = {
+  SUCCEEDED: 'succeeded',
+  FAILED: 'failed',
+} as const;
+
+export const JOB_ERROR = {
+  INVALID: 'INVALID_JOB',
+  TIMEOUT: 'JOB_TIMEOUT',
+  EXECUTION: 'EXECUTION_FAILED',
+  RESULT_TOO_LARGE: 'RESULT_TOO_LARGE',
+} as const;

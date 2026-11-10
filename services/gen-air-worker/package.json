@@ -1,0 +1,45 @@
+{
+  "name": "gen-air-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "nest build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "test:integration": "npm run build && node --test test/integration/*.test.mjs",
+    "demo": "node examples/main-server.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run format:check && npm run typecheck && npm test",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main.js"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.9",
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/core": "^11.0.1",
+    "@nestjs/platform-express": "^11.2.7",
+    "@nestjs/config": "^4.0.4",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "joi": "^18.2.5",
+    "pino": "^10.3.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.7",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.3",
+    "prettier": "^3.4.2",
+    "prettier-plugin-pyramid-imports": "^1.0.1",
+    "prettier-plugin-pyramid-interface-keys": "^1.0.1",
+    "@nestjs/cli": "^11.0.0"
+  }
+}
