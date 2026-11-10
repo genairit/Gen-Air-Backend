@@ -264,6 +264,7 @@ describe('QuotationService card100 payment ownership', () => {
       const quotation = await service.create(
         { customerId: customer.id, salesAgentId: agentId },
         actor,
+        true,
       );
 
       expect(quotation.salesAgentId).toBe(agentId);
@@ -281,6 +282,7 @@ describe('QuotationService card100 payment ownership', () => {
         service.create(
           { customerId: customer.id, salesAgentId: randomUUID() },
           actor,
+          true,
         ),
       ).rejects.toThrow('יש לבחור עובד פעיל בתפקיד סוכן מכירות');
 
@@ -614,6 +616,7 @@ describe('QuotationService card100 payment ownership', () => {
     const created = await service.create(
       { customerId: customer.id, salesAgentId: agentId },
       actor,
+      true,
     );
     users.findById.mockResolvedValue(null);
     users.findByIdIncludingDeleted.mockResolvedValue({

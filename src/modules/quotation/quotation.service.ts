@@ -326,10 +326,11 @@ export class QuotationService {
   async create(
     input: CreateQuotationDto,
     userId: string,
+    canReadEmployees = false,
   ): Promise<IQuotationDetailView> {
     const customer = await this.customers.getById(input.customerId);
     await this.validateProject(input.customerId, input.projectId ?? null);
-    await this.validateSalesAgent(input.salesAgentId ?? null);
+    await this.validateSalesAgent(input.salesAgentId ?? null, canReadEmployees);
     const id = randomUUID();
     await this.transactions.run(async (transaction) => {
       const configuration = await this.rules.configuration(transaction);
@@ -396,6 +397,7 @@ export class QuotationService {
     id: string,
     input: SaveQuotationDto,
     userId: string,
+    canReadEmployees = false,
   ): Promise<IQuotationDetailView> {
     await this.customers.getById(input.customerId);
     await this.transactions.run(async (transaction) => {
@@ -413,7 +415,7 @@ export class QuotationService {
           : current.salesAgentId;
 
       if (salesAgentId !== current.salesAgentId) {
-        await this.validateSalesAgent(salesAgentId);
+        await this.validateSalesAgent(salesAgentId, canReadEmployees);
       }
 
       await this.assertSharingKeepsContext(current, input, transaction);
@@ -478,12 +480,13 @@ export class QuotationService {
     id: string,
     input: UpdateSalesAgentDto,
     userId: string,
+    canReadEmployees = false,
   ): Promise<IQuotationView> {
     await this.transactions.run(async (transaction) => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       if (input.salesAgentId !== current.salesAgentId) {
-        await this.validateSalesAgent(input.salesAgentId);
+        await this.validateSalesAgent(input.salesAgentId, canReadEmployees);
       }
 
       await this.repository.update(
@@ -906,9 +909,18 @@ export class QuotationService {
     }
   }
 
-  private async validateSalesAgent(salesAgentId: string | null): Promise<void> {
+  private async validateSalesAgent(
+    salesAgentId: string | null,
+    canReadEmployees: boolean,
+  ): Promise<void> {
     if (salesAgentId === null) {
       return;
+    }
+
+    if (!canReadEmployees) {
+      throw new ForbiddenException(
+        'You do not have permission to assign an employee',
+      );
     }
 
     const salesAgent = await this.users.findById(salesAgentId);

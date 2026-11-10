@@ -25,6 +25,7 @@ import {
 import { Query } from '@nestjs/common';
 import { QuotationService } from './quotation.service';
 import { GetQuotationsDto } from './dto/get-quotations.dto';
+import { hasPermission } from '@Utilities/permission.utility';
 import { DeleteQuotationDto } from './dto/delete-quotation.dto';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { SetApartmentLinksDto } from './dto/set-apartment-links.dto';
@@ -82,7 +83,7 @@ export class QuotationController {
     return this.service.setApartmentLinks(id, input);
   }
   @Get('sales-agents')
-  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ, PERMISSIONS.EMPLOYEES_READ)
   salesAgents(): ReturnType<QuotationService['salesAgents']> {
     return this.service.salesAgents();
   }
@@ -104,7 +105,11 @@ export class QuotationController {
     @AuthenticatedUser()
     user: IAuthorizedUser,
   ): ReturnType<QuotationService['create']> {
-    const quotation = await this.service.create(input, user.id);
+    const quotation = await this.service.create(
+      input,
+      user.id,
+      hasPermission(user, PERMISSIONS.EMPLOYEES_READ),
+    );
     return this.service.projectDetailsForActor(quotation, user);
   }
   @Put(':id')
@@ -117,7 +122,12 @@ export class QuotationController {
     @AuthenticatedUser()
     user: IAuthorizedUser,
   ): ReturnType<QuotationService['save']> {
-    const quotation = await this.service.save(id, input, user.id);
+    const quotation = await this.service.save(
+      id,
+      input,
+      user.id,
+      hasPermission(user, PERMISSIONS.EMPLOYEES_READ),
+    );
     return this.service.projectDetailsForActor(quotation, user);
   }
   @Post(':id/cancel')
@@ -145,9 +155,14 @@ export class QuotationController {
   updateSalesAgent(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() input: UpdateSalesAgentDto,
-    @AuthenticatedUser() user: IUser,
+    @AuthenticatedUser() user: IAuthorizedUser,
   ): ReturnType<QuotationService['updateSalesAgent']> {
-    return this.service.updateSalesAgent(id, input, user.id);
+    return this.service.updateSalesAgent(
+      id,
+      input,
+      user.id,
+      hasPermission(user, PERMISSIONS.EMPLOYEES_READ),
+    );
   }
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)

@@ -171,7 +171,12 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       await call(method, path).set('Authorization', 'Bearer valid').expect(403);
     },
   );
-  test.each(ROUTES.filter(([method]) => method === 'get'))(
+  test.each(
+    ROUTES.filter(
+      ([method, path]) =>
+        method === 'get' && path !== '/quotation/sales-agents',
+    ),
+  )(
     '%s %s accepts its precise read grant',
     async (method, path, permission) => {
       const projectScoped = [
@@ -246,10 +251,31 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       search: 'x'.repeat(200),
     });
   });
-  test('sales-agents delegates the eligible-user list under quotation read access', async () => {
+  test('sales-agents requires employee read access as well as quotation read access', async () => {
     state.actor = {
       ...authorizedUser(),
       permissions: [PERMISSIONS.QUOTATIONS_READ],
+    };
+
+    await request(server())
+      .get('/quotation/sales-agents')
+      .set('Authorization', 'Bearer valid')
+      .expect(403);
+    expect(quotation.salesAgents).not.toHaveBeenCalled();
+
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.EMPLOYEES_READ],
+    };
+    await request(server())
+      .get('/quotation/sales-agents')
+      .set('Authorization', 'Bearer valid')
+      .expect(403);
+    expect(quotation.salesAgents).not.toHaveBeenCalled();
+
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_READ, PERMISSIONS.EMPLOYEES_READ],
     };
 
     await request(server())
@@ -272,6 +298,7 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
     expect(quotation.create).toHaveBeenCalledWith(
       { customerId },
       state.actor.id,
+      false,
     );
   });
   test.each([
@@ -332,6 +359,7 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       id,
       { version: 3, salesAgentId },
       state.actor.id,
+      false,
     );
   });
   test.each([

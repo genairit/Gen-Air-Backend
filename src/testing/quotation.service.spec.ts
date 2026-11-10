@@ -1,3 +1,9 @@
+import {
+  ConflictException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
+
 import { mock } from 'jest-mock-extended';
 import type { Transaction } from 'sequelize';
 import { USER_ROLES } from '@Constants/user-role.constant';
@@ -5,10 +11,10 @@ import type { UserService } from '@Modules/user/user.service';
 import { quotationDocumentFixture } from './quotation.fixture';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
 import type { ProjectService } from '@Modules/project/project.service';
-import { BadRequestException, ConflictException } from '@nestjs/common';
 import { QuotationService } from '../modules/quotation/quotation.service';
 import type { CustomerService } from '@Modules/customer/customer.service';
 import type { UserRoleService } from '@Modules/user-role/user-role.service';
+import type { SaveQuotationDto } from '../modules/quotation/dto/save-quotation.dto';
 import type { QuotationRepository } from '../modules/quotation/quotation.repository';
 import { QUOTATION_STATUS } from '../modules/quotation/constants/quotation.constant';
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
@@ -121,6 +127,45 @@ describe('eligible quotation sales agents', () => {
 });
 
 describe('approved quotation sales-agent updates', () => {
+  test('rejects assignment without employee read access before looking up an ID', async () => {
+    const quotation = approvedQuotation();
+    const { service, repository, users } = createService(quotation);
+
+    await expect(
+      service.updateSalesAgent(
+        quotationId,
+        { version: quotation.version, salesAgentId },
+        actorId,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(users.findById.mock.calls).toHaveLength(0);
+    expect(repository.update.mock.calls).toHaveLength(0);
+  });
+
+  test('rejects create and save assignment without employee read access', async () => {
+    const quotation = approvedQuotation();
+    const { service, repository, users } = createService(quotation);
+
+    await expect(
+      service.create({ customerId: 'customer', salesAgentId }, actorId),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      service.save(
+        quotationId,
+        mock<SaveQuotationDto>({
+          version: quotation.version,
+          customerId: 'customer',
+          projectId: null,
+          salesAgentId,
+        }),
+        actorId,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(users.findById.mock.calls).toHaveLength(0);
+    expect(repository.create.mock.calls).toHaveLength(0);
+    expect(repository.update.mock.calls).toHaveLength(0);
+  });
+
   test.each([
     { existing: null, next: salesAgentId, description: 'assigns an agent' },
     {
@@ -139,6 +184,7 @@ describe('approved quotation sales-agent updates', () => {
         quotationId,
         { version: quotation.version, salesAgentId: next },
         actorId,
+        next !== null,
       );
 
       expect(repository.update.mock.calls[0]).toEqual([
@@ -186,6 +232,7 @@ describe('approved quotation sales-agent updates', () => {
         quotationId,
         { version: quotation.version, salesAgentId },
         actorId,
+        true,
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(transactions.run.mock.calls).toHaveLength(1);
