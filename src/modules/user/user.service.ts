@@ -86,6 +86,13 @@ export class UserService {
     return assignedUser ?? null;
   }
 
+  findByIdIncludingDeleted(
+    id: string,
+    transaction?: Transaction,
+  ): Promise<IUser | null> {
+    return this.userRepository.findByIdIncludingDeleted(id, transaction);
+  }
+
   async findByIds(ids: string[]): Promise<IUser[]> {
     const users = await this.userRepository.findByIds(ids);
 

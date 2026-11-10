@@ -3,6 +3,7 @@ import {
   Put,
   Post,
   Body,
+  Patch,
   Param,
   Delete,
   HttpCode,
@@ -15,6 +16,7 @@ import {
   SaveQuotationDto,
   CreateQuotationDto,
   CancelQuotationDto,
+  UpdateSalesAgentDto,
   QuotationTransitionDto,
   AcknowledgeWarningsDto,
   QuotationCancellationDto,
@@ -79,6 +81,11 @@ export class QuotationController {
   ): ReturnType<QuotationService['setApartmentLinks']> {
     return this.service.setApartmentLinks(id, input);
   }
+  @Get('sales-agents')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ, PERMISSIONS.EMPLOYEES_READ)
+  salesAgents(): ReturnType<QuotationService['salesAgents']> {
+    return this.service.salesAgents();
+  }
   @Get(':id')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
   get(
@@ -97,7 +104,7 @@ export class QuotationController {
     @AuthenticatedUser()
     user: IAuthorizedUser,
   ): ReturnType<QuotationService['create']> {
-    const quotation = await this.service.create(input, user.id);
+    const quotation = await this.service.create(input, user);
     return this.service.projectDetailsForActor(quotation, user);
   }
   @Put(':id')
@@ -110,7 +117,7 @@ export class QuotationController {
     @AuthenticatedUser()
     user: IAuthorizedUser,
   ): ReturnType<QuotationService['save']> {
-    const quotation = await this.service.save(id, input, user.id);
+    const quotation = await this.service.save(id, input, user);
     return this.service.projectDetailsForActor(quotation, user);
   }
   @Post(':id/cancel')
@@ -131,6 +138,16 @@ export class QuotationController {
     @AuthenticatedUser() user: IAuthorizedUser,
   ): ReturnType<QuotationService['restore']> {
     const quotation = await this.service.restore(id, input, user);
+    return this.service.projectDetailsForActor(quotation, user);
+  }
+  @Patch(':id/sales-agent')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE)
+  async updateSalesAgent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: UpdateSalesAgentDto,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ): ReturnType<QuotationService['updateSalesAgent']> {
+    const quotation = await this.service.updateSalesAgent(id, input, user);
     return this.service.projectDetailsForActor(quotation, user);
   }
   @Delete(':id')

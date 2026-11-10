@@ -8,9 +8,14 @@ import { Transaction } from 'sequelize';
 import { randomUUID } from 'node:crypto';
 import { NotFoundException } from '@nestjs/common';
 import { mock, MockProxy } from 'jest-mock-extended';
+import { UserService } from '@Modules/user/user.service';
+import { authorizedUser } from './authorization.fixture';
+import { USER_ROLES } from '@Constants/user-role.constant';
 import { quotationDocumentFixture } from './quotation.fixture';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { CustomerService } from '@Modules/customer/customer.service';
+import { UserRoleService } from '@Modules/user-role/user-role.service';
 import { QuotationService } from '@Modules/quotation/quotation.service';
 import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { QuotationRepository } from '@Modules/quotation/quotation.repository';
@@ -55,7 +60,10 @@ const quotationModel = (row: IQuotation): MockProxy<Quotation> => {
 };
 
 const createContext = async () => {
-  const actor = randomUUID();
+  const actor = {
+    ...authorizedUser([PERMISSIONS.EMPLOYEES_READ]),
+    id: randomUUID(),
+  };
   const customer = makeCustomer();
   const rows = new Map<string, IQuotation>();
   const transaction = mock<Transaction>();
@@ -69,6 +77,8 @@ const createContext = async () => {
   const projects = mock<ProjectService>();
   const links = mock<QuotationProjectService>();
   const transactions = mock<DatabaseTransactionService>();
+  const users = mock<UserService>();
+  const userRoles = mock<UserRoleService>();
   const document = quotationDocumentFixture([]);
   const run = <T>(work: (value: Transaction) => Promise<T>): Promise<T> =>
     work(transaction);
@@ -129,6 +139,8 @@ const createContext = async () => {
       { provide: ProjectService, useValue: projects },
       { provide: QuotationProjectService, useValue: links },
       { provide: DatabaseTransactionService, useValue: transactions },
+      { provide: UserService, useValue: users },
+      { provide: UserRoleService, useValue: userRoles },
     ],
   }).compile();
 
@@ -143,6 +155,8 @@ const createContext = async () => {
     sections,
     items,
     selection,
+    users,
+    userRoles,
     service: module.get(QuotationService),
   };
 };
@@ -151,6 +165,7 @@ const saveInput = (quotation: IQuotation): SaveQuotationDto => ({
   version: quotation.version,
   customerId: quotation.customerId,
   projectId: null,
+  salesAgentId: quotation.salesAgentId,
   date: quotation.date,
   brand: quotation.brand,
   paymentTerms: quotation.paymentTerms,
@@ -202,7 +217,7 @@ describe('QuotationService card100 payment ownership', () => {
       service.transition(
         quotation.id,
         { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
-        actor,
+        actor.id,
       ),
     ).rejects.toThrow('נבחרו גם תנאי תשלום קבועים וגם שלבי תשלום');
     await repository.update(
@@ -217,7 +232,7 @@ describe('QuotationService card100 payment ownership', () => {
       service.transition(
         quotation.id,
         { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
-        actor,
+        actor.id,
       ),
     ).rejects.toThrow('יש לתאר את מועד התשלום של כל שלב');
     await repository.update(
@@ -228,11 +243,55 @@ describe('QuotationService card100 payment ownership', () => {
     const approved = await service.transition(
       quotation.id,
       { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
-      actor,
+      actor.id,
     );
     expect(approved.status).toBe(QUOTATION_STATUS.APPROVED);
   });
   describe('create', () => {
+    test('persists an eligible sales agent selected during creation', async () => {
+      const { service, customer, users, repository, actor, transaction } =
+        context();
+      const agentId = randomUUID();
+      users.findById.mockResolvedValue({
+        id: agentId,
+        firstName: 'Sales',
+        lastName: 'Engineer',
+        email: 'sales@example.invalid',
+        phone: '0500000000',
+        role: USER_ROLES.SALES_AGENT,
+        assignedRoles: [USER_ROLES.SALES_AGENT],
+        employeeNumber: 'E-1',
+        deletedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const quotation = await service.create(
+        { customerId: customer.id, salesAgentId: agentId },
+        actor,
+      );
+
+      expect(quotation.salesAgentId).toBe(agentId);
+      expect(repository.create.mock.calls[0]).toEqual([
+        expect.objectContaining({ salesAgentId: agentId }),
+        transaction,
+      ]);
+    });
+
+    test('rejects a sales agent who is not an active eligible-role user', async () => {
+      const { service, customer, users, repository, actor } = context();
+      users.findById.mockResolvedValue(null);
+
+      await expect(
+        service.create(
+          { customerId: customer.id, salesAgentId: randomUUID() },
+          actor,
+        ),
+      ).rejects.toThrow('יש לבחור עובד פעיל בתפקיד סוכן מכירות');
+
+      expect(repository.create.mock.calls).toHaveLength(0);
+    });
+
     test.each([...PAYMENT_TERMS_VALUES, null])(
       'immediately persists customer payment default %s with an empty local note',
       async (paymentTerms) => {
@@ -256,7 +315,7 @@ describe('QuotationService card100 payment ownership', () => {
             paymentTerms,
             paymentTermsNote: '',
             paymentSchedule: [],
-            createdById: actor,
+            createdById: actor.id,
           }),
           transaction,
         );
@@ -343,7 +402,7 @@ describe('QuotationService card100 payment ownership', () => {
           paymentTerms: input.paymentTerms,
           paymentTermsNote: input.paymentTermsNote,
           paymentSchedule: input.paymentSchedule,
-          updatedById: actor,
+          updatedById: actor.id,
           version: 2,
         }),
         transaction,
@@ -538,5 +597,55 @@ describe('QuotationService card100 payment ownership', () => {
       expect(customers.update).not.toHaveBeenCalled();
       expect(customer).toEqual(originalCustomer);
     });
+  });
+
+  test('saving an unchanged historical sales agent keeps the association after the agent becomes unavailable', async () => {
+    const { service, customer, users, repository, actor, transaction } =
+      context();
+    const agentId = randomUUID();
+    users.findById.mockResolvedValue({
+      id: agentId,
+      firstName: 'Sales',
+      lastName: 'Engineer',
+      email: 'sales@example.invalid',
+      phone: '0500000000',
+      role: USER_ROLES.SALES_AGENT,
+      assignedRoles: [USER_ROLES.SALES_AGENT],
+      employeeNumber: 'E-1',
+      deletedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const created = await service.create(
+      { customerId: customer.id, salesAgentId: agentId },
+      actor,
+    );
+    users.findById.mockResolvedValue(null);
+    users.findByIdIncludingDeleted.mockResolvedValue({
+      id: agentId,
+      firstName: 'Sales',
+      lastName: 'Engineer',
+      email: 'sales@example.invalid',
+      phone: '0500000000',
+      role: USER_ROLES.SECRETARY,
+      employeeNumber: 'E-1',
+      deletedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const saved = await service.save(created.id, saveInput(created), {
+      ...actor,
+      permissions: [],
+    });
+
+    expect(saved.salesAgentId).toBe(agentId);
+    expect(saved.salesAgentName).toBe('Sales Engineer · E-1');
+    expect(users.findById.mock.calls).toHaveLength(1);
+    expect(repository.update.mock.calls).toContainEqual([
+      created.id,
+      expect.objectContaining({ salesAgentId: agentId }),
+      transaction,
+    ]);
   });
 });

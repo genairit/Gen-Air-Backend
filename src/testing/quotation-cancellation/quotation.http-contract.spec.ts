@@ -36,6 +36,7 @@ const quotation = {
   statusCounts: jest.fn(() =>
     Promise.resolve({ all: 5, draft: 2, review: 1, approved: 1, cancelled: 1 }),
   ),
+  salesAgents: jest.fn(() => Promise.resolve([])),
   getById: jest.fn(() => Promise.resolve({ id })),
   getForActor: jest.fn(() => Promise.resolve({ id })),
   projectDetailsForActor: jest.fn(
@@ -46,6 +47,7 @@ const quotation = {
   ),
   create: jest.fn(() => Promise.resolve({ id })),
   save: jest.fn(() => Promise.resolve({ id })),
+  updateSalesAgent: jest.fn(() => Promise.resolve({ id })),
   delete: jest.fn(() => Promise.resolve()),
   transition: jest.fn(() => Promise.resolve({ id })),
   cancel: jest.fn(() => Promise.resolve({ id })),
@@ -93,12 +95,14 @@ const savePayload = () => ({
 const ROUTES: [string, string, PermissionType][] = [
   ['get', '/quotation', PERMISSIONS.QUOTATIONS_READ],
   ['get', '/quotation/status-counts', PERMISSIONS.QUOTATIONS_READ],
+  ['get', '/quotation/sales-agents', PERMISSIONS.QUOTATIONS_READ],
   ['get', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_READ],
   ['get', `/quotation/project/${id}`, PERMISSIONS.QUOTATIONS_READ],
   ['get', `/quotation/${id}/apartment-options`, PERMISSIONS.QUOTATIONS_READ],
   ['put', `/quotation/${id}/apartment-links`, PERMISSIONS.QUOTATIONS_UPDATE],
   ['post', '/quotation', PERMISSIONS.QUOTATIONS_CREATE],
   ['put', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_UPDATE],
+  ['patch', `/quotation/${id}/sales-agent`, PERMISSIONS.QUOTATIONS_UPDATE],
   ['delete', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_DELETE],
   ['post', `/quotation/${id}/review`, PERMISSIONS.QUOTATIONS_APPROVE],
   ['post', `/quotation/${id}/cancel`, PERMISSIONS.QUOTATIONS_UPDATE],
@@ -167,7 +171,12 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       await call(method, path).set('Authorization', 'Bearer valid').expect(403);
     },
   );
-  test.each(ROUTES.filter(([method]) => method === 'get'))(
+  test.each(
+    ROUTES.filter(
+      ([method, path]) =>
+        method === 'get' && path !== '/quotation/sales-agents',
+    ),
+  )(
     '%s %s accepts its precise read grant',
     async (method, path, permission) => {
       const projectScoped = [
@@ -242,6 +251,40 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       search: 'x'.repeat(200),
     });
   });
+  test('sales-agents requires employee read access as well as quotation read access', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_READ],
+    };
+
+    await request(server())
+      .get('/quotation/sales-agents')
+      .set('Authorization', 'Bearer valid')
+      .expect(403);
+    expect(quotation.salesAgents).not.toHaveBeenCalled();
+
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.EMPLOYEES_READ],
+    };
+    await request(server())
+      .get('/quotation/sales-agents')
+      .set('Authorization', 'Bearer valid')
+      .expect(403);
+    expect(quotation.salesAgents).not.toHaveBeenCalled();
+
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_READ, PERMISSIONS.EMPLOYEES_READ],
+    };
+
+    await request(server())
+      .get('/quotation/sales-agents')
+      .set('Authorization', 'Bearer valid')
+      .expect(200);
+
+    expect(quotation.salesAgents).toHaveBeenCalledTimes(1);
+  });
   test('valid customer-first POST delegates acting user, no project required', async () => {
     state.actor = {
       ...authorizedUser(),
@@ -252,10 +295,7 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       .set('Authorization', 'Bearer valid')
       .send({ customerId })
       .expect(201);
-    expect(quotation.create).toHaveBeenCalledWith(
-      { customerId },
-      state.actor.id,
-    );
+    expect(quotation.create).toHaveBeenCalledWith({ customerId }, state.actor);
   });
   test.each([
     {},
@@ -297,6 +337,29 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
         .send({ ...savePayload(), ...extra })
         .expect(400);
     }
+  });
+  test('valid sales-agent update delegates its versioned nullable association', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_UPDATE],
+    };
+    const salesAgentId = randomUUID();
+
+    await request(server())
+      .patch(`/quotation/${id}/sales-agent`)
+      .set('Authorization', 'Bearer valid')
+      .send({ version: 3, salesAgentId })
+      .expect(200);
+
+    expect(quotation.updateSalesAgent).toHaveBeenCalledWith(
+      id,
+      { version: 3, salesAgentId },
+      state.actor,
+    );
+    expect(quotation.projectDetailsForActor).toHaveBeenCalledWith(
+      { id },
+      state.actor,
+    );
   });
   test.each([
     { version: 0 },

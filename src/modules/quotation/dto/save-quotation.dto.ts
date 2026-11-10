@@ -88,6 +88,9 @@ export class CreateQuotationDto {
   @ValidateIf((_o, v) => v != null)
   @IsUUID()
   declare projectId?: string | null;
+  @ValidateIf((_o, v) => v != null)
+  @IsUUID()
+  declare salesAgentId?: string | null;
 }
 export class SaveQuotationDto {
   @IsInt()
@@ -98,6 +101,9 @@ export class SaveQuotationDto {
   @ValidateIf((_o, v) => v !== null)
   @IsUUID()
   declare projectId: string | null;
+  @ValidateIf((_o, v) => v != null)
+  @IsUUID()
+  declare salesAgentId?: string | null;
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   @IsDateString({ strict: true })
   declare date: string;
@@ -166,4 +172,12 @@ export class AcknowledgeWarningsDto {
   @IsString({ each: true })
   @MaxLength(100, { each: true })
   declare warningKeys: string[];
+}
+export class UpdateSalesAgentDto {
+  @IsInt()
+  @Min(1)
+  declare version: number;
+  @ValidateIf((_o, v) => v !== null)
+  @IsUUID()
+  declare salesAgentId: string | null;
 }

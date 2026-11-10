@@ -33,6 +33,7 @@ const createService = async () => {
     create: jest.fn().mockResolvedValue(USER),
     update: jest.fn().mockResolvedValue(true),
     findById: jest.fn().mockResolvedValue(USER),
+    findByIdIncludingDeleted: jest.fn().mockResolvedValue(null),
     findCredentialsById: jest.fn(),
     findCredentialsByEmail: jest.fn(),
     updatePasswordHash: jest.fn().mockResolvedValue(true),
@@ -95,6 +96,22 @@ const createService = async () => {
     transaction,
   };
 };
+
+describe('UserService.findByIdIncludingDeleted', () => {
+  it('returns historical employee identity without requiring a current role assignment', async () => {
+    const { service, userRepository } = await createService();
+    const historicalUser = {
+      ...USER,
+      deletedAt: new Date('2026-11-10T00:00:00Z'),
+    };
+    userRepository.findByIdIncludingDeleted.mockResolvedValue(historicalUser);
+
+    await expect(service.findByIdIncludingDeleted(USER.id)).resolves.toEqual(
+      historicalUser,
+    );
+    expect(userRepository.findByIdIncludingDeleted).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('UserService.update', () => {
   it('does not treat a change in email letter case as a conflict', async () => {
@@ -248,6 +265,7 @@ describe('UserService.getRoleCounts', () => {
       [USER_ROLES.FINANCE]: 0,
       [USER_ROLES.ENGINEER]: 0,
       [USER_ROLES.INSTALLER]: 0,
+      [USER_ROLES.SALES_AGENT]: 0,
       [USER_ROLES.SECRETARY]: 2,
       [USER_ROLES.SYSTEM_ADMIN]: 0,
       [USER_ROLES.PROJECT_MANAGER]: 0,

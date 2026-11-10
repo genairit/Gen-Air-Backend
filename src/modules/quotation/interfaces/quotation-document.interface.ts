@@ -36,6 +36,7 @@ export interface IQuotationTotals {
 export interface IQuotationView extends IQuotationDocument {
   totals: IQuotationTotals;
   warnings: IQuotationWarning[];
+  salesAgentName?: string | null;
 }
 export interface IQuotationDetailView extends IQuotationView {
   apartmentLinks: IQuotationApartmentLink[];

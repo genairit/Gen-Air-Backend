@@ -10,10 +10,16 @@ import {
   SaveQuotationDto,
   CreateQuotationDto,
   CancelQuotationDto,
+  UpdateSalesAgentDto,
   QuotationTransitionDto,
   AcknowledgeWarningsDto,
   QuotationCancellationDto,
 } from './dto/save-quotation.dto';
+
+import {
+  hasPermission,
+  assertPermissions,
+} from '@Utilities/permission.utility';
 
 import {
   decodeQuotationCursor,
@@ -58,9 +64,9 @@ import Decimal from 'decimal.js';
 import { Transaction } from 'sequelize';
 import { randomUUID } from 'node:crypto';
 import { Quotation } from './entities/quotation.entity';
+import { UserService } from '@Modules/user/user.service';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { QuotationRepository } from './quotation.repository';
-import { hasPermission } from '@Utilities/permission.utility';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import type { GetQuotationsDto } from './dto/get-quotations.dto';
 import { DEFAULT_VAT_RATE } from './constants/quotation.constant';
@@ -69,14 +75,17 @@ import type { IQuotation } from './interfaces/quotation.interface';
 import type { DeleteQuotationDto } from './dto/delete-quotation.dto';
 import { CustomerService } from '@Modules/customer/customer.service';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
+import { UserRoleService } from '@Modules/user-role/user-role.service';
 import type { SetApartmentLinksDto } from './dto/set-apartment-links.dto';
 import { QuotationSelectionService } from './quotation-selection.service';
 import type { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
+import type { IQuotationSalesAgent } from './interfaces/quotation.interface';
 import { toProjectQuotationView } from './utilities/quotation-sharing.utility';
 import { quotationPaymentIssues } from './utilities/quotation-payment.utility';
 import type { GetProjectQuotationsDto } from './dto/get-project-quotations.dto';
 import { resolveQuotationBrandGroups } from './utilities/quotation-brand.utility';
+import { salesAgentDisplayName } from './utilities/quotation-sales-agent.utility';
 import { QUOTATION_SHARING_MESSAGES } from './constants/quotation-sharing.constant';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
@@ -117,9 +126,24 @@ export class QuotationService {
     private readonly projects: ProjectService,
     private readonly links: QuotationProjectService,
     private readonly transactions: DatabaseTransactionService,
+    private readonly users: UserService,
+    private readonly userRoles: UserRoleService,
   ) {}
   statusCounts(query: GetQuotationCountsDto): Promise<IQuotationStatusCounts> {
     return this.repository.statusCounts(query.search ?? '');
+  }
+  async salesAgents(): Promise<IQuotationSalesAgent[]> {
+    const eligibleUserIds = await this.userRoles.findUserIdsByRole(
+      USER_ROLES.SALES_AGENT,
+    );
+    const eligibleUsers = await this.users.findByIds(eligibleUserIds);
+
+    return eligibleUsers.map(({ id, firstName, lastName, employeeNumber }) => ({
+      id,
+      firstName,
+      lastName,
+      employeeNumber,
+    }));
   }
   async list(query: GetQuotationsDto): Promise<{
     items: IQuotationView[];
@@ -201,6 +225,12 @@ export class QuotationService {
   async getById(id: string): Promise<IQuotationDetailView> {
     return this.transactions.run(async (transaction) => {
       const quotation = await this.document(id, transaction);
+      const salesAgent = quotation.salesAgentId
+        ? await this.users.findByIdIncludingDeleted(
+            quotation.salesAgentId,
+            transaction,
+          )
+        : null;
       const configuration = hasApprovedQuotationSnapshot(quotation)
         ? {
             rules: quotation.ruleConfiguration,
@@ -224,6 +254,7 @@ export class QuotationService {
         }),
         primaryProject,
         apartmentLinks: apartmentLinks.get(id) ?? [],
+        salesAgentName: salesAgent ? salesAgentDisplayName(salesAgent) : null,
       };
     });
   }
@@ -298,10 +329,11 @@ export class QuotationService {
   }
   async create(
     input: CreateQuotationDto,
-    userId: string,
+    actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
     const customer = await this.customers.getById(input.customerId);
     await this.validateProject(input.customerId, input.projectId ?? null);
+    await this.validateSalesAgent(input.salesAgentId ?? null, actor);
     const id = randomUUID();
     await this.transactions.run(async (transaction) => {
       const configuration = await this.rules.configuration(transaction);
@@ -317,6 +349,7 @@ export class QuotationService {
           ruleConfiguration: configuration.rules,
           number: await this.repository.nextNumber(prefix, transaction),
           customerId: customer.id,
+          salesAgentId: input.salesAgentId ?? null,
           status: QUOTATION_STATUS.DRAFT,
           cancelledFromStatus: null,
           cancellationHistory: [],
@@ -333,8 +366,8 @@ export class QuotationService {
           internalNotes: '',
           version: 1,
           acknowledgedWarnings: [],
-          createdById: userId,
-          updatedById: userId,
+          createdById: actor.id,
+          updatedById: actor.id,
           approvedById: null,
           approvedAt: null,
         },
@@ -366,7 +399,7 @@ export class QuotationService {
   async save(
     id: string,
     input: SaveQuotationDto,
-    userId: string,
+    actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
     await this.customers.getById(input.customerId);
     await this.transactions.run(async (transaction) => {
@@ -377,6 +410,14 @@ export class QuotationService {
         current.status === QUOTATION_STATUS.CANCELLED
       ) {
         throw new ConflictException('יש לפתוח את ההצעה לעריכה לפני שינוי');
+      }
+      const salesAgentId =
+        'salesAgentId' in input
+          ? (input.salesAgentId ?? null)
+          : current.salesAgentId;
+
+      if (salesAgentId !== current.salesAgentId) {
+        await this.validateSalesAgent(salesAgentId, actor);
       }
 
       await this.assertSharingKeepsContext(current, input, transaction);
@@ -394,7 +435,7 @@ export class QuotationService {
       const snapshots = await this.selection.snapshots({
         current,
         input: { ...input, brands, sections },
-        userId,
+        userId: actor.id,
         transaction,
       });
       const oldIds = current.sections.map((section) => section.id);
@@ -423,10 +464,11 @@ export class QuotationService {
           ruleConfiguration: configuration.rules,
           version: version + 1,
           status: QUOTATION_STATUS.DRAFT,
+          salesAgentId,
           acknowledgedWarnings: [],
           approvedAt: null,
           approvedById: null,
-          updatedById: userId,
+          updatedById: actor.id,
         },
         transaction,
       );
@@ -434,6 +476,34 @@ export class QuotationService {
         await this.links.replacePrimary(id, projectId, transaction);
       }
     });
+    return this.getById(id);
+  }
+  async updateSalesAgent(
+    id: string,
+    input: UpdateSalesAgentDto,
+    actor: IAuthorizedUser,
+  ): Promise<IQuotationDetailView> {
+    await this.transactions.run(async (transaction) => {
+      const current = await this.document(id, transaction);
+      this.assertVersion(current, input.version);
+      if (current.status === QUOTATION_STATUS.CANCELLED) {
+        throw new ConflictException('לא ניתן לעדכן הצעת מחיר מבוטלת');
+      }
+      if (input.salesAgentId !== current.salesAgentId) {
+        await this.validateSalesAgent(input.salesAgentId, actor);
+      }
+
+      await this.repository.update(
+        id,
+        {
+          salesAgentId: input.salesAgentId,
+          updatedById: actor.id,
+          version: current.version + 1,
+        },
+        transaction,
+      );
+    });
+
     return this.getById(id);
   }
   async transition(
@@ -840,6 +910,26 @@ export class QuotationService {
     const project = await this.projects.getById(projectId);
     if (project.customerId !== customerId) {
       throw new BadRequestException('הפרויקט אינו משויך ללקוח שנבחר');
+    }
+  }
+
+  private async validateSalesAgent(
+    salesAgentId: string | null,
+    actor: IAuthorizedUser,
+  ): Promise<void> {
+    if (salesAgentId === null) {
+      return;
+    }
+
+    assertPermissions(actor, PERMISSIONS.EMPLOYEES_READ);
+
+    const salesAgent = await this.users.findById(salesAgentId);
+    const hasEligibleRole = salesAgent?.assignedRoles?.includes(
+      USER_ROLES.SALES_AGENT,
+    );
+
+    if (!salesAgent || !hasEligibleRole) {
+      throw new BadRequestException('יש לבחור עובד פעיל בתפקיד סוכן מכירות');
     }
   }
 }
