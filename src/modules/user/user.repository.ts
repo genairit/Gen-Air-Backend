@@ -23,6 +23,13 @@ export class UserRepository {
     return User.findByPk(id, { transaction });
   }
 
+  findByIdIncludingDeleted(
+    id: string,
+    transaction?: Transaction,
+  ): Promise<User | null> {
+    return User.findByPk(id, { paranoid: false, transaction });
+  }
+
   findByIds(ids: string[]): Promise<User[]> {
     return User.findAll({ where: { id: { [Op.in]: ids } } });
   }

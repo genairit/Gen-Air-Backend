@@ -27,6 +27,7 @@ export interface IQuotation {
   approvedAt: Date | null;
   status: TQuotationStatus;
   paymentTermsNote: string;
+  salesAgentId: string | null;
   warningScopeVersion: number;
   approvedById: string | null;
   acknowledgedWarnings: string[];
@@ -48,4 +49,11 @@ export interface IQuotationCancellation {
   restoredByName: string | null;
   kind: TQuotationCancellationKind;
   fromStatus: TQuotationRestorableStatus;
+}
+
+export interface IQuotationSalesAgent {
+  id: string;
+  lastName: string;
+  firstName: string;
+  employeeNumber: string;
 }

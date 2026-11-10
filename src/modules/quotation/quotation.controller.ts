@@ -3,6 +3,7 @@ import {
   Put,
   Post,
   Body,
+  Patch,
   Param,
   Delete,
   HttpCode,
@@ -15,6 +16,7 @@ import {
   SaveQuotationDto,
   CreateQuotationDto,
   CancelQuotationDto,
+  UpdateSalesAgentDto,
   QuotationTransitionDto,
   AcknowledgeWarningsDto,
   QuotationCancellationDto,
@@ -79,6 +81,11 @@ export class QuotationController {
   ): ReturnType<QuotationService['setApartmentLinks']> {
     return this.service.setApartmentLinks(id, input);
   }
+  @Get('sales-agents')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
+  salesAgents(): ReturnType<QuotationService['salesAgents']> {
+    return this.service.salesAgents();
+  }
   @Get(':id')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
   get(
@@ -132,6 +139,15 @@ export class QuotationController {
   ): ReturnType<QuotationService['restore']> {
     const quotation = await this.service.restore(id, input, user);
     return this.service.projectDetailsForActor(quotation, user);
+  }
+  @Patch(':id/sales-agent')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE)
+  updateSalesAgent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: UpdateSalesAgentDto,
+    @AuthenticatedUser() user: IUser,
+  ): ReturnType<QuotationService['updateSalesAgent']> {
+    return this.service.updateSalesAgent(id, input, user.id);
   }
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)

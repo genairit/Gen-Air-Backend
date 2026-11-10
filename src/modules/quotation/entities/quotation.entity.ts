@@ -36,6 +36,8 @@ export class Quotation
   declare number: string;
   @Column({ type: DataType.UUID, allowNull: false })
   declare customerId: string;
+  @Column({ type: DataType.UUID, allowNull: true })
+  declare salesAgentId: string | null;
   @Column({ type: DataType.STRING(20), allowNull: false })
   declare status: TQuotationStatus;
   @Column({ type: DataType.STRING(20), allowNull: true })
