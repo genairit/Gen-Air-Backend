@@ -229,6 +229,15 @@ export class ProjectService {
     return this.projectApartmentService.findByBuilding(building, filter);
   }
 
+  async listBuildingApartments(
+    buildingId: string,
+    transaction?: Transaction,
+  ): Promise<IProject[]> {
+    const building = await this.getStoredById(buildingId, transaction);
+
+    return this.projectApartmentService.listAll(building, transaction);
+  }
+
   updateForActor(
     id: string,
     input: UpdateProjectDto,
@@ -380,8 +389,11 @@ export class ProjectService {
     return this.getById(projectId);
   }
 
-  private async getStoredById(id: string): Promise<IProject> {
-    const project = await this.projectRepository.findById(id);
+  private async getStoredById(
+    id: string,
+    transaction?: Transaction,
+  ): Promise<IProject> {
+    const project = await this.projectRepository.findById(id, transaction);
 
     if (!project) {
       throw new NotFoundException(`Project ${id} was not found`);

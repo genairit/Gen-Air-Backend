@@ -20,7 +20,6 @@ export interface IQuotation {
   deletedAt: Date | null;
   discountPercent: string;
   approvedAt: Date | null;
-  projectId: string | null;
   status: TQuotationStatus;
   paymentTermsNote: string;
   warningScopeVersion: number;

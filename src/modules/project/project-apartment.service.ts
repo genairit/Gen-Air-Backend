@@ -147,6 +147,12 @@ export class ProjectApartmentService {
     };
   }
 
+  listAll(building: IProject, transaction?: Transaction): Promise<IProject[]> {
+    this.assertCanHoldApartments(building);
+
+    return this.projectRepository.findLiveApartments(building.id, transaction);
+  }
+
   async countByStage(building: IProject): Promise<IProjectStageCounts> {
     this.assertCanHoldApartments(building);
 

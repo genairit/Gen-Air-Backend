@@ -36,11 +36,18 @@ const quotation = {
     Promise.resolve({ all: 4, draft: 2, review: 1, approved: 1 }),
   ),
   getById: jest.fn(() => Promise.resolve({ id })),
+  getForActor: jest.fn(() => Promise.resolve({ id })),
+  projectDetailsForActor: jest.fn((detail) => detail),
   create: jest.fn(() => Promise.resolve({ id })),
   save: jest.fn(() => Promise.resolve({ id })),
   delete: jest.fn(() => Promise.resolve()),
   transition: jest.fn(() => Promise.resolve({ id })),
   acknowledge: jest.fn(() => Promise.resolve({ id })),
+  listByProject: jest.fn(() =>
+    Promise.resolve({ items: [], total: 0, nextCursor: null }),
+  ),
+  apartmentOptions: jest.fn(() => Promise.resolve({ apartments: [] })),
+  setApartmentLinks: jest.fn(() => Promise.resolve({ id })),
 };
 const catalogue = {
   getById: jest.fn(() => Promise.resolve({ id })),
@@ -79,6 +86,9 @@ const ROUTES: [string, string, PermissionType][] = [
   ['get', '/quotation', PERMISSIONS.QUOTATIONS_READ],
   ['get', '/quotation/status-counts', PERMISSIONS.QUOTATIONS_READ],
   ['get', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_READ],
+  ['get', `/quotation/project/${id}`, PERMISSIONS.QUOTATIONS_READ],
+  ['get', `/quotation/${id}/apartment-options`, PERMISSIONS.QUOTATIONS_READ],
+  ['put', `/quotation/${id}/apartment-links`, PERMISSIONS.QUOTATIONS_UPDATE],
   ['post', '/quotation', PERMISSIONS.QUOTATIONS_CREATE],
   ['put', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_UPDATE],
   ['delete', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_DELETE],
@@ -150,8 +160,25 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
   test.each(ROUTES.filter(([method]) => method === 'get'))(
     '%s %s accepts its precise read grant',
     async (method, path, permission) => {
-      state.actor = { ...authorizedUser(), permissions: [permission] };
+      const projectScoped = [
+        `/quotation/project/${id}`,
+        `/quotation/${id}/apartment-options`,
+      ].includes(path);
+      const permissions = projectScoped
+        ? [permission, PERMISSIONS.PROJECTS_READ]
+        : [permission];
+      state.actor = { ...authorizedUser(), permissions };
       await call(method, path).set('Authorization', 'Bearer valid').expect(200);
+    },
+  );
+  test.each([`/quotation/project/${id}`, `/quotation/${id}/apartment-options`])(
+    '%s rejects a quotation-only grant',
+    async (path) => {
+      state.actor = {
+        ...authorizedUser(),
+        permissions: [PERMISSIONS.QUOTATIONS_READ],
+      };
+      await call('get', path).set('Authorization', 'Bearer valid').expect(403);
     },
   );
   test('status-counts resolves before UUID routes and delegates validated search', async () => {
@@ -439,5 +466,98 @@ describe('Quotation deletion HTTP contract', () => {
     state.actor = { ...authorizedUser(), permissions };
     await remove().expect(403);
     expect(quotation.delete).not.toHaveBeenCalled();
+  });
+});
+
+const shareApartments = (body: object) =>
+  request(server())
+    .put(`/quotation/${id}/apartment-links`)
+    .set('Authorization', 'Bearer valid')
+    .send(body);
+
+describe('Quotation apartment sharing HTTP contract', () => {
+  beforeEach(() => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_UPDATE, PERMISSIONS.PROJECTS_READ],
+    };
+  });
+  test('update grant sets the full apartment list in one request', async () => {
+    const apartmentIds = [randomUUID(), randomUUID()];
+    await shareApartments({ apartmentIds, expectedApartmentIds: [] }).expect(
+      200,
+    );
+    expect(quotation.setApartmentLinks).toHaveBeenCalledWith(id, {
+      apartmentIds,
+      expectedApartmentIds: [],
+    });
+    expect(quotation.save).not.toHaveBeenCalled();
+  });
+  test('an empty list turns sharing off', async () => {
+    await shareApartments({
+      apartmentIds: [],
+      expectedApartmentIds: [],
+    }).expect(200);
+    expect(quotation.setApartmentLinks).toHaveBeenCalledWith(id, {
+      apartmentIds: [],
+      expectedApartmentIds: [],
+    });
+  });
+  test.each([
+    {},
+    { apartmentIds: null },
+    { apartmentIds: 'all' },
+    { apartmentIds: ['not-a-uuid'] },
+    { apartmentIds: [id, id] },
+    { apartmentIds: Array.from({ length: 2001 }, () => randomUUID()) },
+    { apartmentIds: [], expectedApartmentIds: ['not-a-uuid'] },
+    { apartmentIds: [], expectedApartmentIds: [id, id] },
+    { apartmentIds: [], expectedApartmentIds: [], version: 2 },
+    { apartmentIds: [], expectedApartmentIds: [], status: 'draft' },
+  ])('rejects malformed or forged sharing body %j', async (body) => {
+    await shareApartments(body).expect(400);
+    expect(quotation.setApartmentLinks).not.toHaveBeenCalled();
+  });
+  test.each(
+    [
+      [PERMISSIONS.QUOTATIONS_READ],
+      [PERMISSIONS.QUOTATIONS_APPROVE, PERMISSIONS.QUOTATIONS_CREATE],
+      [PERMISSIONS.QUOTATIONS_UPDATE],
+    ].map((permissions) => ({ permissions })),
+  )('read or approve grants cannot edit links: %j', async ({ permissions }) => {
+    state.actor = { ...authorizedUser(), permissions };
+    await shareApartments({
+      apartmentIds: [],
+      expectedApartmentIds: [],
+    }).expect(403);
+    expect(quotation.setApartmentLinks).not.toHaveBeenCalled();
+  });
+  test('project list resolves before UUID routes and validates paging', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_READ, PERMISSIONS.PROJECTS_READ],
+    };
+    await request(server())
+      .get(`/quotation/project/${id}`)
+      .query({ batchSize: 10 })
+      .set('Authorization', 'Bearer valid')
+      .expect(200);
+    expect(quotation.listByProject).toHaveBeenCalledWith(id, { batchSize: 10 });
+    expect(quotation.getById).not.toHaveBeenCalled();
+    for (const query of [
+      { batchSize: 51 },
+      { search: 'x' },
+      { status: 'draft' },
+    ]) {
+      await request(server())
+        .get(`/quotation/project/${id}`)
+        .query(query)
+        .set('Authorization', 'Bearer valid')
+        .expect(400);
+    }
+    await request(server())
+      .get('/quotation/project/not-a-uuid')
+      .set('Authorization', 'Bearer valid')
+      .expect(400);
   });
 });

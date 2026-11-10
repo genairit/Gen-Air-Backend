@@ -24,6 +24,7 @@ import { QuotationItemService } from '@Modules/quotation-item/quotation-item.ser
 import { QuotationSelectionService } from '@Modules/quotation/quotation-selection.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
+import { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
 
 const makeCustomer = (): ICustomer => ({
   id: randomUUID(),
@@ -66,6 +67,7 @@ const createContext = async () => {
   const selection = mock<QuotationSelectionService>();
   const customers = mock<CustomerService>();
   const projects = mock<ProjectService>();
+  const links = mock<QuotationProjectService>();
   const transactions = mock<DatabaseTransactionService>();
   const document = quotationDocumentFixture([]);
   const run = <T>(work: (value: Transaction) => Promise<T>): Promise<T> =>
@@ -78,6 +80,11 @@ const createContext = async () => {
     fingerprint: document.ruleConfigFingerprint,
   });
   customers.getById.mockResolvedValue(customer);
+  links.primaryProject.mockResolvedValue(null);
+  links.primaryProjects.mockResolvedValue(new Map());
+  links.apartmentLinks.mockResolvedValue(new Map());
+  links.countApartmentLinks.mockResolvedValue(0);
+  links.replacePrimary.mockResolvedValue();
   sections.list.mockResolvedValue([]);
   items.list.mockResolvedValue([]);
   catalogue.getByIds.mockResolvedValue([]);
@@ -120,6 +127,7 @@ const createContext = async () => {
       { provide: QuotationSelectionService, useValue: selection },
       { provide: CustomerService, useValue: customers },
       { provide: ProjectService, useValue: projects },
+      { provide: QuotationProjectService, useValue: links },
       { provide: DatabaseTransactionService, useValue: transactions },
     ],
   }).compile();
@@ -142,7 +150,7 @@ const createContext = async () => {
 const saveInput = (quotation: IQuotation): SaveQuotationDto => ({
   version: quotation.version,
   customerId: quotation.customerId,
-  projectId: quotation.projectId,
+  projectId: null,
   date: quotation.date,
   brand: quotation.brand,
   paymentTerms: quotation.paymentTerms,
