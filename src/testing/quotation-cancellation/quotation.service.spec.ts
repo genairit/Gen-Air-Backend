@@ -261,6 +261,29 @@ describe('quotation order transaction orchestration', () => {
     expect(repository.update.mock.calls).toHaveLength(0);
   });
 
+  test('purchasing role cannot cancel or restore quotations', async () => {
+    const quotation = quotationForOrder();
+    const { service, transactions, repository } = createService(quotation);
+    const purchaser = mock<IUser>({
+      id: actorId,
+      role: USER_ROLES.PURCHASING_EXECUTION_MANAGER,
+      assignedRoles: [USER_ROLES.PURCHASING_EXECUTION_MANAGER],
+    });
+
+    await expect(
+      service.cancel(
+        quotationId,
+        { version: quotation.version, reason: 'Project withdrawn' },
+        purchaser,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      service.restore(quotationId, { version: quotation.version }, purchaser),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(transactions.run.mock.calls).toHaveLength(0);
+    expect(repository.update.mock.calls).toHaveLength(0);
+  });
+
   test('manual cancellation rejects a quotation that is already cancelled', async () => {
     const quotation = quotationForOrder({
       status: QUOTATION_STATUS.CANCELLED,
