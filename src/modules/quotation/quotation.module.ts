@@ -9,6 +9,7 @@ import { QuotationSelectionService } from './quotation-selection.service';
 import { QuotationRuleModule } from '@Modules/quotation-rule/quotation-rule.module';
 import { CatalogueItemModule } from '@Modules/catalogue-item/catalogue-item.module';
 import { QuotationItemModule } from '@Modules/quotation-item/quotation-item.module';
+import { QuotationProjectModule } from '@Modules/quotation-project/quotation-project.module';
 import { QuotationSectionModule } from '@Modules/quotation-section/quotation-section.module';
 import { CatalogueItemUsageModule } from '@Modules/catalogue-item-usage/catalogue-item-usage.module';
 
@@ -22,6 +23,7 @@ import { CatalogueItemUsageModule } from '@Modules/catalogue-item-usage/catalogu
     CatalogueItemUsageModule,
     QuotationItemModule,
     QuotationSectionModule,
+    QuotationProjectModule,
   ],
   controllers: [QuotationController],
   providers: [QuotationService, QuotationRepository, QuotationSelectionService],

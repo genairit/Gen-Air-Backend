@@ -111,6 +111,21 @@ export class ProjectRepository {
     });
   }
 
+  async findLiveApartments(
+    buildingId: string,
+    transaction?: Transaction,
+  ): Promise<IProject[]> {
+    const apartments = await Project.findAll({
+      transaction,
+      where: { parentProjectId: buildingId },
+      include: [
+        { model: Customer, paranoid: false, attributes: ['id', 'name'] },
+      ],
+    });
+
+    return apartments.map((apartment) => apartment.get({ plain: true }));
+  }
+
   countLiveApartments(buildingId: string): Promise<number> {
     return Project.count({ where: { parentProjectId: buildingId } });
   }

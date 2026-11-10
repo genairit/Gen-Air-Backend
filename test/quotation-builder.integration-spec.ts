@@ -24,9 +24,12 @@ import { CatalogueItemRepository } from '@Modules/catalogue-item/catalogue-item.
 import { QuotationRuleRepository } from '@Modules/quotation-rule/quotation-rule.repository';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
+import { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
 import { QuotationSection } from '@Modules/quotation-section/entities/quotation-section.entity';
+import { QuotationProject } from '@Modules/quotation-project/entities/quotation-project.entity';
 import type { IQuotationView } from '@Modules/quotation/interfaces/quotation-document.interface';
 import { QuotationSectionRepository } from '@Modules/quotation-section/quotation-section.repository';
+import { QuotationProjectRepository } from '@Modules/quotation-project/quotation-project.repository';
 import { CatalogueItemUsageService } from '@Modules/catalogue-item-usage/catalogue-item-usage.service';
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
 import { CatalogueItemUsageRepository } from '@Modules/catalogue-item-usage/catalogue-item-usage.repository';
@@ -47,6 +50,7 @@ const sequelize = new Sequelize(databaseUrl, {
   models: [
     Quotation,
     QuotationSection,
+    QuotationProject,
     QuotationItem,
     CatalogueItem,
     CatalogueItemUsage,
@@ -59,6 +63,8 @@ const providers = [
   QuotationRepository,
   QuotationSectionService,
   QuotationSectionRepository,
+  QuotationProjectService,
+  QuotationProjectRepository,
   QuotationItemService,
   QuotationItemRepository,
   CatalogueItemService,
@@ -180,7 +186,8 @@ beforeAll(async () => {
     `CREATE TYPE user_role AS ENUM('system_admin','engineer');
      CREATE TABLE users(id uuid PRIMARY KEY);
      CREATE TABLE customers(id uuid PRIMARY KEY,name text DEFAULT 'לקוח בדיקה');
-     CREATE TABLE projects(id uuid PRIMARY KEY,name text DEFAULT 'פרויקט בדיקה');
+     CREATE TABLE project_types(id uuid PRIMARY KEY,can_have_apartments boolean NOT NULL DEFAULT false);
+     CREATE TABLE projects(id uuid PRIMARY KEY,name text DEFAULT 'פרויקט בדיקה',code text NOT NULL DEFAULT gen_random_uuid()::text,project_type_id uuid,parent_project_id uuid,customer_id uuid,customer_name text,customer_apartment text,customer_floor smallint,deleted_at timestamptz);
      CREATE TABLE permissions(key text PRIMARY KEY,feature text NOT NULL,action text NOT NULL,CONSTRAINT chk_permissions_key CHECK(key=feature||'.'||action),CONSTRAINT uq_permissions_feature_action UNIQUE(feature,action));
      CREATE TABLE role_permissions(role user_role,permission_key text,PRIMARY KEY(role,permission_key));
      CREATE TABLE project_stage_transitions(id uuid PRIMARY KEY,project_id uuid NOT NULL,from_stage_id uuid,to_stage_id uuid NOT NULL,changed_by_id uuid NOT NULL,changed_by_role user_role NOT NULL,note text,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
@@ -221,6 +228,14 @@ beforeAll(async () => {
       'utf8',
     ),
   );
+  for (const migration of [
+    'migrations/2026-11-09-quotation-brand-tabs.sql',
+    'migrations/2026-11-09-quotation-project-links.sql',
+  ]) {
+    await sequelize.query(
+      await readFile(join(process.cwd(), migration), 'utf8'),
+    );
+  }
   const module = await context.compile();
   services.quotation = module.get(QuotationService);
   services.catalogue = module.get(CatalogueItemService);
@@ -288,13 +303,13 @@ describe('Quotation status counts on real PostgreSQL', () => {
     for (const status of statuses) {
       const quote = await quotationService().create({ customerId }, actor);
       await Quotation.update(
-        { brand: search, status },
+        { brand: search, brands: [search], status },
         { where: { id: quote.id } },
       );
     }
     const deleted = await quotationService().create({ customerId }, actor);
     await Quotation.update(
-      { brand: search, status: QUOTATION_STATUS.APPROVED },
+      { brand: search, brands: [search], status: QUOTATION_STATUS.APPROVED },
       { where: { id: deleted.id } },
     );
     await Quotation.destroy({ where: { id: deleted.id } });
@@ -332,9 +347,14 @@ describe('Quotation status counts on real PostgreSQL', () => {
     const quote = await quotationService().create({ customerId }, actor);
     const brand = `brand-${randomUUID()}`;
     await Quotation.update(
-      { brand, customerId: relatedCustomerId, projectId: relatedProjectId },
+      { brand, brands: [brand], customerId: relatedCustomerId },
       { where: { id: quote.id } },
     );
+    await QuotationProject.create({
+      quotationId: quote.id,
+      projectId: relatedProjectId,
+      isPrimary: true,
+    });
     for (const search of [
       quote.number,
       brand,
@@ -365,7 +385,10 @@ describe('Quotation status counts on real PostgreSQL', () => {
       `${prefix}other_suffix`,
     ]) {
       const quote = await quotationService().create({ customerId }, actor);
-      await Quotation.update({ brand }, { where: { id: quote.id } });
+      await Quotation.update(
+        { brand, brands: [brand] },
+        { where: { id: quote.id } },
+      );
     }
     for (const search of [literal, `${prefix}%`, `${prefix}%_`]) {
       expect(await quotationService().statusCounts({ search })).toEqual({
