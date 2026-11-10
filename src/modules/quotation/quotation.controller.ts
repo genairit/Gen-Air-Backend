@@ -14,8 +14,10 @@ import {
 import {
   SaveQuotationDto,
   CreateQuotationDto,
+  CancelQuotationDto,
   QuotationTransitionDto,
   AcknowledgeWarningsDto,
+  QuotationCancellationDto,
 } from './dto/save-quotation.dto';
 
 import { Query } from '@nestjs/common';
@@ -110,6 +112,24 @@ export class QuotationController {
   ): ReturnType<QuotationService['save']> {
     const quotation = await this.service.save(id, input, user.id);
     return this.service.projectDetailsForActor(quotation, user);
+  }
+  @Post(':id/cancel')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE)
+  cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: CancelQuotationDto,
+    @AuthenticatedUser() user: IUser,
+  ): ReturnType<QuotationService['cancel']> {
+    return this.service.cancel(id, input, user);
+  }
+  @Post(':id/restore')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE)
+  restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: QuotationCancellationDto,
+    @AuthenticatedUser() user: IUser,
+  ): ReturnType<QuotationService['restore']> {
+    return this.service.restore(id, input, user);
   }
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)

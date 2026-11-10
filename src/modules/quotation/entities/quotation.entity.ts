@@ -10,8 +10,12 @@ import {
   PrimaryKey,
 } from 'sequelize-typescript';
 
+import type {
+  TQuotationStatus,
+  TQuotationRestorableStatus,
+} from '../constants/quotation.constant';
+
 import type { IQuotation } from '../interfaces/quotation.interface';
-import type { TQuotationStatus } from '../constants/quotation.constant';
 import type { PaymentTermsType } from '@Constants/payment-terms.constant';
 import type { IPaymentStage } from '../interfaces/quotation-document.interface';
 import type { IQuotationRule } from '@Modules/quotation-rule/interfaces/quotation-rule.interface';
@@ -34,6 +38,10 @@ export class Quotation
   declare customerId: string;
   @Column({ type: DataType.STRING(20), allowNull: false })
   declare status: TQuotationStatus;
+  @Column({ type: DataType.STRING(20), allowNull: true })
+  declare cancelledFromStatus: TQuotationRestorableStatus | null;
+  @Column({ type: DataType.JSONB, allowNull: false, defaultValue: [] })
+  declare cancellationHistory: IQuotation['cancellationHistory'];
   @Column({ type: DataType.DATEONLY, allowNull: false })
   declare date: string;
   @Column({ type: DataType.STRING(100), allowNull: false })

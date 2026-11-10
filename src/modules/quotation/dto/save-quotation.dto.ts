@@ -19,6 +19,7 @@ import {
   MAX_SECTIONS,
   type TSystemType,
   MAX_ITEMS_PER_SECTION,
+  MAX_QUOTATION_CANCELLATION_REASON_LENGTH,
 } from '../constants/quotation.constant';
 
 import {
@@ -45,7 +46,7 @@ export class QuotationItemDto {
   @IsUUID()
   declare parentItemId: string | null;
   @IsString()
-  @MaxLength(1000)
+  @MaxLength(MAX_QUOTATION_CANCELLATION_REASON_LENGTH)
   declare description: string;
   @Matches(/^\d{1,12}(?:\.\d{1,4})?$/)
   declare quotedPrice: string;
@@ -144,6 +145,17 @@ export class QuotationTransitionDto {
     QUOTATION_STATUS.APPROVED,
   ])
   declare status: 'draft' | 'review' | 'approved';
+}
+export class QuotationCancellationDto {
+  @IsInt()
+  @Min(1)
+  declare version: number;
+}
+export class CancelQuotationDto extends QuotationCancellationDto {
+  @IsString()
+  @MaxLength(1000)
+  @Matches(/\S/u)
+  declare reason: string;
 }
 export class AcknowledgeWarningsDto {
   @IsInt()
