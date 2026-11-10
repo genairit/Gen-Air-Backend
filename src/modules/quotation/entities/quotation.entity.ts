@@ -72,6 +72,8 @@ export class Quotation
   declare acknowledgedWarnings: string[];
   @Column({ type: DataType.UUID, allowNull: false })
   declare createdById: string;
+  @Column({ type: DataType.STRING(160), allowNull: false })
+  declare issuerName: string;
   @Column({ type: DataType.UUID, allowNull: false })
   declare updatedById: string;
   @Column({ type: DataType.UUID, allowNull: true })

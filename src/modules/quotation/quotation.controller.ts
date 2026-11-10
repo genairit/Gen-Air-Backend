@@ -10,6 +10,7 @@ import {
   HttpStatus,
   Controller,
   ParseUUIDPipe,
+  StreamableFile,
 } from '@nestjs/common';
 
 import {
@@ -25,6 +26,7 @@ import {
 import { Query } from '@nestjs/common';
 import { QuotationService } from './quotation.service';
 import { GetQuotationsDto } from './dto/get-quotations.dto';
+import { QuotationPdfService } from './quotation-pdf.service';
 import { DeleteQuotationDto } from './dto/delete-quotation.dto';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { SetApartmentLinksDto } from './dto/set-apartment-links.dto';
@@ -37,7 +39,10 @@ import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 
 @Controller('quotation')
 export class QuotationController {
-  constructor(private readonly service: QuotationService) {}
+  constructor(
+    private readonly service: QuotationService,
+    private readonly pdf: QuotationPdfService,
+  ) {}
   @Get()
   @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
   list(
@@ -95,6 +100,18 @@ export class QuotationController {
     user: IAuthorizedUser,
   ): ReturnType<QuotationService['getForActor']> {
     return this.service.getForActor(id, user);
+  }
+  @Post(':id/pdf')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_EXPORT, PERMISSIONS.PROJECTS_READ)
+  async exportPdf(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<StreamableFile> {
+    const { filename, pdf } = await this.pdf.export(id);
+    return new StreamableFile(pdf, {
+      type: 'application/pdf',
+      disposition: `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    });
   }
   @Post()
   @RequirePermissions(PERMISSIONS.QUOTATIONS_CREATE)

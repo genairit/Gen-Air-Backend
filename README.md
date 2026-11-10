@@ -2,6 +2,18 @@
 
 the backend part of the gen air app
 
+## Quotation PDF export
+
+Set `WORKER_URL` to the private Gen-Air-Worker base URL and set the same random
+`WORKER_API_TOKEN` in both services. `POST /quotation/:id/pdf` reads the saved
+quotation, customer, project, and creator, sends a render-only snapshot to the
+worker, and returns the resulting PDF. The example quotation supplies the
+company header and default contract sections; saved quotation payment terms,
+lines, totals, and status take precedence. A linked quotation is uploaded to
+that project's `הצעות מחיר` Drive folder before the PDF response is returned.
+An unlinked quotation is downloadable without a Drive upload. A later project
+link does not trigger a retroactive upload; export again to save a linked PDF.
+
 ## Development workflow
 
 The [backend development workflow](rules/backend-development-workflow-standards.md)
@@ -72,3 +84,10 @@ Commit statuses read/write, Metadata read. It runs no Playwright and does not ob
 feature gates. Recheck feature QA evidence manually after backend dev changes.
 See Gen-Air-Automation `docs/release-gate-rollout.md` before changing required checks or deploying
 this workflow. Releases must wait for backend promotion and notifier completion.
+
+## Standalone background worker
+
+The independent NestJS worker now lives in the
+[Gen-Air-Worker repository](https://github.com/genairit/Gen-Air-Worker).
+It has its own dependencies, configuration and local RabbitMQ demo. It has no
+database access and is not yet wired into the main application's request paths.

@@ -83,6 +83,7 @@ export const quotationDocumentFixture = (
     ruleConfiguration: configuration.rules,
     ruleConfigFingerprint: configuration.fingerprint,
     createdById: randomUUID(),
+    issuerName: 'דנה כהן',
     updatedById: randomUUID(),
     approvedById: null,
     approvedAt: null,
