@@ -16,6 +16,11 @@ import {
 } from './dto/save-quotation.dto';
 
 import {
+  hasPermission,
+  assertPermissions,
+} from '@Utilities/permission.utility';
+
+import {
   decodeQuotationCursor,
   encodeQuotationCursor,
 } from './utilities/quotation-cursor.utility';
@@ -61,7 +66,6 @@ import { Quotation } from './entities/quotation.entity';
 import { UserService } from '@Modules/user/user.service';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { QuotationRepository } from './quotation.repository';
-import { hasPermission, assertPermissions } from '@Utilities/permission.utility';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import type { GetQuotationsDto } from './dto/get-quotations.dto';
 import { DEFAULT_VAT_RATE } from './constants/quotation.constant';
@@ -70,18 +74,18 @@ import type { IQuotation } from './interfaces/quotation.interface';
 import type { DeleteQuotationDto } from './dto/delete-quotation.dto';
 import { CustomerService } from '@Modules/customer/customer.service';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
+import { UserRoleService } from '@Modules/user-role/user-role.service';
 import type { SetApartmentLinksDto } from './dto/set-apartment-links.dto';
 import { QuotationSelectionService } from './quotation-selection.service';
 import type { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
-import { toProjectQuotationView } from './utilities/quotation-sharing.utility';
-import { UserRoleService } from '@Modules/user-role/user-role.service';
 import type { IQuotationSalesAgent } from './interfaces/quotation.interface';
+import { toProjectQuotationView } from './utilities/quotation-sharing.utility';
 import { quotationPaymentIssues } from './utilities/quotation-payment.utility';
 import type { GetProjectQuotationsDto } from './dto/get-project-quotations.dto';
 import { resolveQuotationBrandGroups } from './utilities/quotation-brand.utility';
-import { QUOTATION_SHARING_MESSAGES } from './constants/quotation-sharing.constant';
 import { salesAgentDisplayName } from './utilities/quotation-sales-agent.utility';
+import { QUOTATION_SHARING_MESSAGES } from './constants/quotation-sharing.constant';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';

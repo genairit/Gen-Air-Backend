@@ -3,10 +3,13 @@ import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Sequelize } from 'sequelize-typescript';
+import { UserService } from '@Modules/user/user.service';
 import { setTimeout as wait } from 'node:timers/promises';
 import { ProjectService } from '@Modules/project/project.service';
 import { ProviderNames } from '@Providers/database/provider-names';
 import { CustomerService } from '@Modules/customer/customer.service';
+import { authorizedUser } from '../src/testing/authorization.fixture';
+import { UserRoleService } from '@Modules/user-role/user-role.service';
 import { QuotationService } from '@Modules/quotation/quotation.service';
 import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { QuotationRepository } from '@Modules/quotation/quotation.repository';
@@ -39,6 +42,7 @@ import { QuestionnaireSubmission } from '@Modules/questionnaire-submission/entit
 const actor = randomUUID(),
   otherActor = randomUUID(),
   customerId = randomUUID();
+const quotationActor = { ...authorizedUser(), id: actor };
 const customer = { id: customerId, paymentTerms: 'prepaid' };
 const databaseUrl = process.env.QUOTATION_TEST_DATABASE_URL;
 if (!databaseUrl || !databaseUrl.includes('127.0.0.1')) {
@@ -75,6 +79,8 @@ const providers = [
   QuotationRuleRepository,
   DatabaseTransactionService,
   { provide: ProviderNames.SEQUELIZE, useValue: sequelize },
+  { provide: UserService, useValue: {} },
+  { provide: UserRoleService, useValue: {} },
   {
     provide: CustomerService,
     useValue: { getById: () => Promise.resolve(customer) },
@@ -153,7 +159,7 @@ const withLine = async (
   changes: Partial<CatalogueItem> = {},
 ): Promise<{ quote: IQuotationView; catalogue: CatalogueItem }> => {
   const catalogue = await CatalogueItem.create(itemAttributes(changes));
-  const quote = await quotationService().create({ customerId }, actor);
+  const quote = await quotationService().create({ customerId }, quotationActor);
   const input = payload(quote);
   input.sections = [
     {
@@ -176,7 +182,7 @@ const withLine = async (
     },
   ];
   return {
-    quote: await quotationService().save(quote.id, input, actor),
+    quote: await quotationService().save(quote.id, input, quotationActor),
     catalogue,
   };
 };
@@ -238,6 +244,7 @@ beforeAll(async () => {
     'migrations/2026-11-09-quotation-brand-tabs.sql',
     'migrations/2026-11-09-quotation-project-links.sql',
     'migrations/2026-11-10-quotation-cancellation.sql',
+    'migrations/2026-11-10-add-quotation-sales-agent.sql',
   ]) {
     await sequelize.query(
       await readFile(join(process.cwd(), migration), 'utf8'),
@@ -309,13 +316,19 @@ describe('Quotation status counts on real PostgreSQL', () => {
       Array.from({ length: count }, () => status),
     );
     for (const status of statuses) {
-      const quote = await quotationService().create({ customerId }, actor);
+      const quote = await quotationService().create(
+        { customerId },
+        quotationActor,
+      );
       await Quotation.update(
         { brand: search, brands: [search], status },
         { where: { id: quote.id } },
       );
     }
-    const deleted = await quotationService().create({ customerId }, actor);
+    const deleted = await quotationService().create(
+      { customerId },
+      quotationActor,
+    );
     await Quotation.update(
       { brand: search, brands: [search], status: QUOTATION_STATUS.APPROVED },
       { where: { id: deleted.id } },
@@ -354,7 +367,10 @@ describe('Quotation status counts on real PostgreSQL', () => {
     await sequelize.query('INSERT INTO projects(id,name) VALUES($id,$name)', {
       bind: { id: relatedProjectId, name: projectName },
     });
-    const quote = await quotationService().create({ customerId }, actor);
+    const quote = await quotationService().create(
+      { customerId },
+      quotationActor,
+    );
     const brand = `brand-${randomUUID()}`;
     await Quotation.update(
       { brand, brands: [brand], customerId: relatedCustomerId },
@@ -395,7 +411,10 @@ describe('Quotation status counts on real PostgreSQL', () => {
       `${prefix}XYsuffix`,
       `${prefix}other_suffix`,
     ]) {
-      const quote = await quotationService().create({ customerId }, actor);
+      const quote = await quotationService().create(
+        { customerId },
+        quotationActor,
+      );
       await Quotation.update(
         { brand, brands: [brand] },
         { where: { id: quote.id } },
@@ -425,7 +444,10 @@ describe('Quotation status counts on real PostgreSQL', () => {
 
 describe('Quotation aggregate on real PostgreSQL', () => {
   test('customer-first creation persists defaults and empty note; no project required', async () => {
-    const quote = await quotationService().create({ customerId }, actor);
+    const quote = await quotationService().create(
+      { customerId },
+      quotationActor,
+    );
     expect(quote).toMatchObject({
       customerId,
       projectId: null,
@@ -442,8 +464,8 @@ describe('Quotation aggregate on real PostgreSQL', () => {
   });
   test('concurrent creation allocates different numbers', async () => {
     const quotes = await Promise.all([
-      quotationService().create({ customerId }, actor),
-      quotationService().create({ customerId }, actor),
+      quotationService().create({ customerId }, quotationActor),
+      quotationService().create({ customerId }, quotationActor),
     ]);
     expect(new Set(quotes.map((quote) => quote.number)).size).toBe(2);
   });
@@ -456,7 +478,11 @@ describe('Quotation aggregate on real PostgreSQL', () => {
       id: randomUUID(),
       location: 'מטבח',
     });
-    const saved = await quotationService().save(quote.id, input, actor);
+    const saved = await quotationService().save(
+      quote.id,
+      input,
+      quotationActor,
+    );
     await CatalogueItem.update(
       { price: '999', description: 'מחירון השתנה' },
       { where: { id: catalogue.id } },
@@ -479,18 +505,22 @@ describe('Quotation aggregate on real PostgreSQL', () => {
       total: '11.81',
     });
     const input = { ...payload(quote), discountPercent: '10' };
-    const discounted = await quotationService().save(quote.id, input, actor);
+    const discounted = await quotationService().save(
+      quote.id,
+      input,
+      quotationActor,
+    );
     expect(discounted.totals.pretax).toBe('9.01');
     const target = await quotationService().save(
       quote.id,
       { ...payload(discounted), targetPretaxAmount: '7.00' },
-      actor,
+      quotationActor,
     );
     expect(target.totals.total).toBe('8.26');
     const zero = await quotationService().save(
       quote.id,
       { ...payload(target), targetPretaxAmount: '0' },
-      actor,
+      quotationActor,
     );
     expect(zero.totals.total).toBe('0.00');
   });
@@ -501,7 +531,7 @@ describe('Quotation aggregate on real PostgreSQL', () => {
       quotationService().save(
         quote.id,
         { ...input, internalNotes: 'one' },
-        actor,
+        quotationActor,
       ),
       quotationService().save(
         quote.id,
@@ -527,7 +557,7 @@ describe('Quotation aggregate on real PostgreSQL', () => {
     const preserved = await quotationService().save(
       quote.id,
       payload(quote),
-      actor,
+      quotationActor,
     );
     expect(preserved.sections[0].items[0].catalogueItemId).toBe(catalogue.id);
     const input = payload(preserved);
@@ -536,12 +566,12 @@ describe('Quotation aggregate on real PostgreSQL', () => {
       id: randomUUID(),
     });
     await expect(
-      quotationService().save(quote.id, input, actor),
+      quotationService().save(quote.id, input, quotationActor),
     ).rejects.toMatchObject({ status: 400 });
   });
   test('usage counts new selections once, not autosaves, and isolates actors', async () => {
     const { quote, catalogue } = await withLine();
-    await quotationService().save(quote.id, payload(quote), actor);
+    await quotationService().save(quote.id, payload(quote), quotationActor);
     const usage = await CatalogueItemUsage.findOne({
       where: { userId: actor, catalogueItemId: catalogue.id },
     });
@@ -619,7 +649,7 @@ describe('Quotation aggregate on real PostgreSQL', () => {
     );
     expect(approved.approvedById).toBe(actor);
     await expect(
-      quotationService().save(approved.id, payload(approved), actor),
+      quotationService().save(approved.id, payload(approved), quotationActor),
     ).rejects.toMatchObject({ status: 409 });
     const reopened = await quotationService().transition(
       quote.id,
@@ -701,7 +731,7 @@ describe('Quotation aggregate on real PostgreSQL', () => {
     const saved = await quotationService().save(
       quote.id,
       { ...payload(acknowledged), internalNotes: 'changed' },
-      actor,
+      quotationActor,
     );
     expect(saved.acknowledgedWarnings).toEqual([]);
     expect(saved.warnings.every((warning) => !warning.acknowledged)).toBe(true);
@@ -711,7 +741,7 @@ describe('Quotation aggregate on real PostgreSQL', () => {
     const input = payload(quote);
     input.sections[0].items[0].catalogueItemId = randomUUID();
     await expect(
-      quotationService().save(quote.id, input, actor),
+      quotationService().save(quote.id, input, quotationActor),
     ).rejects.toMatchObject({ status: 400 });
     expect((await quotationService().getById(quote.id)).version).toBe(
       quote.version,
@@ -755,7 +785,11 @@ describe('Review regression coverage', () => {
     const { quote } = await withLine({ price: '123456789012.3456' });
     const input = payload(quote);
     input.sections[0].items[0].quantity = '87654321.4321';
-    const saved = await quotationService().save(quote.id, input, actor);
+    const saved = await quotationService().save(
+      quote.id,
+      input,
+      quotationActor,
+    );
     expect(saved.totals.subtotal).toBe('10821521067063092717.57');
   });
   test('existing line cannot move into an incompatible destination system', async () => {
@@ -766,7 +800,7 @@ describe('Review regression coverage', () => {
     const input = payload(quote);
     input.sections[0].systemType = 'SINGLE';
     await expect(
-      quotationService().save(quote.id, input, actor),
+      quotationService().save(quote.id, input, quotationActor),
     ).rejects.toMatchObject({ status: 400 });
     expect((await quotationService().getById(quote.id)).version).toBe(
       quote.version,
@@ -841,7 +875,7 @@ describe('Review regression coverage', () => {
     input.sections[0].items[0].quotedPrice = '20';
     const completed = { value: false };
     const saving = quotationService()
-      .save(quote.id, input, actor)
+      .save(quote.id, input, quotationActor)
       .then((saved) => {
         completed.value = true;
         return saved;
@@ -860,8 +894,8 @@ describe('Review regression coverage', () => {
     expect(saved.version).toBe(quote.version + 1);
   });
   test('cursor pages expose all saved quotations, joined customer search, status and invalid-cursor errors', async () => {
-    const a = await quotationService().create({ customerId }, actor),
-      b = await quotationService().create({ customerId }, actor);
+    const a = await quotationService().create({ customerId }, quotationActor),
+      b = await quotationService().create({ customerId }, quotationActor);
     const seen = new Set<string>();
     const pages: { cursor: string | null } = { cursor: null };
     do {
@@ -914,7 +948,7 @@ describe('Remaining aggregate write guards', () => {
         input.sections[0].items.push({ ...input.sections[0].items[0] });
       }
       await expect(
-        quotationService().save(quote.id, input, actor),
+        quotationService().save(quote.id, input, quotationActor),
       ).rejects.toMatchObject({ status: 400 });
       expect((await quotationService().getById(quote.id)).version).toBe(
         quote.version,
@@ -927,7 +961,7 @@ describe('Remaining aggregate write guards', () => {
       quotationService().save(
         quote.id,
         { ...payload(quote), brand: 'תדיראן' },
-        actor,
+        quotationActor,
       ),
     ).rejects.toMatchObject({ status: 400 });
     expect((await quotationService().getById(quote.id)).brand).toBe('אלקטרה');
@@ -942,7 +976,7 @@ describe('Remaining aggregate write guards', () => {
           customerId: randomUUID(),
           projectId: randomUUID(),
         },
-        actor,
+        quotationActor,
       ),
     ).rejects.toMatchObject({ status: 400 });
     await expect(
@@ -952,7 +986,10 @@ describe('Remaining aggregate write guards', () => {
         actor,
       ),
     ).rejects.toMatchObject({ status: 409 });
-    const empty = await quotationService().create({ customerId }, actor);
+    const empty = await quotationService().create(
+      { customerId },
+      quotationActor,
+    );
     await expect(
       quotationService().transition(
         empty.id,
@@ -964,8 +1001,8 @@ describe('Remaining aggregate write guards', () => {
   test('same actor selecting two items in reverse order across quotations never deadlocks', async () => {
     const a = await CatalogueItem.create(itemAttributes()),
       b = await CatalogueItem.create(itemAttributes());
-    const one = await quotationService().create({ customerId }, actor),
-      two = await quotationService().create({ customerId }, actor);
+    const one = await quotationService().create({ customerId }, quotationActor),
+      two = await quotationService().create({ customerId }, quotationActor);
     const makeInput = (
       quote: IQuotationView,
       items: CatalogueItem[],
@@ -1018,8 +1055,8 @@ describe('Remaining aggregate write guards', () => {
       });
     try {
       const outcomes = await Promise.allSettled([
-        quotationService().save(one.id, makeInput(one, [a, b]), actor),
-        quotationService().save(two.id, makeInput(two, [b, a]), actor),
+        quotationService().save(one.id, makeInput(one, [a, b]), quotationActor),
+        quotationService().save(two.id, makeInput(two, [b, a]), quotationActor),
       ]);
       expect(outcomes.every((outcome) => outcome.status === 'fulfilled')).toBe(
         true,
@@ -1098,7 +1135,10 @@ describe('Quotation deletion on real PostgreSQL', () => {
           actor,
         ),
       ).rejects.toMatchObject({ status: 404 });
-      const next = await quotationService().create({ customerId }, actor);
+      const next = await quotationService().create(
+        { customerId },
+        quotationActor,
+      );
       expect(next.number).not.toBe(quote.number);
     },
   );
@@ -1136,7 +1176,7 @@ describe('Quotation deletion on real PostgreSQL', () => {
           quotationService().save(
             current.id,
             { ...payload(current), internalNotes: 'concurrent save' },
-            actor,
+            quotationActor,
           ),
         approve: () =>
           quotationService().transition(

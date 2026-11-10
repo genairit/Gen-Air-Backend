@@ -25,6 +25,7 @@ import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-ite
 import type { QuotationSelectionService } from '../modules/quotation/quotation-selection.service';
 import type { IQuotationView } from '../modules/quotation/interfaces/quotation-document.interface';
 import type { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import type { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
 import type { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 import type { IQuotationDocument } from '../modules/quotation/interfaces/quotation-document.interface';
 
@@ -66,6 +67,7 @@ const createService = (
   const selection = mock<QuotationSelectionService>();
   const customers = mock<CustomerService>();
   const projects = mock<ProjectService>();
+  const links = mock<QuotationProjectService>();
   const transactions = mock<DatabaseTransactionService>();
   const users = mock<UserService>();
   const userRoles = mock<UserRoleService>();
@@ -87,6 +89,7 @@ const createService = (
     selection,
     customers,
     projects,
+    links,
     transactions,
     users,
     userRoles,

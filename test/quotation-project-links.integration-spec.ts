@@ -8,6 +8,7 @@ import { Test } from '@nestjs/testing';
 import { QueryTypes } from 'sequelize';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { UserService } from '@Modules/user/user.service';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { Project } from '@Modules/project/entities/project.entity';
@@ -15,6 +16,7 @@ import { ProviderNames } from '@Providers/database/provider-names';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { Customer } from '@Modules/customer/entities/customer.entity';
 import { authorizedUser } from '../src/testing/authorization.fixture';
+import { UserRoleService } from '@Modules/user-role/user-role.service';
 import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { QuotationService } from '@Modules/quotation/quotation.service';
 import { quotationRuleFixture } from '../src/testing/quotation.fixture';
@@ -80,6 +82,11 @@ const requireState = () => {
     fixture: state.fixture,
   };
 };
+
+const quotationActor = (creatorId: string) => ({
+  ...authorizedUser(),
+  id: creatorId,
+});
 
 const apartmentOf = (
   building: Project,
@@ -215,6 +222,8 @@ const createService = async (environment: TProjectTaskEnvironment) => {
       QuotationRuleRepository,
       DatabaseTransactionService,
       { provide: ProviderNames.SEQUELIZE, useValue: environment.sequelize },
+      { provide: UserService, useValue: {} },
+      { provide: UserRoleService, useValue: {} },
       { provide: ProjectService, useValue: environment.projects },
       {
         provide: CustomerService,
@@ -241,7 +250,7 @@ const createSharedQuotation = async () => {
   const { environment, service, fixture } = requireState();
   const quotation = await service.create(
     { customerId: environment.customer.id, projectId: fixture.building.id },
-    environment.creator.id,
+    quotationActor(environment.creator.id),
   );
   await approve(quotation.id);
   return quotation;
@@ -292,7 +301,7 @@ describe('quotation project links on isolated PostgreSQL', () => {
     const { environment, service, fixture } = requireState();
     const quotation = await service.create(
       { customerId: environment.customer.id, projectId: fixture.building.id },
-      environment.creator.id,
+      quotationActor(environment.creator.id),
     );
 
     expect(quotation.primaryProject).toEqual({
@@ -326,11 +335,11 @@ describe('quotation project links on isolated PostgreSQL', () => {
     const { environment, service, fixture } = requireState();
     const draft = await service.create(
       { customerId: environment.customer.id, projectId: fixture.building.id },
-      environment.creator.id,
+      quotationActor(environment.creator.id),
     );
     const standalone = await service.create(
       { customerId: environment.customer.id, projectId: fixture.standalone.id },
-      environment.creator.id,
+      quotationActor(environment.creator.id),
     );
     await approve(standalone.id);
     const approved = await createSharedQuotation();
@@ -550,7 +559,7 @@ describe('quotation project links on isolated PostgreSQL', () => {
       service.save(
         quotation.id,
         savePayload(draft, { projectId: fixture.standalone.id }),
-        environment.creator.id,
+        quotationActor(environment.creator.id),
       ),
     ).rejects.toMatchObject({
       status: 409,
@@ -560,7 +569,7 @@ describe('quotation project links on isolated PostgreSQL', () => {
       service.save(
         quotation.id,
         savePayload(draft, { customerId: fixture.otherCustomerId }),
-        environment.creator.id,
+        quotationActor(environment.creator.id),
       ),
     ).rejects.toMatchObject({
       status: 409,
@@ -569,7 +578,7 @@ describe('quotation project links on isolated PostgreSQL', () => {
     const saved = await service.save(
       quotation.id,
       savePayload(draft, { internalNotes: 'עדכון תוכן' }),
-      environment.creator.id,
+      quotationActor(environment.creator.id),
     );
 
     expect(saved.version).toBe(draft.version + 1);
@@ -581,17 +590,17 @@ describe('quotation project links on isolated PostgreSQL', () => {
     const { environment, service, fixture } = requireState();
     const quotation = await service.create(
       { customerId: environment.customer.id, projectId: fixture.building.id },
-      environment.creator.id,
+      quotationActor(environment.creator.id),
     );
     const moved = await service.save(
       quotation.id,
       savePayload(quotation, { projectId: fixture.standalone.id }),
-      environment.creator.id,
+      quotationActor(environment.creator.id),
     );
     const cleared = await service.save(
       quotation.id,
       savePayload(moved, { projectId: null }),
-      environment.creator.id,
+      quotationActor(environment.creator.id),
     );
 
     expect(moved.primaryProject?.id).toBe(fixture.standalone.id);
