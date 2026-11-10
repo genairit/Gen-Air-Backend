@@ -43,6 +43,7 @@ const DRAFT_STAGE_ID = PROJECT_STATUS_IDS.NOT_STARTED;
 const ORDER_STAGE_ID = 'stage-order';
 const COMPANY_TYPE_ID = 'type-company';
 const PRIVATE_TYPE_ID = 'type-private';
+const BUILDING_TYPE_ID = 'type-building';
 const CUSTOMER_ID = 'customer-1';
 
 const LINKED_CUSTOMER = {
@@ -62,6 +63,12 @@ const PROJECT_TYPES = {
     name: 'לקוחות פרטיים',
     canHaveApartments: false,
     detailFieldSet: PROJECT_DETAIL_FIELD_SETS.PRIVATE_CLIENT,
+  },
+  [BUILDING_TYPE_ID]: {
+    id: BUILDING_TYPE_ID,
+    name: 'בנייה רוויה',
+    canHaveApartments: true,
+    detailFieldSet: PROJECT_DETAIL_FIELD_SETS.COMPANY,
   },
 };
 
@@ -223,6 +230,8 @@ const createService = async () => {
   };
   const projectMemberService = {
     replaceForProject: jest.fn().mockResolvedValue(null),
+    replaceApartmentTeam: jest.fn().mockResolvedValue(null),
+    setApartmentEngineer: jest.fn().mockResolvedValue(null),
     validateAssignments: jest.fn().mockResolvedValue(null),
   };
   const transitionService = { record: jest.fn().mockResolvedValue(null) };
@@ -483,7 +492,9 @@ describe('ProjectService.update site details', () => {
 
     const [, updatedAttributes] = projectRepository.update.mock.calls[0];
 
-    expect(projectTypeService.getById).not.toHaveBeenCalled();
+    expect(projectTypeService.getById).toHaveBeenCalledWith(
+      LEGACY_PROJECT.projectTypeId,
+    );
     expect(updatedAttributes).toMatchObject({ name: 'שם חדש' });
     expect(updatedAttributes).not.toHaveProperty('customerName');
   });
@@ -828,7 +839,7 @@ const BUILDING = {
   ...STORED_INTAKE_PROJECT,
   id: BUILDING_ID,
   code: 'GA-84811',
-  projectTypeId: 'type-building',
+  projectTypeId: BUILDING_TYPE_ID,
   projectType: {
     name: 'בנייה רוויה',
     canHaveApartments: true,
@@ -1038,7 +1049,7 @@ describe('ProjectService apartment customer, creation terms and team', () => {
   it('persists a creation-time team override and validates its assignments', async () => {
     const { service, projectRepository, projectMemberService } =
       await createService();
-    const members = [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }];
+    const members = [{ userId: 'secretary-1', role: USER_ROLES.SECRETARY }];
     projectRepository.findById.mockResolvedValueOnce(BUILDING);
     await service.createApartment(
       BUILDING_ID,
@@ -1209,6 +1220,31 @@ describe('ProjectService customer link', () => {
 });
 
 describe('ProjectService building guards', () => {
+  it('removes a standalone engineer before converting to a residential building', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...STORED_INTAKE_PROJECT,
+      projectType: PROJECT_TYPES[COMPANY_TYPE_ID],
+      members: [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }],
+    });
+
+    await service.update(
+      PROJECT_ID,
+      { projectTypeId: BUILDING_TYPE_ID, members: [] },
+      CREATOR,
+    );
+
+    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+      PROJECT_ID,
+      [],
+      TRANSACTION,
+    );
+    expect(
+      projectMemberService.replaceForProject.mock.invocationCallOrder[0],
+    ).toBeLessThan(projectRepository.update.mock.invocationCallOrder[0]);
+  });
+
   it('refuses to delete a building that still has apartments', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.countLiveApartments.mockResolvedValue(3);
@@ -1360,20 +1396,77 @@ describe('ProjectService apartment contact', () => {
 });
 
 describe('ProjectService apartment team changes', () => {
+  it('honors an explicit null engineer even when legacy members include an engineer', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    await service.update(
+      STORED_APARTMENT.id,
+      {
+        engineerUserId: null,
+        members: [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }],
+      },
+      CREATOR,
+    );
+    expect(projectMemberService.setApartmentEngineer).toHaveBeenCalledWith(
+      STORED_APARTMENT.id,
+      null,
+      TRANSACTION,
+    );
+  });
+
+  it('assigns an apartment engineer without overriding inherited non-engineering roles', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    await service.update(
+      STORED_APARTMENT.id,
+      { engineerUserId: 'engineer-1' },
+      CREATOR,
+    );
+    expect(projectRepository.update.mock.calls[0][1]).not.toHaveProperty(
+      'hasOwnTeam',
+    );
+    expect(projectMemberService.replaceApartmentTeam).not.toHaveBeenCalled();
+    expect(projectMemberService.setApartmentEngineer).toHaveBeenCalledWith(
+      STORED_APARTMENT.id,
+      'engineer-1',
+      TRANSACTION,
+    );
+  });
+
+  it('clears only the apartment engineer when requested', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    await service.update(
+      STORED_APARTMENT.id,
+      { engineerUserId: null },
+      CREATOR,
+    );
+    expect(projectMemberService.replaceApartmentTeam).not.toHaveBeenCalled();
+    expect(projectMemberService.setApartmentEngineer).toHaveBeenCalledWith(
+      STORED_APARTMENT.id,
+      null,
+      TRANSACTION,
+    );
+  });
+
   it('starts an own team when members are assigned', async () => {
     const { service, projectRepository, projectMemberService } =
       await createService();
-    const members = [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }];
+    const members = [{ userId: 'secretary-1', role: USER_ROLES.SECRETARY }];
     projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
     await service.update(STORED_APARTMENT.id, { members }, CREATOR);
     expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
       hasOwnTeam: true,
     });
-    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+    expect(projectMemberService.replaceApartmentTeam).toHaveBeenCalledWith(
       STORED_APARTMENT.id,
       members,
       TRANSACTION,
     );
+    expect(projectMemberService.setApartmentEngineer).not.toHaveBeenCalled();
   });
 
   it('keeps an explicitly empty own team distinct from inheritance', async () => {
@@ -1388,7 +1481,7 @@ describe('ProjectService apartment team changes', () => {
     expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
       hasOwnTeam: true,
     });
-    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+    expect(projectMemberService.replaceApartmentTeam).toHaveBeenCalledWith(
       STORED_APARTMENT.id,
       [],
       TRANSACTION,
@@ -1406,11 +1499,12 @@ describe('ProjectService apartment team changes', () => {
     expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
       hasOwnTeam: false,
     });
-    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+    expect(projectMemberService.replaceApartmentTeam).toHaveBeenCalledWith(
       STORED_APARTMENT.id,
       [],
       TRANSACTION,
     );
+    expect(projectMemberService.setApartmentEngineer).not.toHaveBeenCalled();
   });
 
   it('rejects conflicting inherited-team and own-member changes atomically', async () => {
@@ -1422,13 +1516,13 @@ describe('ProjectService apartment team changes', () => {
         STORED_APARTMENT.id,
         {
           hasOwnTeam: false,
-          members: [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }],
+          members: [{ userId: 'secretary-1', role: USER_ROLES.SECRETARY }],
         },
         CREATOR,
       ),
-    ).rejects.toThrow('cannot also provide its own members');
+    ).rejects.toThrow('cannot also provide its own non-engineering members');
     expect(projectRepository.update).not.toHaveBeenCalled();
-    expect(projectMemberService.replaceForProject).not.toHaveBeenCalled();
+    expect(projectMemberService.replaceApartmentTeam).not.toHaveBeenCalled();
   });
 
   it('does not replace the team when only apartment notes change', async () => {
@@ -1439,7 +1533,7 @@ describe('ProjectService apartment team changes', () => {
     expect(projectRepository.update.mock.calls[0][1]).not.toHaveProperty(
       'hasOwnTeam',
     );
-    expect(projectMemberService.replaceForProject).not.toHaveBeenCalled();
+    expect(projectMemberService.replaceApartmentTeam).not.toHaveBeenCalled();
   });
 
   it('rejects inheritance changes on a standalone project', async () => {
@@ -1450,6 +1544,19 @@ describe('ProjectService apartment team changes', () => {
     ).rejects.toThrow('only be changed for apartments');
     expect(projectRepository.update).not.toHaveBeenCalled();
     expect(projectMemberService.replaceForProject).not.toHaveBeenCalled();
+  });
+
+  it('rejects assigning an engineer directly to a residential building', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(BUILDING);
+    await expect(
+      service.update(
+        BUILDING_ID,
+        { members: [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }] },
+        CREATOR,
+      ),
+    ).rejects.toThrow('Assign engineering workers to apartments');
+    expect(projectRepository.update).not.toHaveBeenCalled();
   });
 
   it.each(['א24', '24/1', '24אב'])(

@@ -243,7 +243,7 @@ Table project_members {
     (project_id, role) [unique]
     user_id
   }
-  Note: 'The team assigned to a project: at most one user per role slot. Apartments normally inherit the building team; a row here for an apartment means it overrides that inheritance.'
+  Note: 'At most one user per role slot. Residential buildings cannot hold engineer rows; apartment engineers are always local. Other apartment roles inherit the building team unless has_own_team is true. The database rejects new residential-building engineer assignments.'
 }
 
 Table project_stage_transitions {

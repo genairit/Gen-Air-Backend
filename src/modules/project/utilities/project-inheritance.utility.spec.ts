@@ -83,6 +83,12 @@ const APARTMENT_MEMBER: IProjectMember = {
   userId: 'engineer-2',
   projectId: APARTMENT.id,
 };
+const BUILDING_SECRETARY: IProjectMember = {
+  ...BUILDING_MEMBER,
+  id: 'building-secretary',
+  userId: 'secretary-1',
+  role: USER_ROLES.SECRETARY,
+};
 const LINKED_CUSTOMER: ICustomer = {
   id: 'apartment-customer',
   name: 'משפחת כהן',
@@ -106,9 +112,9 @@ const LINKED_CUSTOMER: ICustomer = {
 describe('resolveApartment team inheritance', () => {
   it('inherits the current building team without storing it on the apartment', () => {
     const apartment = { ...APARTMENT, hasOwnTeam: false, members: [] };
-    const building = { ...BUILDING, members: [BUILDING_MEMBER] };
+    const building = { ...BUILDING, members: [BUILDING_SECRETARY] };
     expect(resolveApartment(apartment, building).members).toEqual([
-      BUILDING_MEMBER,
+      BUILDING_SECRETARY,
     ]);
     expect(apartment.members).toEqual([]);
   });
@@ -116,13 +122,32 @@ describe('resolveApartment team inheritance', () => {
   it('tracks later changes to the building team while inherited', () => {
     const apartment = { ...APARTMENT, hasOwnTeam: false };
     expect(
-      resolveApartment(apartment, { ...BUILDING, members: [BUILDING_MEMBER] })
-        .members,
-    ).toEqual([BUILDING_MEMBER]);
+      resolveApartment(apartment, {
+        ...BUILDING,
+        members: [BUILDING_SECRETARY],
+      }).members,
+    ).toEqual([BUILDING_SECRETARY]);
     expect(
       resolveApartment(apartment, { ...BUILDING, members: [APARTMENT_MEMBER] })
         .members,
-    ).toEqual([APARTMENT_MEMBER]);
+    ).toEqual([]);
+  });
+
+  it('keeps a local engineer while other roles inherit from the building', () => {
+    const apartment = {
+      ...APARTMENT,
+      hasOwnTeam: false,
+      members: [APARTMENT_MEMBER],
+    };
+    const building = {
+      ...BUILDING,
+      members: [BUILDING_SECRETARY, BUILDING_MEMBER],
+    };
+
+    expect(resolveApartment(apartment, building).members).toEqual([
+      BUILDING_SECRETARY,
+      APARTMENT_MEMBER,
+    ]);
   });
 
   it('preserves an apartment-only team instead of the building team', () => {

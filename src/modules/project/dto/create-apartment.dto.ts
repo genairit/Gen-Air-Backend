@@ -47,6 +47,10 @@ export class CreateApartmentDto extends IntersectionType(
   declare customerId: string;
 
   @IsOptional()
+  @IsUUID()
+  declare engineerUserId?: string;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => AssignProjectMemberDto)
