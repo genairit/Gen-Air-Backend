@@ -183,17 +183,21 @@ afterEach(async () => {
 
 describe('QuotationService card100 payment ownership', () => {
   test('approval rejects conflicting or incomplete staged terms', async () => {
-    const { service, customer, repository, actor } = context();
+    const { service, customer, repository, actor, transaction } = context();
     const quotation = await service.create({ customerId: customer.id }, actor);
     const stages = [
       { percent: '30', text: 'בחתימה' },
       { percent: '70', text: 'במסירה' },
     ];
-    await repository.update(quotation.id, {
-      status: QUOTATION_STATUS.REVIEW,
-      paymentTerms: PAYMENT_TERMS.PREPAID,
-      paymentSchedule: stages,
-    });
+    await repository.update(
+      quotation.id,
+      {
+        status: QUOTATION_STATUS.REVIEW,
+        paymentTerms: PAYMENT_TERMS.PREPAID,
+        paymentSchedule: stages,
+      },
+      transaction,
+    );
     await expect(
       service.transition(
         quotation.id,
@@ -201,10 +205,14 @@ describe('QuotationService card100 payment ownership', () => {
         actor,
       ),
     ).rejects.toThrow('נבחרו גם תנאי תשלום קבועים וגם שלבי תשלום');
-    await repository.update(quotation.id, {
-      paymentTerms: null,
-      paymentSchedule: [{ percent: '30', text: '' }, stages[1]],
-    });
+    await repository.update(
+      quotation.id,
+      {
+        paymentTerms: null,
+        paymentSchedule: [{ percent: '30', text: '' }, stages[1]],
+      },
+      transaction,
+    );
     await expect(
       service.transition(
         quotation.id,
@@ -212,7 +220,11 @@ describe('QuotationService card100 payment ownership', () => {
         actor,
       ),
     ).rejects.toThrow('יש לתאר את מועד התשלום של כל שלב');
-    await repository.update(quotation.id, { paymentSchedule: stages });
+    await repository.update(
+      quotation.id,
+      { paymentSchedule: stages },
+      transaction,
+    );
     const approved = await service.transition(
       quotation.id,
       { version: quotation.version, status: QUOTATION_STATUS.APPROVED },

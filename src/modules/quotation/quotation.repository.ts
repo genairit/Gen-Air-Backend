@@ -50,7 +50,7 @@ export class QuotationRepository {
     }
 
     const [counts] = await database.query<IQuotationStatusCounts>(
-      `SELECT count(*)::integer AS "all", count(*) FILTER (WHERE q.status=$draft)::integer AS draft, count(*) FILTER (WHERE q.status=$review)::integer AS review, count(*) FILTER (WHERE q.status=$approved)::integer AS approved ${QUOTATION_QUERY.JOINS} WHERE ${QUOTATION_QUERY.SEARCH}`,
+      `SELECT count(*)::integer AS "all", count(*) FILTER (WHERE q.status=$draft)::integer AS draft, count(*) FILTER (WHERE q.status=$review)::integer AS review, count(*) FILTER (WHERE q.status=$approved)::integer AS approved, count(*) FILTER (WHERE q.status=$cancelled)::integer AS cancelled ${QUOTATION_QUERY.JOINS} WHERE ${QUOTATION_QUERY.SEARCH}`,
       {
         type: QueryTypes.SELECT,
         bind: {
@@ -58,6 +58,7 @@ export class QuotationRepository {
           draft: QUOTATION_STATUS.DRAFT,
           review: QUOTATION_STATUS.REVIEW,
           approved: QUOTATION_STATUS.APPROVED,
+          cancelled: QUOTATION_STATUS.CANCELLED,
         },
       },
     );

@@ -184,7 +184,11 @@ beforeAll(async () => {
   await sequelize.authenticate();
   await sequelize.query(
     `CREATE TYPE user_role AS ENUM('system_admin','engineer');
-     CREATE TABLE users(id uuid PRIMARY KEY);
+     CREATE TABLE users(id uuid PRIMARY KEY,role user_role NOT NULL);
+     CREATE TABLE task_status_transitions(
+       id uuid PRIMARY KEY,
+       changed_by_id uuid NOT NULL
+     );
      CREATE TABLE customers(id uuid PRIMARY KEY,name text DEFAULT 'לקוח בדיקה');
      CREATE TABLE project_types(id uuid PRIMARY KEY,can_have_apartments boolean NOT NULL DEFAULT false);
      CREATE TABLE projects(id uuid PRIMARY KEY,name text DEFAULT 'פרויקט בדיקה',code text NOT NULL DEFAULT gen_random_uuid()::text,project_type_id uuid,parent_project_id uuid,customer_id uuid,customer_name text,customer_apartment text,customer_floor smallint,deleted_at timestamptz);
@@ -195,9 +199,11 @@ beforeAll(async () => {
      INSERT INTO permissions VALUES('projects.read','projects','read');
      INSERT INTO role_permissions VALUES('system_admin','projects.read'),('engineer','projects.read');`,
   );
-  await sequelize.query('INSERT INTO users(id) VALUES($actor),($otherActor)', {
-    bind: { actor, otherActor },
-  });
+  await sequelize.query(
+    `INSERT INTO users(id,role)
+     VALUES($actor,'system_admin'),($otherActor,'engineer')`,
+    { bind: { actor, otherActor } },
+  );
   await sequelize.query('INSERT INTO customers(id) VALUES($customerId)', {
     bind: { customerId },
   });
@@ -231,6 +237,7 @@ beforeAll(async () => {
   for (const migration of [
     'migrations/2026-11-09-quotation-brand-tabs.sql',
     'migrations/2026-11-09-quotation-project-links.sql',
+    'migrations/2026-11-10-quotation-cancellation.sql',
   ]) {
     await sequelize.query(
       await readFile(join(process.cwd(), migration), 'utf8'),
@@ -288,6 +295,7 @@ describe('Quotation status counts on real PostgreSQL', () => {
       draft: 0,
       review: 0,
       approved: 0,
+      cancelled: 0,
     });
   });
   test('counts every status beyond the list page and excludes soft-deleted rows', async () => {
@@ -318,6 +326,7 @@ describe('Quotation status counts on real PostgreSQL', () => {
       draft: 12,
       review: 8,
       approved: 4,
+      cancelled: 0,
     });
     const page = await quotationService().list({
       search,
@@ -331,6 +340,7 @@ describe('Quotation status counts on real PostgreSQL', () => {
       draft: 12,
       review: 8,
       approved: 4,
+      cancelled: 0,
     });
   });
   test('search shares number, brand, customer and project matching with the list', async () => {
@@ -368,6 +378,7 @@ describe('Quotation status counts on real PostgreSQL', () => {
         draft: 1,
         review: 0,
         approved: 0,
+        cancelled: 0,
       });
       expect(
         (await quotationService().list({ search })).items.map(
@@ -396,6 +407,7 @@ describe('Quotation status counts on real PostgreSQL', () => {
         draft: 1,
         review: 0,
         approved: 0,
+        cancelled: 0,
       });
       expect((await quotationService().list({ search })).items).toHaveLength(1);
     }
@@ -406,6 +418,7 @@ describe('Quotation status counts on real PostgreSQL', () => {
       draft: 0,
       review: 0,
       approved: 0,
+      cancelled: 0,
     });
   });
 });
@@ -1077,7 +1090,7 @@ describe('Quotation deletion on real PostgreSQL', () => {
       ).toEqual([]);
       expect(
         await quotationService().statusCounts({ search: quote.number }),
-      ).toEqual({ all: 0, draft: 0, review: 0, approved: 0 });
+      ).toEqual({ all: 0, draft: 0, review: 0, approved: 0, cancelled: 0 });
       await expect(
         quotationService().delete(
           quote.id,
@@ -1152,7 +1165,17 @@ describe('Quotation deletion on real PostgreSQL', () => {
       const failure = outcomes.find((outcome) => outcome.status === 'rejected');
       expect(failure?.status).toBe('rejected');
       if (failure?.status === 'rejected') {
-        expect([404, 409]).toContain(failure.reason.status);
+        const reason: unknown = failure.reason;
+        if (
+          typeof reason !== 'object' ||
+          reason === null ||
+          !('status' in reason)
+        ) {
+          throw new Error(
+            'Expected a rejected quotation mutation with an HTTP status',
+          );
+        }
+        expect([404, 409]).toContain(reason.status);
       }
       const stored = await Quotation.findByPk(current.id, { paranoid: false });
       expect(stored?.version).toBe(current.version + 1);

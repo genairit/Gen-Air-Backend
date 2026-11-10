@@ -1,7 +1,6 @@
 import {
   SYSTEM_TYPE,
   EQUIPMENT_ROLE,
-  QUOTATION_STATUS,
   CATALOGUE_STATUS,
   CATALOGUE_PREFERENCE,
   WARNING_SCOPE_VERSION,
@@ -21,6 +20,7 @@ import {
 } from '@Modules/quotation-rule/constants/quotation-rule.constant';
 
 import { quotationPaymentIssues } from './quotation-payment.utility';
+import { hasApprovedQuotationSnapshot } from './quotation-cancellation.utility';
 import type { IQuotationDocument } from '../interfaces/quotation-document.interface';
 import { ruleParameter } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
@@ -83,7 +83,7 @@ export const quotationCircuits = (
   quotation: IQuotationDocument,
 ): IQuotationCircuit[] => {
   if (
-    quotation.status === QUOTATION_STATUS.APPROVED &&
+    hasApprovedQuotationSnapshot(quotation) &&
     quotation.warningScopeVersion === WARNING_SCOPE_VERSION.LEGACY
   ) {
     return legacyQuotationCircuits(quotation);

@@ -2,14 +2,17 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 
 import {
   SaveQuotationDto,
   CreateQuotationDto,
+  CancelQuotationDto,
   QuotationTransitionDto,
   AcknowledgeWarningsDto,
+  QuotationCancellationDto,
 } from './dto/save-quotation.dto';
 
 import {
@@ -31,8 +34,19 @@ import type {
 } from './interfaces/quotation-document.interface';
 
 import {
+  quotationActorName,
+  appendQuotationCancellation,
+  hasApprovedQuotationSnapshot,
+  restoreQuotationCancellation,
+} from './utilities/quotation-cancellation.utility';
+
+import {
   QUOTATION_STATUS,
   WARNING_SCOPE_VERSION,
+  type TQuotationStatus,
+  QUOTATION_CANCELLATION_KIND,
+  type TQuotationCancellationKind,
+  MAX_QUOTATION_CANCELLATION_REASON_LENGTH,
 } from '@Modules/quotation/constants/quotation.constant';
 
 import {
@@ -44,14 +58,17 @@ import Decimal from 'decimal.js';
 import { Transaction } from 'sequelize';
 import { randomUUID } from 'node:crypto';
 import { Quotation } from './entities/quotation.entity';
+import { USER_ROLES } from '@Constants/user-role.constant';
 import { QuotationRepository } from './quotation.repository';
 import { hasPermission } from '@Utilities/permission.utility';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import type { GetQuotationsDto } from './dto/get-quotations.dto';
 import { DEFAULT_VAT_RATE } from './constants/quotation.constant';
 import { ProjectService } from '@Modules/project/project.service';
+import type { IQuotation } from './interfaces/quotation.interface';
 import type { DeleteQuotationDto } from './dto/delete-quotation.dto';
 import { CustomerService } from '@Modules/customer/customer.service';
+import type { IUser } from '@Modules/user/interfaces/user.interface';
 import type { SetApartmentLinksDto } from './dto/set-apartment-links.dto';
 import { QuotationSelectionService } from './quotation-selection.service';
 import type { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
@@ -71,6 +88,21 @@ import { QuotationProjectService } from '@Modules/quotation-project/quotation-pr
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 import { validateRuleConfiguration } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
 import type { IQuotationPrimaryProject } from '@Modules/quotation-project/interfaces/quotation-project.interface';
+
+type TQuotationCancellationRecord = Pick<
+  IQuotation,
+  'id' | 'version' | 'status' | 'cancellationHistory'
+>;
+
+interface ICancelQuotationInput {
+  reason: string;
+  actorId: string;
+  actorName: string;
+  cancelledAt: string;
+  transaction: Transaction;
+  kind: TQuotationCancellationKind;
+  quotation: TQuotationCancellationRecord;
+}
 
 @Injectable()
 export class QuotationService {
@@ -169,17 +201,15 @@ export class QuotationService {
   async getById(id: string): Promise<IQuotationDetailView> {
     return this.transactions.run(async (transaction) => {
       const quotation = await this.document(id, transaction);
-      const configuration =
-        quotation.status === QUOTATION_STATUS.APPROVED
-          ? {
-              rules: quotation.ruleConfiguration,
-              fingerprint: quotation.ruleConfigFingerprint,
-            }
-          : await this.rules.configuration(transaction);
-      const current =
-        quotation.status === QUOTATION_STATUS.APPROVED
-          ? quotation
-          : await this.currentCatalogueState(quotation, transaction);
+      const configuration = hasApprovedQuotationSnapshot(quotation)
+        ? {
+            rules: quotation.ruleConfiguration,
+            fingerprint: quotation.ruleConfigFingerprint,
+          }
+        : await this.rules.configuration(transaction);
+      const current = hasApprovedQuotationSnapshot(quotation)
+        ? quotation
+        : await this.currentCatalogueState(quotation, transaction);
       const primaryProject = await this.links.primaryProject(id, transaction);
       const apartmentLinks = await this.links.apartmentLinks([id], transaction);
       return {
@@ -288,6 +318,8 @@ export class QuotationService {
           number: await this.repository.nextNumber(prefix, transaction),
           customerId: customer.id,
           status: QUOTATION_STATUS.DRAFT,
+          cancelledFromStatus: null,
+          cancellationHistory: [],
           date,
           brand: '',
           brands: [],
@@ -340,7 +372,10 @@ export class QuotationService {
     await this.transactions.run(async (transaction) => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
-      if (current.status === QUOTATION_STATUS.APPROVED) {
+      if (
+        current.status === QUOTATION_STATUS.APPROVED ||
+        current.status === QUOTATION_STATUS.CANCELLED
+      ) {
         throw new ConflictException('יש לפתוח את ההצעה לעריכה לפני שינוי');
       }
 
@@ -409,6 +444,19 @@ export class QuotationService {
     await this.transactions.run(async (transaction) => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
+      const allowed: Record<TQuotationStatus, TQuotationStatus[]> = {
+        [QUOTATION_STATUS.DRAFT]: [QUOTATION_STATUS.REVIEW],
+        [QUOTATION_STATUS.REVIEW]: [
+          QUOTATION_STATUS.DRAFT,
+          QUOTATION_STATUS.APPROVED,
+        ],
+        [QUOTATION_STATUS.APPROVED]: [QUOTATION_STATUS.DRAFT],
+        [QUOTATION_STATUS.CANCELLED]: [],
+      };
+      if (!allowed[current.status].includes(input.status)) {
+        throw new ConflictException('מעבר הסטטוס אינו תקין');
+      }
+
       const configuration = await this.rules.configuration(transaction);
       const checked = {
         ...(await this.currentCatalogueState(current, transaction)),
@@ -418,20 +466,13 @@ export class QuotationService {
             ? current.acknowledgedWarnings
             : [],
       };
-      const allowed: Record<string, string[]> = {
-        draft: [QUOTATION_STATUS.REVIEW],
-        review: [QUOTATION_STATUS.DRAFT, QUOTATION_STATUS.APPROVED],
-        approved: [QUOTATION_STATUS.DRAFT],
-      };
-      if (!allowed[current.status].includes(input.status)) {
-        throw new ConflictException('מעבר הסטטוס אינו תקין');
-      }
       if (
         input.status === QUOTATION_STATUS.REVIEW &&
         !current.sections.some((section) => section.items.length)
       ) {
         throw new BadRequestException('יש להוסיף פריטים לפני בדיקה');
       }
+
       if (input.status === QUOTATION_STATUS.APPROVED) {
         const paymentIssues = quotationPaymentIssues(checked);
         const paymentError = [
@@ -465,10 +506,84 @@ export class QuotationService {
           updatedById: userId,
           approvedById: approved ? userId : null,
           approvedAt: approved ? new Date() : null,
+          cancelledFromStatus: null,
         },
         transaction,
       );
     });
+    return this.getById(id);
+  }
+  async cancel(
+    id: string,
+    input: CancelQuotationDto,
+    user: IUser,
+  ): Promise<IQuotationDetailView> {
+    this.assertCancellationManager(user);
+    const reason = input.reason?.trim();
+    if (!reason || reason.length > MAX_QUOTATION_CANCELLATION_REASON_LENGTH) {
+      throw new BadRequestException(
+        `יש להזין סיבת ביטול עד ${MAX_QUOTATION_CANCELLATION_REASON_LENGTH} תווים`,
+      );
+    }
+    await this.transactions.run(async (transaction) => {
+      const current = await this.document(id, transaction);
+      this.assertVersion(current, input.version);
+
+      if (current.status === QUOTATION_STATUS.CANCELLED) {
+        throw new ConflictException('הצעת המחיר כבר מבוטלת');
+      }
+
+      await this.cancelQuotation({
+        quotation: current,
+        actorId: user.id,
+        actorName: quotationActorName(user),
+        reason,
+        kind: QUOTATION_CANCELLATION_KIND.MANUAL,
+        cancelledAt: new Date().toISOString(),
+        transaction,
+      });
+    });
+
+    return this.getById(id);
+  }
+  async restore(
+    id: string,
+    input: QuotationCancellationDto,
+    user: IUser,
+  ): Promise<IQuotationDetailView> {
+    if (user.role !== USER_ROLES.SYSTEM_ADMIN) {
+      throw new ForbiddenException('רק מנהל מערכת רשאי לשחזר הצעת מחיר');
+    }
+    await this.transactions.run(async (transaction) => {
+      const current = await this.document(id, transaction);
+      this.assertVersion(current, input.version);
+      const restored = restoreQuotationCancellation({
+        history: current.cancellationHistory,
+        restoredById: user.id,
+        restoredByName: quotationActorName(user),
+        restoredAt: new Date().toISOString(),
+      });
+      if (
+        current.status !== QUOTATION_STATUS.CANCELLED ||
+        current.cancelledFromStatus === null ||
+        restored === null ||
+        restored.status !== current.cancelledFromStatus
+      ) {
+        throw new ConflictException('לא ניתן לשחזר את הצעת המחיר');
+      }
+      await this.repository.update(
+        id,
+        {
+          status: restored.status,
+          cancelledFromStatus: null,
+          cancellationHistory: restored.history,
+          updatedById: user.id,
+          version: current.version + 1,
+        },
+        transaction,
+      );
+    });
+
     return this.getById(id);
   }
   async acknowledge(
@@ -482,6 +597,11 @@ export class QuotationService {
       if (current.status === QUOTATION_STATUS.APPROVED) {
         throw new ConflictException('הצעה מאושרת נעולה');
       }
+
+      if (current.status === QUOTATION_STATUS.CANCELLED) {
+        throw new ConflictException('הצעה מבוטלת נעולה');
+      }
+
       const configuration = await this.rules.configuration(transaction);
       const checked = {
         ...(await this.currentCatalogueState(current, transaction)),
@@ -542,11 +662,11 @@ export class QuotationService {
         })),
     }));
     const views = documents.map((document) => {
-      const isApproved = document.status === QUOTATION_STATUS.APPROVED;
-      const current = isApproved
+      const usesApprovedSnapshot = hasApprovedQuotationSnapshot(document);
+      const current = usesApprovedSnapshot
         ? document
         : this.overlayCatalogueStatuses(document, statuses);
-      const rules = isApproved
+      const rules = usesApprovedSnapshot
         ? {
             rules: document.ruleConfiguration,
             fingerprint: document.ruleConfigFingerprint,
@@ -673,6 +793,41 @@ export class QuotationService {
   private assertVersion(current: IQuotationDocument, version: number): void {
     if (current.version !== version) {
       throw new ConflictException('ההצעה עודכנה במקביל. יש לרענן לפני שמירה');
+    }
+  }
+  private async cancelQuotation(input: ICancelQuotationInput): Promise<void> {
+    if (input.quotation.status === QUOTATION_STATUS.CANCELLED) {
+      throw new ConflictException('הצעת המחיר כבר מבוטלת');
+    }
+
+    const fromStatus = input.quotation.status;
+
+    await this.repository.update(
+      input.quotation.id,
+      {
+        status: QUOTATION_STATUS.CANCELLED,
+        cancelledFromStatus: fromStatus,
+        cancellationHistory: appendQuotationCancellation({
+          history: input.quotation.cancellationHistory,
+          fromStatus,
+          cancelledById: input.actorId,
+          cancelledByName: input.actorName,
+          reason: input.reason,
+          kind: input.kind,
+          cancelledAt: input.cancelledAt,
+        }),
+        updatedById: input.actorId,
+        version: input.quotation.version + 1,
+      },
+      input.transaction,
+    );
+  }
+  private assertCancellationManager(user: IUser): void {
+    const canManageCancellation =
+      user.role === USER_ROLES.ENGINEER ||
+      user.role === USER_ROLES.SYSTEM_ADMIN;
+    if (!canManageCancellation) {
+      throw new ForbiddenException('אין הרשאה לבטל או לשחזר הצעות מחיר');
     }
   }
   private async validateProject(
