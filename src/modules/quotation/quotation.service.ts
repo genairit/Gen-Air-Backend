@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 
@@ -485,6 +486,9 @@ export class QuotationService {
     await this.transactions.run(async (transaction) => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
+      if (current.status === QUOTATION_STATUS.CANCELLED) {
+        throw new ConflictException('לא ניתן לעדכן הצעת מחיר מבוטלת');
+      }
       if (input.salesAgentId !== current.salesAgentId) {
         await this.validateSalesAgent(input.salesAgentId, actor);
       }

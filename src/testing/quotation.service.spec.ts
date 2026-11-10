@@ -137,6 +137,21 @@ describe('eligible quotation sales agents', () => {
 });
 
 describe('approved quotation sales-agent updates', () => {
+  test('rejects changes to cancelled quotations before looking up an employee', async () => {
+    const quotation = approvedQuotation({ status: QUOTATION_STATUS.CANCELLED });
+    const { service, repository, users } = createService(quotation);
+
+    await expect(
+      service.updateSalesAgent(
+        quotationId,
+        { version: quotation.version, salesAgentId },
+        actorWithEmployeeRead,
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(users.findById.mock.calls).toHaveLength(0);
+    expect(repository.update.mock.calls).toHaveLength(0);
+  });
+
   test('rejects assignment without employee read access before looking up an ID', async () => {
     const quotation = approvedQuotation();
     const { service, repository, users } = createService(quotation);
@@ -153,7 +168,7 @@ describe('approved quotation sales-agent updates', () => {
   });
 
   test('rejects create and save assignment without employee read access', async () => {
-    const quotation = approvedQuotation();
+    const quotation = approvedQuotation({ status: QUOTATION_STATUS.DRAFT });
     const { service, repository, users } = createService(quotation);
 
     await expect(

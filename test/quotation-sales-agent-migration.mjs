@@ -7,18 +7,25 @@ const purchasingMigration = new URL(
   '../migrations/2026-11-09-add-purchasing-execution-manager-role.sql',
   import.meta.url,
 );
+const cancellationMigration = new URL(
+  '../migrations/2026-11-10-quotation-cancellation.sql',
+  import.meta.url,
+);
 const salesAgentMigration = new URL(
   '../migrations/2026-11-10-add-quotation-sales-agent.sql',
   import.meta.url,
 );
 
-test('sales-agent migration composes with purchasing and preserves quotation links', async () => {
+test('sales-agent migration composes with purchasing, cancellation and quotation links', async () => {
   const database = new PGlite();
   try {
     await database.exec(`
       CREATE TYPE public.user_role AS ENUM ('system_admin', 'engineer');
       CREATE TABLE public.users (id uuid PRIMARY KEY);
-      CREATE TABLE public.quotations (id uuid PRIMARY KEY);
+      CREATE TABLE public.quotations (
+        id uuid PRIMARY KEY,
+        status varchar(20) NOT NULL DEFAULT 'draft'
+      );
       CREATE TABLE public.quotation_projects (
         quotation_id uuid NOT NULL REFERENCES public.quotations(id),
         project_id uuid NOT NULL,
@@ -31,10 +38,13 @@ test('sales-agent migration composes with purchasing and preserves quotation lin
     `);
 
     const purchasing = await readFile(purchasingMigration, 'utf8');
+    const cancellation = await readFile(cancellationMigration, 'utf8');
     const salesAgent = await readFile(salesAgentMigration, 'utf8');
     await database.exec(purchasing);
+    await database.exec(cancellation);
     await database.exec(salesAgent);
     await database.exec(purchasing);
+    await database.exec(cancellation);
     await database.exec(salesAgent);
 
     const roles = await database.query(`
@@ -59,7 +69,13 @@ test('sales-agent migration composes with purchasing and preserves quotation lin
     `);
     assert.deepEqual(
       columns.rows.map(({ column_name }) => column_name),
-      ['id', 'sales_agent_id'],
+      [
+        'id',
+        'status',
+        'cancelled_from_status',
+        'cancellation_history',
+        'sales_agent_id',
+      ],
     );
     const grants = await database.query(
       `SELECT count(*)::int AS count FROM role_permissions WHERE role = 'sales_agent'`,
