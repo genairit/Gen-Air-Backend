@@ -15,16 +15,17 @@ import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from '@Guards/auth.guard';
-import { QuotationService } from './quotation.service';
 import { AuthService } from '@Modules/auth/auth.service';
-import { QuotationController } from './quotation.controller';
-import { QUOTATION_STATUS } from './constants/quotation.constant';
-import { authorizedUser } from '../../testing/authorization.fixture';
+import { authorizedUser } from '../authorization.fixture';
+import { QuotationService } from '../../modules/quotation/quotation.service';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
+import { QuotationController } from '../../modules/quotation/quotation.controller';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
+import { QUOTATION_STATUS } from '../../modules/quotation/constants/quotation.constant';
 import { CatalogueItemController } from '@Modules/catalogue-item/catalogue-item.controller';
 import { QuotationRuleController } from '@Modules/quotation-rule/quotation-rule.controller';
+import type { IQuotationDetailView } from '../../modules/quotation/interfaces/quotation-document.interface';
 
 const id = randomUUID(),
   customerId = randomUUID();
@@ -33,14 +34,30 @@ const state: { app: INestApplication<Server> | null; actor: IAuthorizedUser } =
 const quotation = {
   list: jest.fn(() => Promise.resolve({ items: [], nextCursor: null })),
   statusCounts: jest.fn(() =>
-    Promise.resolve({ all: 4, draft: 2, review: 1, approved: 1 }),
+    Promise.resolve({ all: 5, draft: 2, review: 1, approved: 1, cancelled: 1 }),
   ),
+  salesAgents: jest.fn(() => Promise.resolve([])),
   getById: jest.fn(() => Promise.resolve({ id })),
+  getForActor: jest.fn(() => Promise.resolve({ id })),
+  projectDetailsForActor: jest.fn(
+    (detail: IQuotationDetailView, actor: IAuthorizedUser) =>
+      actor.permissions.includes(PERMISSIONS.PROJECTS_READ)
+        ? detail
+        : { ...detail, primaryProject: null, apartmentLinks: [] },
+  ),
   create: jest.fn(() => Promise.resolve({ id })),
   save: jest.fn(() => Promise.resolve({ id })),
+  updateSalesAgent: jest.fn(() => Promise.resolve({ id })),
   delete: jest.fn(() => Promise.resolve()),
   transition: jest.fn(() => Promise.resolve({ id })),
+  cancel: jest.fn(() => Promise.resolve({ id })),
+  restore: jest.fn(() => Promise.resolve({ id })),
   acknowledge: jest.fn(() => Promise.resolve({ id })),
+  listByProject: jest.fn(() =>
+    Promise.resolve({ items: [], total: 0, nextCursor: null }),
+  ),
+  apartmentOptions: jest.fn(() => Promise.resolve({ apartments: [] })),
+  setApartmentLinks: jest.fn(() => Promise.resolve({ id })),
 };
 const catalogue = {
   getById: jest.fn(() => Promise.resolve({ id })),
@@ -78,11 +95,18 @@ const savePayload = () => ({
 const ROUTES: [string, string, PermissionType][] = [
   ['get', '/quotation', PERMISSIONS.QUOTATIONS_READ],
   ['get', '/quotation/status-counts', PERMISSIONS.QUOTATIONS_READ],
+  ['get', '/quotation/sales-agents', PERMISSIONS.QUOTATIONS_READ],
   ['get', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_READ],
+  ['get', `/quotation/project/${id}`, PERMISSIONS.QUOTATIONS_READ],
+  ['get', `/quotation/${id}/apartment-options`, PERMISSIONS.QUOTATIONS_READ],
+  ['put', `/quotation/${id}/apartment-links`, PERMISSIONS.QUOTATIONS_UPDATE],
   ['post', '/quotation', PERMISSIONS.QUOTATIONS_CREATE],
   ['put', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_UPDATE],
+  ['patch', `/quotation/${id}/sales-agent`, PERMISSIONS.QUOTATIONS_UPDATE],
   ['delete', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_DELETE],
   ['post', `/quotation/${id}/review`, PERMISSIONS.QUOTATIONS_APPROVE],
+  ['post', `/quotation/${id}/cancel`, PERMISSIONS.QUOTATIONS_UPDATE],
+  ['post', `/quotation/${id}/restore`, PERMISSIONS.QUOTATIONS_UPDATE],
   ['post', `/quotation/${id}/warnings`, PERMISSIONS.QUOTATIONS_APPROVE],
   ['get', '/catalogue-item', PERMISSIONS.QUOTATIONS_READ],
   ['get', `/catalogue-item/${id}`, PERMISSIONS.QUOTATIONS_READ],
@@ -147,11 +171,33 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       await call(method, path).set('Authorization', 'Bearer valid').expect(403);
     },
   );
-  test.each(ROUTES.filter(([method]) => method === 'get'))(
+  test.each(
+    ROUTES.filter(
+      ([method, path]) =>
+        method === 'get' && path !== '/quotation/sales-agents',
+    ),
+  )(
     '%s %s accepts its precise read grant',
     async (method, path, permission) => {
-      state.actor = { ...authorizedUser(), permissions: [permission] };
+      const projectScoped = [
+        `/quotation/project/${id}`,
+        `/quotation/${id}/apartment-options`,
+      ].includes(path);
+      const permissions = projectScoped
+        ? [permission, PERMISSIONS.PROJECTS_READ]
+        : [permission];
+      state.actor = { ...authorizedUser(), permissions };
       await call(method, path).set('Authorization', 'Bearer valid').expect(200);
+    },
+  );
+  test.each([`/quotation/project/${id}`, `/quotation/${id}/apartment-options`])(
+    '%s rejects a quotation-only grant',
+    async (path) => {
+      state.actor = {
+        ...authorizedUser(),
+        permissions: [PERMISSIONS.QUOTATIONS_READ],
+      };
+      await call('get', path).set('Authorization', 'Bearer valid').expect(403);
     },
   );
   test('status-counts resolves before UUID routes and delegates validated search', async () => {
@@ -164,7 +210,13 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       .query({ search: 'לקוח %_' })
       .set('Authorization', 'Bearer valid')
       .expect(200);
-    expect(response.body).toEqual({ all: 4, draft: 2, review: 1, approved: 1 });
+    expect(response.body).toEqual({
+      all: 5,
+      draft: 2,
+      review: 1,
+      approved: 1,
+      cancelled: 1,
+    });
     expect(quotation.statusCounts).toHaveBeenCalledWith({ search: 'לקוח %_' });
     expect(quotation.getById).not.toHaveBeenCalled();
   });
@@ -199,6 +251,40 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       search: 'x'.repeat(200),
     });
   });
+  test('sales-agents requires employee read access as well as quotation read access', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_READ],
+    };
+
+    await request(server())
+      .get('/quotation/sales-agents')
+      .set('Authorization', 'Bearer valid')
+      .expect(403);
+    expect(quotation.salesAgents).not.toHaveBeenCalled();
+
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.EMPLOYEES_READ],
+    };
+    await request(server())
+      .get('/quotation/sales-agents')
+      .set('Authorization', 'Bearer valid')
+      .expect(403);
+    expect(quotation.salesAgents).not.toHaveBeenCalled();
+
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_READ, PERMISSIONS.EMPLOYEES_READ],
+    };
+
+    await request(server())
+      .get('/quotation/sales-agents')
+      .set('Authorization', 'Bearer valid')
+      .expect(200);
+
+    expect(quotation.salesAgents).toHaveBeenCalledTimes(1);
+  });
   test('valid customer-first POST delegates acting user, no project required', async () => {
     state.actor = {
       ...authorizedUser(),
@@ -209,16 +295,13 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       .set('Authorization', 'Bearer valid')
       .send({ customerId })
       .expect(201);
-    expect(quotation.create).toHaveBeenCalledWith(
-      { customerId },
-      state.actor.id,
-    );
+    expect(quotation.create).toHaveBeenCalledWith({ customerId }, state.actor);
   });
   test.each([
     {},
     { customerId: 'bad' },
     { customerId, sections: [] },
-    { customerId, status: 'approved' },
+    { customerId, status: QUOTATION_STATUS.APPROVED },
   ])('rejects invalid create or forged fields %j', async (body) => {
     state.actor = {
       ...authorizedUser(),
@@ -246,7 +329,7 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       { totals: { total: '1' } },
       { ruleConfigFingerprint: 'fake' },
       { vatRate: '0' },
-      { status: 'approved' },
+      { status: QUOTATION_STATUS.APPROVED },
     ]) {
       await request(server())
         .put(`/quotation/${id}`)
@@ -254,6 +337,29 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
         .send({ ...savePayload(), ...extra })
         .expect(400);
     }
+  });
+  test('valid sales-agent update delegates its versioned nullable association', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_UPDATE],
+    };
+    const salesAgentId = randomUUID();
+
+    await request(server())
+      .patch(`/quotation/${id}/sales-agent`)
+      .set('Authorization', 'Bearer valid')
+      .send({ version: 3, salesAgentId })
+      .expect(200);
+
+    expect(quotation.updateSalesAgent).toHaveBeenCalledWith(
+      id,
+      { version: 3, salesAgentId },
+      state.actor,
+    );
+    expect(quotation.projectDetailsForActor).toHaveBeenCalledWith(
+      { id },
+      state.actor,
+    );
   });
   test.each([
     { version: 0 },
@@ -347,7 +453,7 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
     await request(server())
       .post(`/quotation/${id}/review`)
       .set('Authorization', 'Bearer valid')
-      .send({ version: 1, status: 'approved' })
+      .send({ version: 1, status: QUOTATION_STATUS.APPROVED })
       .expect(403);
     await request(server())
       .post(`/quotation/${id}/warnings`)
@@ -412,7 +518,7 @@ describe('Quotation deletion HTTP contract', () => {
     { version: true },
     { version: 1, deletedAt: '2026-01-01' },
     { version: 1, updatedById: randomUUID() },
-    { version: 1, status: 'approved' },
+    { version: 1, status: QUOTATION_STATUS.APPROVED },
   ])('rejects malformed version or forged fields %j', async (body) => {
     await remove(body).expect(400);
     expect(quotation.delete).not.toHaveBeenCalled();
@@ -439,5 +545,211 @@ describe('Quotation deletion HTTP contract', () => {
     state.actor = { ...authorizedUser(), permissions };
     await remove().expect(403);
     expect(quotation.delete).not.toHaveBeenCalled();
+  });
+});
+
+const shareApartments = (body: object) =>
+  request(server())
+    .put(`/quotation/${id}/apartment-links`)
+    .set('Authorization', 'Bearer valid')
+    .send(body);
+
+describe('Quotation apartment sharing HTTP contract', () => {
+  beforeEach(() => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_UPDATE, PERMISSIONS.PROJECTS_READ],
+    };
+  });
+  test('update grant sets the full apartment list in one request', async () => {
+    const apartmentIds = [randomUUID(), randomUUID()];
+    await shareApartments({ apartmentIds, expectedApartmentIds: [] }).expect(
+      200,
+    );
+    expect(quotation.setApartmentLinks).toHaveBeenCalledWith(id, {
+      apartmentIds,
+      expectedApartmentIds: [],
+    });
+    expect(quotation.save).not.toHaveBeenCalled();
+  });
+  test('an empty list turns sharing off', async () => {
+    await shareApartments({
+      apartmentIds: [],
+      expectedApartmentIds: [],
+    }).expect(200);
+    expect(quotation.setApartmentLinks).toHaveBeenCalledWith(id, {
+      apartmentIds: [],
+      expectedApartmentIds: [],
+    });
+  });
+  test.each([
+    {},
+    { apartmentIds: null },
+    { apartmentIds: 'all' },
+    { apartmentIds: ['not-a-uuid'] },
+    { apartmentIds: [id, id] },
+    { apartmentIds: Array.from({ length: 2001 }, () => randomUUID()) },
+    { apartmentIds: [], expectedApartmentIds: ['not-a-uuid'] },
+    { apartmentIds: [], expectedApartmentIds: [id, id] },
+    { apartmentIds: [], expectedApartmentIds: [], version: 2 },
+    { apartmentIds: [], expectedApartmentIds: [], status: 'draft' },
+  ])('rejects malformed or forged sharing body %j', async (body) => {
+    await shareApartments(body).expect(400);
+    expect(quotation.setApartmentLinks).not.toHaveBeenCalled();
+  });
+  test.each(
+    [
+      [PERMISSIONS.QUOTATIONS_READ],
+      [PERMISSIONS.QUOTATIONS_APPROVE, PERMISSIONS.QUOTATIONS_CREATE],
+      [PERMISSIONS.QUOTATIONS_UPDATE],
+    ].map((permissions) => ({ permissions })),
+  )('read or approve grants cannot edit links: %j', async ({ permissions }) => {
+    state.actor = { ...authorizedUser(), permissions };
+    await shareApartments({
+      apartmentIds: [],
+      expectedApartmentIds: [],
+    }).expect(403);
+    expect(quotation.setApartmentLinks).not.toHaveBeenCalled();
+  });
+  test('project list resolves before UUID routes and validates paging', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_READ, PERMISSIONS.PROJECTS_READ],
+    };
+    await request(server())
+      .get(`/quotation/project/${id}`)
+      .query({ batchSize: 10 })
+      .set('Authorization', 'Bearer valid')
+      .expect(200);
+    expect(quotation.listByProject).toHaveBeenCalledWith(id, { batchSize: 10 });
+    expect(quotation.getById).not.toHaveBeenCalled();
+    for (const query of [
+      { batchSize: 51 },
+      { search: 'x' },
+      { status: 'draft' },
+    ]) {
+      await request(server())
+        .get(`/quotation/project/${id}`)
+        .query(query)
+        .set('Authorization', 'Bearer valid')
+        .expect(400);
+    }
+    await request(server())
+      .get('/quotation/project/not-a-uuid')
+      .set('Authorization', 'Bearer valid')
+      .expect(400);
+  });
+});
+
+describe('Quotation order and cancellation HTTP contract', () => {
+  test('order transition forwards only the selected quotation and status', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_APPROVE],
+    };
+    const body = {
+      version: 3,
+      status: QUOTATION_STATUS.APPROVED,
+    };
+    await request(server())
+      .post(`/quotation/${id}/review`)
+      .set('Authorization', 'Bearer valid')
+      .send(body)
+      .expect(201);
+    expect(quotation.transition).toHaveBeenCalledWith(id, body, state.actor.id);
+  });
+
+  test('manual cancellation and restoration forward version and authenticated actor', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_UPDATE],
+    };
+    const body = { version: 4, reason: 'Project withdrawn' };
+    await request(server())
+      .post(`/quotation/${id}/cancel`)
+      .set('Authorization', 'Bearer valid')
+      .send(body)
+      .expect(201);
+    expect(quotation.cancel).toHaveBeenCalledWith(id, body, state.actor);
+    const restoreBody = { version: 4 };
+    await request(server())
+      .post(`/quotation/${id}/restore`)
+      .set('Authorization', 'Bearer valid')
+      .send(restoreBody)
+      .expect(201);
+    expect(quotation.restore).toHaveBeenCalledWith(
+      id,
+      restoreBody,
+      state.actor,
+    );
+  });
+
+  test.each(['cancel', 'restore'] as const)(
+    '%s response hides linked project metadata without projects.read',
+    async (action) => {
+      const detail = {
+        id,
+        primaryProject: { id: randomUUID(), name: 'Private project' },
+        apartmentLinks: [{ apartmentId: randomUUID(), apartmentNumber: '7' }],
+      };
+      const body =
+        action === 'cancel'
+          ? { version: 4, reason: 'Project withdrawn' }
+          : { version: 4 };
+      quotation[action].mockResolvedValueOnce(detail);
+      state.actor = {
+        ...authorizedUser(),
+        permissions: [PERMISSIONS.QUOTATIONS_UPDATE],
+      };
+
+      const redacted = await request(server())
+        .post(`/quotation/${id}/${action}`)
+        .set('Authorization', 'Bearer valid')
+        .send(body)
+        .expect(201);
+      expect(redacted.body).toEqual({
+        id,
+        primaryProject: null,
+        apartmentLinks: [],
+      });
+      expect(quotation.projectDetailsForActor).toHaveBeenCalledWith(
+        detail,
+        state.actor,
+      );
+
+      quotation[action].mockResolvedValueOnce(detail);
+      state.actor = {
+        ...authorizedUser(),
+        permissions: [PERMISSIONS.QUOTATIONS_UPDATE, PERMISSIONS.PROJECTS_READ],
+      };
+      const projectReader = await request(server())
+        .post(`/quotation/${id}/${action}`)
+        .set('Authorization', 'Bearer valid')
+        .send(body)
+        .expect(201);
+      expect(projectReader.body).toEqual(detail);
+      expect(quotation.projectDetailsForActor).toHaveBeenCalledWith(
+        detail,
+        state.actor,
+      );
+    },
+  );
+
+  test('manual cancellation rejects missing and blank reasons', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_UPDATE],
+    };
+    await request(server())
+      .post(`/quotation/${id}/cancel`)
+      .set('Authorization', 'Bearer valid')
+      .send({ version: 1 })
+      .expect(400);
+    await request(server())
+      .post(`/quotation/${id}/cancel`)
+      .set('Authorization', 'Bearer valid')
+      .send({ version: 1, reason: '   ' })
+      .expect(400);
+    expect(quotation.cancel).not.toHaveBeenCalled();
   });
 });

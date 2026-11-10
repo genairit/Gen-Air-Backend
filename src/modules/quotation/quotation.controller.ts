@@ -3,6 +3,7 @@ import {
   Put,
   Post,
   Body,
+  Patch,
   Param,
   Delete,
   HttpCode,
@@ -14,8 +15,11 @@ import {
 import {
   SaveQuotationDto,
   CreateQuotationDto,
+  CancelQuotationDto,
+  UpdateSalesAgentDto,
   QuotationTransitionDto,
   AcknowledgeWarningsDto,
+  QuotationCancellationDto,
 } from './dto/save-quotation.dto';
 
 import { Query } from '@nestjs/common';
@@ -23,8 +27,11 @@ import { QuotationService } from './quotation.service';
 import { GetQuotationsDto } from './dto/get-quotations.dto';
 import { DeleteQuotationDto } from './dto/delete-quotation.dto';
 import { PERMISSIONS } from '@Constants/authorization.constant';
+import { SetApartmentLinksDto } from './dto/set-apartment-links.dto';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
 import { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
+import { GetProjectQuotationsDto } from './dto/get-project-quotations.dto';
+import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 
@@ -46,35 +53,102 @@ export class QuotationController {
   ): ReturnType<QuotationService['statusCounts']> {
     return this.service.statusCounts(query);
   }
+  @Get('project/:projectId')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ, PERMISSIONS.PROJECTS_READ)
+  listByProject(
+    @Param('projectId', ParseUUIDPipe)
+    projectId: string,
+    @Query()
+    query: GetProjectQuotationsDto,
+  ): ReturnType<QuotationService['listByProject']> {
+    return this.service.listByProject(projectId, query);
+  }
+  @Get(':id/apartment-options')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ, PERMISSIONS.PROJECTS_READ)
+  apartmentOptions(
+    @Param('id', ParseUUIDPipe)
+    id: string,
+  ): ReturnType<QuotationService['apartmentOptions']> {
+    return this.service.apartmentOptions(id);
+  }
+  @Put(':id/apartment-links')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE, PERMISSIONS.PROJECTS_READ)
+  setApartmentLinks(
+    @Param('id', ParseUUIDPipe)
+    id: string,
+    @Body()
+    input: SetApartmentLinksDto,
+  ): ReturnType<QuotationService['setApartmentLinks']> {
+    return this.service.setApartmentLinks(id, input);
+  }
+  @Get('sales-agents')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ, PERMISSIONS.EMPLOYEES_READ)
+  salesAgents(): ReturnType<QuotationService['salesAgents']> {
+    return this.service.salesAgents();
+  }
   @Get(':id')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
   get(
     @Param('id', ParseUUIDPipe)
     id: string,
-  ): ReturnType<QuotationService['getById']> {
-    return this.service.getById(id);
+    @AuthenticatedUser()
+    user: IAuthorizedUser,
+  ): ReturnType<QuotationService['getForActor']> {
+    return this.service.getForActor(id, user);
   }
   @Post()
   @RequirePermissions(PERMISSIONS.QUOTATIONS_CREATE)
-  create(
+  async create(
     @Body()
     input: CreateQuotationDto,
     @AuthenticatedUser()
-    user: IUser,
+    user: IAuthorizedUser,
   ): ReturnType<QuotationService['create']> {
-    return this.service.create(input, user.id);
+    const quotation = await this.service.create(input, user);
+    return this.service.projectDetailsForActor(quotation, user);
   }
   @Put(':id')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE)
-  save(
+  async save(
     @Param('id', ParseUUIDPipe)
     id: string,
     @Body()
     input: SaveQuotationDto,
     @AuthenticatedUser()
-    user: IUser,
+    user: IAuthorizedUser,
   ): ReturnType<QuotationService['save']> {
-    return this.service.save(id, input, user.id);
+    const quotation = await this.service.save(id, input, user);
+    return this.service.projectDetailsForActor(quotation, user);
+  }
+  @Post(':id/cancel')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE)
+  async cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: CancelQuotationDto,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ): ReturnType<QuotationService['cancel']> {
+    const quotation = await this.service.cancel(id, input, user);
+    return this.service.projectDetailsForActor(quotation, user);
+  }
+  @Post(':id/restore')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE)
+  async restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: QuotationCancellationDto,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ): ReturnType<QuotationService['restore']> {
+    const quotation = await this.service.restore(id, input, user);
+    return this.service.projectDetailsForActor(quotation, user);
+  }
+  @Patch(':id/sales-agent')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE)
+  async updateSalesAgent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: UpdateSalesAgentDto,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ): ReturnType<QuotationService['updateSalesAgent']> {
+    const quotation = await this.service.updateSalesAgent(id, input, user);
+    return this.service.projectDetailsForActor(quotation, user);
   }
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -88,26 +162,28 @@ export class QuotationController {
   }
   @Post(':id/review')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_APPROVE)
-  transition(
+  async transition(
     @Param('id', ParseUUIDPipe)
     id: string,
     @Body()
     input: QuotationTransitionDto,
     @AuthenticatedUser()
-    user: IUser,
+    user: IAuthorizedUser,
   ): ReturnType<QuotationService['transition']> {
-    return this.service.transition(id, input, user.id);
+    const quotation = await this.service.transition(id, input, user.id);
+    return this.service.projectDetailsForActor(quotation, user);
   }
   @Post(':id/warnings')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_APPROVE)
-  acknowledge(
+  async acknowledge(
     @Param('id', ParseUUIDPipe)
     id: string,
     @Body()
     input: AcknowledgeWarningsDto,
     @AuthenticatedUser()
-    user: IUser,
+    user: IAuthorizedUser,
   ): ReturnType<QuotationService['acknowledge']> {
-    return this.service.acknowledge(id, input, user.id);
+    const quotation = await this.service.acknowledge(id, input, user.id);
+    return this.service.projectDetailsForActor(quotation, user);
   }
 }

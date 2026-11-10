@@ -69,4 +69,28 @@ export class ProjectMemberService {
       transaction,
     );
   }
+
+  replaceApartmentTeam(
+    projectId: string,
+    assignments: IProjectMemberAssignment[],
+    transaction: Transaction,
+  ): Promise<void> {
+    return this.projectMemberRepository.replaceApartmentTeam(
+      projectId,
+      assignments,
+      transaction,
+    );
+  }
+
+  setApartmentEngineer(
+    projectId: string,
+    userId: string | null,
+    transaction: Transaction,
+  ): Promise<void> {
+    return this.projectMemberRepository.setApartmentEngineer(
+      projectId,
+      userId,
+      transaction,
+    );
+  }
 }

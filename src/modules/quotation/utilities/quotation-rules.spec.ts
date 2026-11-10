@@ -300,3 +300,20 @@ test('approved legacy quotations retain their original circuit warning acknowled
   quote.warningScopeVersion = WARNING_SCOPE_VERSION.PER_SYSTEM;
   expect(quotationWarnings(quote)[0].acknowledged).toBe(false);
 });
+
+test('cancelled approved legacy quotations retain their original circuit warning acknowledgement', () => {
+  const quote = quotationDocumentFixture([QUOTATION_RULE.MISSING_OUTDOOR]);
+  quote.status = QUOTATION_STATUS.CANCELLED;
+  quote.cancelledFromStatus = QUOTATION_STATUS.APPROVED;
+  quote.warningScopeVersion = WARNING_SCOPE_VERSION.LEGACY;
+  quote.sections[0].systemType = 'VRF';
+  quote.sections[0].items = [
+    { ...quotationItemFixture(), equipmentRole: 'indoor', circuit: 'A' },
+  ];
+  quote.sections.push({ ...quote.sections[0], id: 'second', items: [] });
+
+  const warning = quotationWarnings(quote)[0];
+  expect(quotationCircuits(quote)[0].name).toBe('A');
+  quote.acknowledgedWarnings = [warning.key];
+  expect(quotationWarnings(quote)[0].acknowledged).toBe(true);
+});

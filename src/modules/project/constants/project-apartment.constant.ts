@@ -16,6 +16,7 @@ export const APARTMENT_EDITABLE_FIELDS: readonly (keyof UpdateProjectDto)[] = [
   'stageId',
   'stageNote',
   'members',
+  'engineerUserId',
   'hasOwnTeam',
   'hasOwnLighting',
   'hasGeneralLightingCeilingLowering',

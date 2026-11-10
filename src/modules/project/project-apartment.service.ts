@@ -39,6 +39,7 @@ import {
 
 import { Transaction } from 'sequelize';
 import { ProjectRepository } from './project.repository';
+import { USER_ROLES } from '@Constants/user-role.constant';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { IUser } from '@Modules/user/interfaces/user.interface';
@@ -94,7 +95,12 @@ export class ProjectApartmentService {
       customerId: apartment.customerId,
       apartmentOwnership: apartment.apartmentOwnership ?? null,
       apartmentCredit: apartment.apartmentCredit ?? null,
-      hasOwnTeam: apartment.members != null,
+      hasOwnTeam:
+        apartment.members != null &&
+        (apartment.members.length === 0 ||
+          apartment.members.some(
+            (member) => member.role !== USER_ROLES.ENGINEER,
+          )),
       ...resolveNewApartmentLighting(apartment),
       stageId,
       address: null,
@@ -139,6 +145,12 @@ export class ProjectApartmentService {
         resolveApartment(apartment, building),
       ),
     };
+  }
+
+  listAll(building: IProject, transaction?: Transaction): Promise<IProject[]> {
+    this.assertCanHoldApartments(building);
+
+    return this.projectRepository.findLiveApartments(building.id, transaction);
   }
 
   async countByStage(building: IProject): Promise<IProjectStageCounts> {
@@ -210,15 +222,20 @@ export class ProjectApartmentService {
   private resolveTeamChanges(
     changes: UpdateProjectDto,
   ): TProjectUpdateAttributes {
-    if (changes.hasOwnTeam === false && (changes.members?.length ?? 0) > 0) {
+    const hasOwnTeamMember = changes.members?.some(
+      (member) => member.role !== USER_ROLES.ENGINEER,
+    );
+    if (changes.hasOwnTeam === false && hasOwnTeamMember) {
       throw new BadRequestException(
-        'An inherited apartment team cannot also provide its own members',
+        'An inherited apartment team cannot also provide its own non-engineering members',
       );
     }
     if (changes.hasOwnTeam != null) {
       return { hasOwnTeam: changes.hasOwnTeam };
     }
-    return changes.members != null ? { hasOwnTeam: true } : {};
+    return hasOwnTeamMember || changes.members?.length === 0
+      ? { hasOwnTeam: true }
+      : {};
   }
 
   private resolveContactChanges(

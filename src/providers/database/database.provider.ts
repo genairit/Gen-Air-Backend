@@ -22,6 +22,7 @@ import { RolePermission } from '@Modules/role-permission/entities/role-permissio
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { QuotationSection } from '@Modules/quotation-section/entities/quotation-section.entity';
+import { QuotationProject } from '@Modules/quotation-project/entities/quotation-project.entity';
 import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
@@ -89,6 +90,7 @@ export const DatabaseProvider: Provider = {
       QuestionnaireSubmission,
       Quotation,
       QuotationSection,
+      QuotationProject,
       QuotationItem,
       CatalogueItem,
       CatalogueItemUsage,

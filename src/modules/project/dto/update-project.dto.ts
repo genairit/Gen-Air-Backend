@@ -60,6 +60,10 @@ export class UpdateProjectDto extends IntersectionType(
   @IsBoolean()
   declare hasOwnTeam?: boolean;
 
+  @IsOptional()
+  @IsUUID()
+  declare engineerUserId?: string | null;
+
   @ValidateIf((changes: object) => 'hasOwnLighting' in changes)
   @IsBoolean()
   declare hasOwnLighting?: boolean;

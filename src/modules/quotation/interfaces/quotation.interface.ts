@@ -1,5 +1,10 @@
+import type {
+  TQuotationStatus,
+  TQuotationRestorableStatus,
+  TQuotationCancellationKind,
+} from '../constants/quotation.constant';
+
 import type { IPaymentStage } from './quotation-document.interface';
-import type { TQuotationStatus } from '../constants/quotation.constant';
 import type { PaymentTermsType } from '@Constants/payment-terms.constant';
 import type { IQuotationRule } from '@Modules/quotation-rule/interfaces/quotation-rule.interface';
 
@@ -20,9 +25,9 @@ export interface IQuotation {
   deletedAt: Date | null;
   discountPercent: string;
   approvedAt: Date | null;
-  projectId: string | null;
   status: TQuotationStatus;
   paymentTermsNote: string;
+  salesAgentId: string | null;
   warningScopeVersion: number;
   approvedById: string | null;
   acknowledgedWarnings: string[];
@@ -30,4 +35,25 @@ export interface IQuotation {
   targetPretaxAmount: string | null;
   ruleConfiguration: IQuotationRule[];
   paymentTerms: PaymentTermsType | null;
+  cancellationHistory: IQuotationCancellation[];
+  cancelledFromStatus: TQuotationRestorableStatus | null;
+}
+
+export interface IQuotationCancellation {
+  reason: string;
+  cancelledAt: string;
+  cancelledById: string;
+  cancelledByName: string;
+  restoredAt: string | null;
+  restoredById: string | null;
+  restoredByName: string | null;
+  kind: TQuotationCancellationKind;
+  fromStatus: TQuotationRestorableStatus;
+}
+
+export interface IQuotationSalesAgent {
+  id: string;
+  lastName: string;
+  firstName: string;
+  employeeNumber: string;
 }
