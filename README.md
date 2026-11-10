@@ -75,7 +75,7 @@ this workflow. Releases must wait for backend promotion and notifier completion.
 
 ## Standalone background worker
 
-[`services/gen-air-worker`](services/gen-air-worker/README.md) is an independent
-NestJS service with its own dependencies, configuration and local RabbitMQ demo.
-The whole folder can move into a future worker repository. It has no database
-access and is not yet wired into the main application's request paths.
+The independent NestJS worker now lives in the
+[Gen-Air-Worker repository](https://github.com/genairit/Gen-Air-Worker).
+It has its own dependencies, configuration and local RabbitMQ demo. It has no
+database access and is not yet wired into the main application's request paths.

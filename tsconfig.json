@@ -38,5 +38,5 @@
     "alwaysStrict": true,
     "noFallthroughCasesInSwitch": false
   },
-  "exclude": ["node_modules", "dist", "services"]
+  "exclude": ["node_modules", "dist"]
 }

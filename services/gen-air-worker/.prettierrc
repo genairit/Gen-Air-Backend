@@ -1,8 +1,0 @@
-{
-  "singleQuote": true,
-  "trailingComma": "all",
-  "plugins": [
-    "prettier-plugin-pyramid-imports",
-    "prettier-plugin-pyramid-interface-keys"
-  ]
-}
