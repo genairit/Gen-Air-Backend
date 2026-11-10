@@ -9,8 +9,10 @@ import { randomUUID } from 'node:crypto';
 import { NotFoundException } from '@nestjs/common';
 import { mock, MockProxy } from 'jest-mock-extended';
 import { UserService } from '@Modules/user/user.service';
+import { authorizedUser } from './authorization.fixture';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { quotationDocumentFixture } from './quotation.fixture';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { UserRoleService } from '@Modules/user-role/user-role.service';
@@ -58,7 +60,10 @@ const quotationModel = (row: IQuotation): MockProxy<Quotation> => {
 };
 
 const createContext = async () => {
-  const actor = randomUUID();
+  const actor = {
+    ...authorizedUser([PERMISSIONS.EMPLOYEES_READ]),
+    id: randomUUID(),
+  };
   const customer = makeCustomer();
   const rows = new Map<string, IQuotation>();
   const transaction = mock<Transaction>();
@@ -212,7 +217,7 @@ describe('QuotationService card100 payment ownership', () => {
       service.transition(
         quotation.id,
         { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
-        actor,
+        actor.id,
       ),
     ).rejects.toThrow('נבחרו גם תנאי תשלום קבועים וגם שלבי תשלום');
     await repository.update(
@@ -227,7 +232,7 @@ describe('QuotationService card100 payment ownership', () => {
       service.transition(
         quotation.id,
         { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
-        actor,
+        actor.id,
       ),
     ).rejects.toThrow('יש לתאר את מועד התשלום של כל שלב');
     await repository.update(
@@ -238,7 +243,7 @@ describe('QuotationService card100 payment ownership', () => {
     const approved = await service.transition(
       quotation.id,
       { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
-      actor,
+      actor.id,
     );
     expect(approved.status).toBe(QUOTATION_STATUS.APPROVED);
   });
@@ -264,7 +269,6 @@ describe('QuotationService card100 payment ownership', () => {
       const quotation = await service.create(
         { customerId: customer.id, salesAgentId: agentId },
         actor,
-        true,
       );
 
       expect(quotation.salesAgentId).toBe(agentId);
@@ -282,7 +286,6 @@ describe('QuotationService card100 payment ownership', () => {
         service.create(
           { customerId: customer.id, salesAgentId: randomUUID() },
           actor,
-          true,
         ),
       ).rejects.toThrow('יש לבחור עובד פעיל בתפקיד סוכן מכירות');
 
@@ -312,7 +315,7 @@ describe('QuotationService card100 payment ownership', () => {
             paymentTerms,
             paymentTermsNote: '',
             paymentSchedule: [],
-            createdById: actor,
+            createdById: actor.id,
           }),
           transaction,
         );
@@ -399,7 +402,7 @@ describe('QuotationService card100 payment ownership', () => {
           paymentTerms: input.paymentTerms,
           paymentTermsNote: input.paymentTermsNote,
           paymentSchedule: input.paymentSchedule,
-          updatedById: actor,
+          updatedById: actor.id,
           version: 2,
         }),
         transaction,
@@ -616,7 +619,6 @@ describe('QuotationService card100 payment ownership', () => {
     const created = await service.create(
       { customerId: customer.id, salesAgentId: agentId },
       actor,
-      true,
     );
     users.findById.mockResolvedValue(null);
     users.findByIdIncludingDeleted.mockResolvedValue({
@@ -632,7 +634,10 @@ describe('QuotationService card100 payment ownership', () => {
       updatedAt: new Date(),
     });
 
-    const saved = await service.save(created.id, saveInput(created), actor);
+    const saved = await service.save(created.id, saveInput(created), {
+      ...actor,
+      permissions: [],
+    });
 
     expect(saved.salesAgentId).toBe(agentId);
     expect(saved.salesAgentName).toBe('Sales Engineer · E-1');

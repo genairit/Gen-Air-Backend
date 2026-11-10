@@ -6,9 +6,11 @@ import {
 
 import { mock } from 'jest-mock-extended';
 import type { Transaction } from 'sequelize';
+import { authorizedUser } from './authorization.fixture';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import type { UserService } from '@Modules/user/user.service';
 import { quotationDocumentFixture } from './quotation.fixture';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
 import type { ProjectService } from '@Modules/project/project.service';
 import { QuotationService } from '../modules/quotation/quotation.service';
@@ -28,6 +30,11 @@ import type { IQuotationDocument } from '../modules/quotation/interfaces/quotati
 
 const quotationId = 'quotation-approved';
 const actorId = 'updating-user';
+const actorWithoutEmployeeRead = { ...authorizedUser(), id: actorId };
+const actorWithEmployeeRead = {
+  ...authorizedUser([PERMISSIONS.EMPLOYEES_READ]),
+  id: actorId,
+};
 const salesAgentId = 'eligible-agent';
 const transaction = mock<Transaction>();
 
@@ -135,7 +142,7 @@ describe('approved quotation sales-agent updates', () => {
       service.updateSalesAgent(
         quotationId,
         { version: quotation.version, salesAgentId },
-        actorId,
+        actorWithoutEmployeeRead,
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(users.findById.mock.calls).toHaveLength(0);
@@ -147,7 +154,10 @@ describe('approved quotation sales-agent updates', () => {
     const { service, repository, users } = createService(quotation);
 
     await expect(
-      service.create({ customerId: 'customer', salesAgentId }, actorId),
+      service.create(
+        { customerId: 'customer', salesAgentId },
+        actorWithoutEmployeeRead,
+      ),
     ).rejects.toBeInstanceOf(ForbiddenException);
     await expect(
       service.save(
@@ -158,12 +168,29 @@ describe('approved quotation sales-agent updates', () => {
           projectId: null,
           salesAgentId,
         }),
-        actorId,
+        actorWithoutEmployeeRead,
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(users.findById.mock.calls).toHaveLength(0);
     expect(repository.create.mock.calls).toHaveLength(0);
     expect(repository.update.mock.calls).toHaveLength(0);
+  });
+
+  test('preserves an unchanged historical association without employee read access', async () => {
+    const quotation = approvedQuotation({ salesAgentId });
+    const { service, repository, users } = createService(quotation);
+
+    await service.updateSalesAgent(
+      quotationId,
+      { version: quotation.version, salesAgentId },
+      actorWithoutEmployeeRead,
+    );
+
+    expect(users.findById.mock.calls).toHaveLength(0);
+    expect(repository.update.mock.calls[0][1]).toMatchObject({
+      salesAgentId,
+      updatedById: actorId,
+    });
   });
 
   test.each([
@@ -183,8 +210,7 @@ describe('approved quotation sales-agent updates', () => {
       await service.updateSalesAgent(
         quotationId,
         { version: quotation.version, salesAgentId: next },
-        actorId,
-        next !== null,
+        next === null ? actorWithoutEmployeeRead : actorWithEmployeeRead,
       );
 
       expect(repository.update.mock.calls[0]).toEqual([
@@ -208,7 +234,7 @@ describe('approved quotation sales-agent updates', () => {
       service.updateSalesAgent(
         quotationId,
         { version: quotation.version - 1, salesAgentId },
-        actorId,
+        actorWithoutEmployeeRead,
       ),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(repository.update.mock.calls).toHaveLength(0);
@@ -231,8 +257,7 @@ describe('approved quotation sales-agent updates', () => {
       service.updateSalesAgent(
         quotationId,
         { version: quotation.version, salesAgentId },
-        actorId,
-        true,
+        actorWithEmployeeRead,
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(transactions.run.mock.calls).toHaveLength(1);

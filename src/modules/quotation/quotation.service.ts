@@ -2,7 +2,6 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
-  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 
@@ -62,7 +61,7 @@ import { Quotation } from './entities/quotation.entity';
 import { UserService } from '@Modules/user/user.service';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { QuotationRepository } from './quotation.repository';
-import { hasPermission } from '@Utilities/permission.utility';
+import { hasPermission, assertPermissions } from '@Utilities/permission.utility';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import type { GetQuotationsDto } from './dto/get-quotations.dto';
 import { DEFAULT_VAT_RATE } from './constants/quotation.constant';
@@ -325,12 +324,11 @@ export class QuotationService {
   }
   async create(
     input: CreateQuotationDto,
-    userId: string,
-    canReadEmployees = false,
+    actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
     const customer = await this.customers.getById(input.customerId);
     await this.validateProject(input.customerId, input.projectId ?? null);
-    await this.validateSalesAgent(input.salesAgentId ?? null, canReadEmployees);
+    await this.validateSalesAgent(input.salesAgentId ?? null, actor);
     const id = randomUUID();
     await this.transactions.run(async (transaction) => {
       const configuration = await this.rules.configuration(transaction);
@@ -363,8 +361,8 @@ export class QuotationService {
           internalNotes: '',
           version: 1,
           acknowledgedWarnings: [],
-          createdById: userId,
-          updatedById: userId,
+          createdById: actor.id,
+          updatedById: actor.id,
           approvedById: null,
           approvedAt: null,
         },
@@ -396,8 +394,7 @@ export class QuotationService {
   async save(
     id: string,
     input: SaveQuotationDto,
-    userId: string,
-    canReadEmployees = false,
+    actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
     await this.customers.getById(input.customerId);
     await this.transactions.run(async (transaction) => {
@@ -415,7 +412,7 @@ export class QuotationService {
           : current.salesAgentId;
 
       if (salesAgentId !== current.salesAgentId) {
-        await this.validateSalesAgent(salesAgentId, canReadEmployees);
+        await this.validateSalesAgent(salesAgentId, actor);
       }
 
       await this.assertSharingKeepsContext(current, input, transaction);
@@ -433,7 +430,7 @@ export class QuotationService {
       const snapshots = await this.selection.snapshots({
         current,
         input: { ...input, brands, sections },
-        userId,
+        userId: actor.id,
         transaction,
       });
       const oldIds = current.sections.map((section) => section.id);
@@ -466,7 +463,7 @@ export class QuotationService {
           acknowledgedWarnings: [],
           approvedAt: null,
           approvedById: null,
-          updatedById: userId,
+          updatedById: actor.id,
         },
         transaction,
       );
@@ -479,21 +476,20 @@ export class QuotationService {
   async updateSalesAgent(
     id: string,
     input: UpdateSalesAgentDto,
-    userId: string,
-    canReadEmployees = false,
-  ): Promise<IQuotationView> {
+    actor: IAuthorizedUser,
+  ): Promise<IQuotationDetailView> {
     await this.transactions.run(async (transaction) => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       if (input.salesAgentId !== current.salesAgentId) {
-        await this.validateSalesAgent(input.salesAgentId, canReadEmployees);
+        await this.validateSalesAgent(input.salesAgentId, actor);
       }
 
       await this.repository.update(
         id,
         {
           salesAgentId: input.salesAgentId,
-          updatedById: userId,
+          updatedById: actor.id,
           version: current.version + 1,
         },
         transaction,
@@ -911,17 +907,13 @@ export class QuotationService {
 
   private async validateSalesAgent(
     salesAgentId: string | null,
-    canReadEmployees: boolean,
+    actor: IAuthorizedUser,
   ): Promise<void> {
     if (salesAgentId === null) {
       return;
     }
 
-    if (!canReadEmployees) {
-      throw new ForbiddenException(
-        'You do not have permission to assign an employee',
-      );
-    }
+    assertPermissions(actor, PERMISSIONS.EMPLOYEES_READ);
 
     const salesAgent = await this.users.findById(salesAgentId);
     const hasEligibleRole = salesAgent?.assignedRoles?.includes(

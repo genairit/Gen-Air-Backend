@@ -295,11 +295,7 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       .set('Authorization', 'Bearer valid')
       .send({ customerId })
       .expect(201);
-    expect(quotation.create).toHaveBeenCalledWith(
-      { customerId },
-      state.actor.id,
-      false,
-    );
+    expect(quotation.create).toHaveBeenCalledWith({ customerId }, state.actor);
   });
   test.each([
     {},
@@ -358,8 +354,11 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
     expect(quotation.updateSalesAgent).toHaveBeenCalledWith(
       id,
       { version: 3, salesAgentId },
-      state.actor.id,
-      false,
+      state.actor,
+    );
+    expect(quotation.projectDetailsForActor).toHaveBeenCalledWith(
+      { id },
+      state.actor,
     );
   });
   test.each([
