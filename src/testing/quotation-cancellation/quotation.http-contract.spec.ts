@@ -20,6 +20,7 @@ import { authorizedUser } from '../authorization.fixture';
 import { QuotationService } from '../../modules/quotation/quotation.service';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { QuotationController } from '../../modules/quotation/quotation.controller';
+import { QuotationPdfService } from '../../modules/quotation/quotation-pdf.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { QUOTATION_STATUS } from '../../modules/quotation/constants/quotation.constant';
@@ -59,6 +60,11 @@ const quotation = {
   apartmentOptions: jest.fn(() => Promise.resolve({ apartments: [] })),
   setApartmentLinks: jest.fn(() => Promise.resolve({ id })),
 };
+const pdf = {
+  export: jest
+    .fn()
+    .mockResolvedValue({ filename: 'Q1.pdf', pdf: Buffer.from('%PDF-1.7') }),
+};
 const catalogue = {
   getById: jest.fn(() => Promise.resolve({ id })),
   search: jest.fn(() => Promise.resolve([])),
@@ -97,6 +103,7 @@ const ROUTES: [string, string, PermissionType][] = [
   ['get', '/quotation/status-counts', PERMISSIONS.QUOTATIONS_READ],
   ['get', '/quotation/sales-agents', PERMISSIONS.QUOTATIONS_READ],
   ['get', `/quotation/${id}`, PERMISSIONS.QUOTATIONS_READ],
+  ['post', `/quotation/${id}/pdf`, PERMISSIONS.QUOTATIONS_EXPORT],
   ['get', `/quotation/project/${id}`, PERMISSIONS.QUOTATIONS_READ],
   ['get', `/quotation/${id}/apartment-options`, PERMISSIONS.QUOTATIONS_READ],
   ['put', `/quotation/${id}/apartment-links`, PERMISSIONS.QUOTATIONS_UPDATE],
@@ -136,6 +143,7 @@ beforeAll(async () => {
       { provide: AuthService, useValue: { authenticate } },
       { provide: APP_GUARD, useClass: AuthGuard },
       { provide: QuotationService, useValue: quotation },
+      { provide: QuotationPdfService, useValue: pdf },
       { provide: CatalogueItemService, useValue: catalogue },
       { provide: QuotationRuleService, useValue: rules },
     ],
@@ -200,6 +208,31 @@ describe('Quotation HTTP grants and DTO boundaries', () => {
       await call('get', path).set('Authorization', 'Bearer valid').expect(403);
     },
   );
+  test('PDF export requires both the export grant and project read access', async () => {
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_EXPORT],
+    };
+    await call('post', `/quotation/${id}/pdf`)
+      .set('Authorization', 'Bearer valid')
+      .expect(403);
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.PROJECTS_READ],
+    };
+    await call('post', `/quotation/${id}/pdf`)
+      .set('Authorization', 'Bearer valid')
+      .expect(403);
+    state.actor = {
+      ...authorizedUser(),
+      permissions: [PERMISSIONS.QUOTATIONS_EXPORT, PERMISSIONS.PROJECTS_READ],
+    };
+    const response = await call('post', `/quotation/${id}/pdf`)
+      .set('Authorization', 'Bearer valid')
+      .expect(200);
+    expect(response.headers['content-type']).toMatch('application/pdf');
+    expect(pdf.export).toHaveBeenCalledWith(id);
+  });
   test('status-counts resolves before UUID routes and delegates validated search', async () => {
     state.actor = {
       ...authorizedUser(),

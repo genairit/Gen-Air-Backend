@@ -19,6 +19,7 @@ export interface IQuotation {
   updatedAt: Date;
   brands: string[];
   customerId: string;
+  issuerName: string;
   createdById: string;
   updatedById: string;
   internalNotes: string;

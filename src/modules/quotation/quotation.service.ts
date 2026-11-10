@@ -367,6 +367,7 @@ export class QuotationService {
           version: 1,
           acknowledgedWarnings: [],
           createdById: actor.id,
+          issuerName: `${actor.firstName} ${actor.lastName}`.trim(),
           updatedById: actor.id,
           approvedById: null,
           approvedAt: null,

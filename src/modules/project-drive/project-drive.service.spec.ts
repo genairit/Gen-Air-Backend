@@ -1027,6 +1027,49 @@ describe('ProjectDriveService.upload', () => {
   });
 });
 
+describe('ProjectDriveService.uploadQuotationPdf', () => {
+  it('uploads to the linked project quotations folder and removes its temporary file', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    projectService.getById.mockResolvedValue({
+      ...PROJECT,
+      driveFolderId: PROJECT_FOLDER_ID,
+    });
+    const result = await service.uploadQuotationPdf(
+      PROJECT.id,
+      'הצעת מחיר Q1.pdf',
+      Buffer.from('%PDF-1.7'),
+    );
+    expect(result).toEqual({ id: 'uploaded' });
+    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
+      'הצעות מחיר',
+      PROJECT_FOLDER_ID,
+    );
+    const upload = googleDriveService.uploadFile.mock.calls[0][0];
+    expect(upload).toMatchObject({
+      parentId: 'id:הצעות מחיר',
+      name: 'הצעת מחיר Q1.pdf',
+      mimeType: 'application/pdf',
+    });
+    await expect(access(upload.localPath)).rejects.toThrow();
+  });
+
+  it('removes the temporary file when Drive rejects the upload', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    projectService.getById.mockResolvedValue({
+      ...PROJECT,
+      driveFolderId: PROJECT_FOLDER_ID,
+    });
+    googleDriveService.uploadFile.mockRejectedValue(new Error('upload failed'));
+    await expect(
+      service.uploadQuotationPdf(PROJECT.id, 'Q1.pdf', Buffer.from('%PDF-1.7')),
+    ).rejects.toThrow();
+    const upload = googleDriveService.uploadFile.mock.calls[0][0];
+    await expect(access(upload.localPath)).rejects.toThrow();
+  });
+});
+
 describe('ProjectDriveService file management', () => {
   const fileId = 'plan-file';
   const sourceFolderId = 'source-folder';

@@ -22,9 +22,11 @@ import {
   TFileCountByFolderId,
 } from '@Interfaces/google-drive.interface';
 
-import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { OnEvent } from '@nestjs/event-emitter';
 import { DriveFolderDto } from './dto/drive-folder.dto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { Meta, TypedLogger } from '@Logger/logger.service';
 import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { ProjectService } from '@Modules/project/project.service';
@@ -68,6 +70,34 @@ export class ProjectDriveService {
 
   checkConnection(): Promise<IDriveConnectionResult> {
     return this.googleDriveService.checkConnection();
+  }
+
+  async uploadQuotationPdf(
+    projectId: string,
+    name: string,
+    pdf: Buffer,
+  ): Promise<IDriveItem> {
+    const projectFolderId = await this.resolveProjectFolder(projectId, {});
+    const quotationsFolderId = await this.callDrive(() =>
+      this.googleDriveService.ensureFolder('הצעות מחיר', projectFolderId),
+    );
+    const temporaryDirectory = await mkdtemp(
+      join(tmpdir(), 'genair-quotation-'),
+    );
+    const localPath = join(temporaryDirectory, 'quotation.pdf');
+    try {
+      await writeFile(localPath, pdf);
+      return await this.callDrive(() =>
+        this.googleDriveService.uploadFile({
+          name,
+          localPath,
+          parentId: quotationsFolderId,
+          mimeType: 'application/pdf',
+        }),
+      );
+    } finally {
+      await rm(temporaryDirectory, { recursive: true, force: true });
+    }
   }
 
   @OnEvent(DOMAIN_EVENTS.PROJECT_CREATED)
