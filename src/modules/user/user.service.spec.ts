@@ -251,6 +251,7 @@ describe('UserService.getRoleCounts', () => {
       [USER_ROLES.SECRETARY]: 2,
       [USER_ROLES.SYSTEM_ADMIN]: 0,
       [USER_ROLES.PROJECT_MANAGER]: 0,
+      [USER_ROLES.PURCHASING_EXECUTION_MANAGER]: 0,
       total: 6,
     });
   });
@@ -530,6 +531,31 @@ describe('UserService role membership integrity', () => {
     ).rejects.toThrow(BadRequestException);
     expect(userRepository.update).not.toHaveBeenCalled();
     expect(userRoleAuditService.record).not.toHaveBeenCalled();
+  });
+
+  it('switches into purchasing and execution only after that account role is assigned', async () => {
+    const { service, userRepository, userRoleService, transaction } =
+      await createService();
+    userRoleService.getAssignedRolesByUserIds.mockResolvedValue(
+      new Map([
+        [
+          USER.id,
+          [USER_ROLES.SECRETARY, USER_ROLES.PURCHASING_EXECUTION_MANAGER],
+        ],
+      ]),
+    );
+
+    await service.switchActiveRole(
+      USER.id,
+      USER_ROLES.PURCHASING_EXECUTION_MANAGER,
+      roleAdministrator,
+    );
+
+    expect(userRepository.update).toHaveBeenCalledWith(
+      USER.id,
+      { role: USER_ROLES.PURCHASING_EXECUTION_MANAGER },
+      transaction,
+    );
   });
 
   it('locks final-administrator removal and rejects it when no other admin remains', async () => {

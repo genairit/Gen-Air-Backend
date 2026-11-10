@@ -17,6 +17,7 @@ import { INestApplication, UnauthorizedException } from '@nestjs/common';
 import { baselinePermissions } from '../../testing/authorization.fixture';
 
 const PROJECT_ID = '00000000-0000-4000-8000-000000000001';
+const OTHER_PROJECT_ID = '00000000-0000-4000-8000-000000000004';
 const STAGE_ID = '00000000-0000-4000-8000-000000000002';
 const CUSTOMER_ID = '00000000-0000-4000-8000-000000000003';
 
@@ -31,8 +32,12 @@ const rolesExcept = (allowed: UserRoleType[]): UserRoleType[] =>
 
 describe('Project HTTP permission boundaries', () => {
   const application: { app: INestApplication<Server> | null } = { app: null };
+  const grants = {
+    purchasing: baselinePermissions(USER_ROLES.PURCHASING_EXECUTION_MANAGER),
+  };
   const server = () => application.app!.getHttpServer();
   const projectService = {
+    getById: jest.fn((id: string) => Promise.resolve({ id })),
     create: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
     createApartment: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
     move: jest.fn(() => Promise.resolve({ id: PROJECT_ID })),
@@ -56,7 +61,10 @@ describe('Project HTTP permission boundaries', () => {
               return Promise.resolve({
                 id: token,
                 role: token,
-                permissions: baselinePermissions(token),
+                permissions:
+                  token === USER_ROLES.PURCHASING_EXECUTION_MANAGER
+                    ? grants.purchasing
+                    : baselinePermissions(token),
               });
             },
           },
@@ -70,6 +78,9 @@ describe('Project HTTP permission boundaries', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    grants.purchasing = baselinePermissions(
+      USER_ROLES.PURCHASING_EXECUTION_MANAGER,
+    );
   });
 
   afterAll(async () => {
@@ -83,6 +94,27 @@ describe('Project HTTP permission boundaries', () => {
       .send({})
       .expect(201);
     expect(projectService.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows company-wide project reads for the purchasing role and denies writes after grant revocation', async () => {
+    for (const projectId of [PROJECT_ID, OTHER_PROJECT_ID]) {
+      await request(server())
+        .get(`/project/${projectId}`)
+        .auth(USER_ROLES.PURCHASING_EXECUTION_MANAGER, { type: 'bearer' })
+        .expect(200);
+    }
+    expect(projectService.getById).toHaveBeenCalledTimes(2);
+    await request(server())
+      .patch(`/project/${PROJECT_ID}`)
+      .auth(USER_ROLES.PURCHASING_EXECUTION_MANAGER, { type: 'bearer' })
+      .send({ name: 'Denied' })
+      .expect(403);
+    grants.purchasing = [];
+    await request(server())
+      .get(`/project/${OTHER_PROJECT_ID}`)
+      .auth(USER_ROLES.PURCHASING_EXECUTION_MANAGER, { type: 'bearer' })
+      .expect(403);
+    expect(projectService.getById).toHaveBeenCalledTimes(2);
   });
 
   it.each(rolesExcept([USER_ROLES.SYSTEM_ADMIN]))(

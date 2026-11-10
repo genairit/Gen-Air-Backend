@@ -40,6 +40,14 @@ export const PERMISSIONS = {
   DRIVE_TEMPLATES_UPDATE: 'drive_templates.update',
   DRIVE_TEMPLATES_DELETE: 'drive_templates.delete',
   ADDRESSES_LOOKUP: 'addresses.lookup',
+  BOQ_TEMPLATES_MANAGE: 'boq_templates.manage',
+  SUPPLIER_AGREEMENTS_MANAGE: 'supplier_agreements.manage',
+  PURCHASE_REQUESTS_REVIEW: 'purchase_requests.review',
+  PURCHASE_ORDERS_APPROVE: 'purchase_orders.approve',
+  PURCHASE_ORDERS_SEND: 'purchase_orders.send',
+  EXECUTION_HANDOFFS_MANAGE: 'execution_handoffs.manage',
+  SUBCONTRACTOR_SETTLEMENTS_APPROVE: 'subcontractor_settlements.approve',
+  PAYMENTS_RECORD: 'payments.record',
 } as const;
 
 export type PermissionType = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

@@ -6,6 +6,7 @@ import { UserService } from '@Modules/user/user.service';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { LoginAttemptService } from './login-attempt.service';
 import { PERMISSIONS } from '@Constants/authorization.constant';
+import { assertPermissions } from '@Utilities/permission.utility';
 import { SESSION_DURATION_SECONDS } from './constants/auth.constant';
 import { authorizedUser } from '../../testing/authorization.fixture';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
@@ -149,6 +150,37 @@ describe('AuthService effective permissions', () => {
       user,
     );
     expect(grants.getPermissions).toHaveBeenCalledWith(USER_ROLES.ENGINEER);
+  });
+
+  it('exposes purchasing grants after role switch while denying payment actions', async () => {
+    const { service, user, users, grants } = await createService();
+    users.switchActiveRole.mockResolvedValue({
+      ...user,
+      role: USER_ROLES.PURCHASING_EXECUTION_MANAGER,
+      assignedRoles: [
+        USER_ROLES.SYSTEM_ADMIN,
+        USER_ROLES.PURCHASING_EXECUTION_MANAGER,
+      ],
+    });
+    grants.getPermissions.mockResolvedValue([
+      PERMISSIONS.PURCHASE_ORDERS_APPROVE,
+      PERMISSIONS.EXECUTION_HANDOFFS_MANAGE,
+    ]);
+
+    const switched = await service.switchActiveRole(
+      user,
+      USER_ROLES.PURCHASING_EXECUTION_MANAGER,
+    );
+
+    expect(grants.getPermissions).toHaveBeenCalledWith(
+      USER_ROLES.PURCHASING_EXECUTION_MANAGER,
+    );
+    expect(() =>
+      assertPermissions(switched, PERMISSIONS.PURCHASE_ORDERS_APPROVE),
+    ).not.toThrow();
+    expect(() =>
+      assertPermissions(switched, PERMISSIONS.PAYMENTS_RECORD),
+    ).toThrow();
   });
 
   it('rejects invalid tokens without reading user data or grants', async () => {
