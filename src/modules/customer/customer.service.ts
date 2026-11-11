@@ -131,6 +131,15 @@ export class CustomerService {
     customer: CreateCustomerDto,
     createdById: string,
   ): Promise<ICustomer> {
+    if (
+      customer.primaryContactId &&
+      (customer.contactName || customer.phone || customer.email)
+    ) {
+      throw new BadRequestException(
+        'Choose an existing contact or enter a new contact',
+      );
+    }
+
     await this.assertTaxIdAvailable(customer.taxId);
     try {
       const createdId = await this.transactions.run(async (transaction) => {
@@ -139,6 +148,29 @@ export class CustomerService {
           createdById,
           transaction,
         );
+        if (customer.primaryContactId) {
+          const contact = await CustomerContact.findByPk(
+            customer.primaryContactId,
+            { transaction },
+          );
+          if (!contact) {
+            throw new NotFoundException(
+              `Contact ${customer.primaryContactId} was not found`,
+            );
+          }
+
+          await this.customerRepository.update(
+            created.id,
+            {
+              primaryContactId: contact.id,
+              contactName: contact.name,
+              phone: contact.phone,
+              email: contact.email,
+            },
+            transaction,
+          );
+        }
+
         return created.id;
       });
       return this.getById(createdId);
