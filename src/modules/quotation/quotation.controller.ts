@@ -26,6 +26,7 @@ import {
 import { Query } from '@nestjs/common';
 import { QuotationService } from './quotation.service';
 import { GetQuotationsDto } from './dto/get-quotations.dto';
+import { CloneQuotationDto } from './dto/clone-quotation.dto';
 import { QuotationPdfService } from './quotation-pdf.service';
 import { DeleteQuotationDto } from './dto/delete-quotation.dto';
 import { PERMISSIONS } from '@Constants/authorization.constant';
@@ -122,6 +123,20 @@ export class QuotationController {
     user: IAuthorizedUser,
   ): ReturnType<QuotationService['create']> {
     const quotation = await this.service.create(input, user);
+    return this.service.projectDetailsForActor(quotation, user);
+  }
+  @Post(':id/clone')
+  @RequirePermissions(
+    PERMISSIONS.QUOTATIONS_READ,
+    PERMISSIONS.QUOTATIONS_CREATE,
+    PERMISSIONS.PROJECTS_READ,
+  )
+  async clone(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: CloneQuotationDto,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ): ReturnType<QuotationService['clone']> {
+    const quotation = await this.service.clone(id, input, user);
     return this.service.projectDetailsForActor(quotation, user);
   }
   @Put(':id')
