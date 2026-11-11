@@ -6,6 +6,7 @@ import { User } from '@Modules/user/entities/user.entity';
 import { Sequelize, SequelizeOptions } from 'sequelize-typescript';
 import { Project } from '@Modules/project/entities/project.entity';
 import { Customer } from '@Modules/customer/entities/customer.entity';
+import { Material } from '@Modules/material/entities/material.entity';
 import { UserRole } from '@Modules/user-role/entities/user-role.entity';
 import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { Permission } from '@Modules/permission/entities/permission.entity';
@@ -23,9 +24,11 @@ import { TaskStatusTransition } from '@Modules/task/entities/task-status-transit
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { QuotationSection } from '@Modules/quotation-section/entities/quotation-section.entity';
 import { QuotationProject } from '@Modules/quotation-project/entities/quotation-project.entity';
+import { CatalogueItemMaterial } from '@Modules/material/entities/catalogue-item-material.entity';
 import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
+import { CatalogueItemMaterialRevision } from '@Modules/material/entities/catalogue-item-material-revision.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
 import { QuestionnaireSubmission } from '@Modules/questionnaire-submission/entities/questionnaire-submission.entity';
 import { QuotationExecutionEmail } from '@Modules/quotation-execution-email/entities/quotation-execution-email.entity';
@@ -93,6 +96,9 @@ export const DatabaseProvider: Provider = {
       QuotationProject,
       QuotationItem,
       CatalogueItem,
+      Material,
+      CatalogueItemMaterial,
+      CatalogueItemMaterialRevision,
       CatalogueItemUsage,
       QuotationRule,
       Permission,
