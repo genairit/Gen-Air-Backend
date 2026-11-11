@@ -42,6 +42,22 @@ export const CATALOGUE_PREFERENCE = {
   NEUTRAL: '',
 } as const;
 export const QUOTATION_STATUSES = Object.values(QUOTATION_STATUS);
+export const QUOTATION_BRANDS = [
+  'אלקטרה',
+  'תדיראן',
+  'טורנדו',
+  'סמסונג',
+  'LG',
+  'דייקין',
+  'מיצובישי אלקטריק',
+  'מיצובישי HEAVY',
+  'טושיבה',
+  'הייסנס',
+  'אמקור',
+  'אוקס',
+  'אופיט',
+  "פוג'יסטו",
+] as const;
 export type TQuotationStatus =
   (typeof QUOTATION_STATUS)[keyof typeof QUOTATION_STATUS];
 export type TQuotationRestorableStatus = Exclude<

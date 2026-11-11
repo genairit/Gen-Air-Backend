@@ -27,6 +27,11 @@ import {
 } from './utilities/quotation-cursor.utility';
 
 import {
+  quotationItemSnapshot,
+  validateQuotationAccessories,
+} from './utilities/quotation-selection.utility';
+
+import {
   quotationView,
   quotationWarnings,
 } from './utilities/quotation-calculation.utility';
@@ -67,8 +72,11 @@ import { Quotation } from './entities/quotation.entity';
 import { UserService } from '@Modules/user/user.service';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { QuotationRepository } from './quotation.repository';
+import { CloneQuotationDto } from './dto/clone-quotation.dto';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import type { GetQuotationsDto } from './dto/get-quotations.dto';
+import { CATALOGUE_STATUS } from './constants/quotation.constant';
+import { QUOTATION_BRANDS } from './constants/quotation.constant';
 import { DEFAULT_VAT_RATE } from './constants/quotation.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import type { IQuotation } from './interfaces/quotation.interface';
@@ -90,11 +98,13 @@ import { QUOTATION_SHARING_MESSAGES } from './constants/quotation-sharing.consta
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
+import { isCompatible } from '@Modules/catalogue-item/utilities/catalogue-ranking.utility';
 import type { IQuotationStatusCounts } from './interfaces/quotation-status-counts.interface';
 import { CUSTOMER_PROJECT_KINDS } from '@Modules/project/constants/customer-project.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
+import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
 import { validateRuleConfiguration } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
 import type { IQuotationPrimaryProject } from '@Modules/quotation-project/interfaces/quotation-project.interface';
 
@@ -375,6 +385,220 @@ export class QuotationService {
         transaction,
       );
       await this.links.replacePrimary(id, input.projectId ?? null, transaction);
+    });
+    return this.getById(id);
+  }
+  async clone(
+    sourceId: string,
+    input: CloneQuotationDto,
+    actor: IAuthorizedUser,
+  ): Promise<IQuotationDetailView> {
+    const id = randomUUID();
+    await this.transactions.run(async (transaction) => {
+      const source = await this.document(sourceId, transaction);
+      this.assertVersion(source, input.sourceVersion);
+      const brands = [
+        ...new Set(
+          source.sections
+            .map((section) => section.brand)
+            .filter((brand): brand is string => Boolean(brand)),
+        ),
+      ];
+      if (
+        source.brands.length !== 1 ||
+        brands.length !== 1 ||
+        brands[0] !== source.brands[0]
+      ) {
+        throw new BadRequestException(
+          'ניתן לשכפל לחברה אחרת רק הצעה עם חברת מיזוג אחת',
+        );
+      }
+      const targetBrand = input.targetBrand.trim();
+      if (
+        !QUOTATION_BRANDS.some((brand) => brand === targetBrand) ||
+        targetBrand !== input.targetBrand ||
+        targetBrand === brands[0]
+      ) {
+        throw new BadRequestException('יש לבחור חברת מיזוג אחרת');
+      }
+      const sourceCatalogue = await this.catalogue.getByIds(
+        source.sections.flatMap((section) =>
+          section.items.map((item) => item.catalogueItemId),
+        ),
+        transaction,
+      );
+      const sourceById = new Map(
+        sourceCatalogue.map((item) => [item.id, item]),
+      );
+      const replaceable = source.sections.flatMap((section) =>
+        section.items.filter(
+          (item) =>
+            section.brand !== null &&
+            sourceById.get(item.catalogueItemId)?.brand !== '',
+        ),
+      );
+      const mapping = new Map(
+        input.mappings.map((row) => [
+          row.sourceLineId,
+          row.targetCatalogueItemId,
+        ]),
+      );
+      if (
+        mapping.size !== replaceable.length ||
+        input.mappings.length !== replaceable.length ||
+        replaceable.some((item) => !mapping.has(item.id))
+      ) {
+        throw new BadRequestException('יש לבחור פריט חלופי לכל שורת חברה');
+      }
+      const targets = await this.catalogue.getByIds(
+        [...mapping.values()],
+        transaction,
+      );
+      const targetById = new Map(targets.map((item) => [item.id, item]));
+      const sectionIds = new Map(
+        source.sections.map((section) => [section.id, randomUUID()]),
+      );
+      const lineIds = new Map(
+        source.sections.flatMap((section) =>
+          section.items.map((item) => [item.id, randomUUID()] as const),
+        ),
+      );
+      const snapshots: IQuotationItem[] = [];
+      for (const section of source.sections) {
+        for (const item of section.items) {
+          const sourceItem = sourceById.get(item.catalogueItemId);
+          const mappedId = mapping.get(item.id);
+          if (
+            (section.brand === null && sourceItem && sourceItem.brand !== '') ||
+            (section.brand !== null &&
+              sourceItem &&
+              sourceItem.brand !== '' &&
+              sourceItem.brand !== brands[0])
+          ) {
+            throw new BadRequestException(
+              'הצעת המקור כוללת פריט בחברת מיזוג לא תואמת',
+            );
+          }
+          const sectionId = sectionIds.get(section.id)!;
+          const parentItemId = item.parentItemId
+            ? (lineIds.get(item.parentItemId) ?? null)
+            : null;
+          if (!mappedId) {
+            snapshots.push({
+              ...item,
+              id: lineIds.get(item.id)!,
+              sectionId,
+              parentItemId,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              deletedAt: null,
+            });
+            continue;
+          }
+          const target = targetById.get(mappedId);
+          if (
+            !target ||
+            target.status !== CATALOGUE_STATUS.ACTIVE ||
+            target.brand !== targetBrand ||
+            target.equipmentRole !== item.equipmentRole ||
+            !isCompatible(target, section.systemType) ||
+            (item.equipmentType !== null &&
+              !target.equipmentTypes.includes(item.equipmentType))
+          ) {
+            throw new BadRequestException(
+              `הפריט החלופי לשורה ${item.sku} אינו תואם או אינו זמין`,
+            );
+          }
+          const snapshot = quotationItemSnapshot({
+            item: {
+              ...item,
+              id: lineIds.get(item.id)!,
+              parentItemId,
+              catalogueItemId: target.id,
+              description: target.description,
+              quotedPrice: target.price,
+            },
+            catalogue: target,
+            previous: null,
+            sectionId,
+            displayOrder: item.displayOrder,
+          });
+          snapshots.push({
+            ...snapshot,
+            equipmentType: item.equipmentType ?? snapshot.equipmentType,
+          });
+        }
+      }
+      validateQuotationAccessories(snapshots);
+      await this.validateProject(source.customerId, source.projectId);
+      const configuration = await this.rules.configuration(transaction);
+      const date = new Date().toISOString().slice(0, 10);
+      const prefix = date.slice(2, 7).replace('-', '');
+      await this.transactions.lockKey(
+        `quotation-number:${prefix}`,
+        transaction,
+      );
+      await this.repository.create(
+        {
+          id,
+          ruleConfiguration: configuration.rules,
+          number: await this.repository.nextNumber(prefix, transaction),
+          customerId: source.customerId,
+          salesAgentId: source.salesAgentId,
+          status: QUOTATION_STATUS.DRAFT,
+          cancelledFromStatus: null,
+          cancellationHistory: [],
+          date,
+          brand: targetBrand,
+          brands: [targetBrand],
+          warningScopeVersion: WARNING_SCOPE_VERSION.PER_SYSTEM,
+          paymentTerms: source.paymentTerms,
+          paymentTermsNote: source.paymentTermsNote,
+          paymentSchedule: source.paymentSchedule,
+          discountPercent: '0',
+          targetPretaxAmount: null,
+          vatRate: source.vatRate,
+          internalNotes: source.internalNotes,
+          version: 1,
+          acknowledgedWarnings: [],
+          createdById: actor.id,
+          issuerName: `${actor.firstName} ${actor.lastName}`.trim(),
+          updatedById: actor.id,
+          approvedById: null,
+          approvedAt: null,
+        },
+        transaction,
+      );
+      await this.sections.insert(
+        source.sections.map((section) => ({
+          id: sectionIds.get(section.id)!,
+          quotationId: id,
+          title: section.title,
+          brand: section.brand === null ? null : targetBrand,
+          systemType: section.systemType,
+          displayOrder: section.displayOrder,
+        })),
+        transaction,
+      );
+      await this.items.insert(
+        snapshots.map(({ createdAt, updatedAt, deletedAt, ...item }) => {
+          void createdAt;
+          void updatedAt;
+          void deletedAt;
+          return item;
+        }),
+        transaction,
+      );
+      await this.links.replacePrimary(id, source.projectId, transaction);
+      const apartmentLinks = await this.links.apartmentLinks(
+        [sourceId],
+        transaction,
+      );
+      await this.links.replaceApartmentLinks(
+        id,
+        (apartmentLinks.get(sourceId) ?? []).map((link) => link.apartmentId),
+        transaction,
+      );
     });
     return this.getById(id);
   }
