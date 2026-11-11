@@ -7,18 +7,11 @@ import {
 import {
   IProject,
   IApartmentPage,
-  IProjectContact,
   TResolvedApartment,
   IProjectStageCounts,
   TProjectUpdateAttributes,
   TProjectCreationAttributes,
 } from './interfaces/project.interface';
-
-import {
-  mergeContact,
-  hasContactChanges,
-  findMissingContactFields,
-} from './utilities/project-intake.utility';
 
 import {
   formatApartmentCode,
@@ -29,7 +22,6 @@ import {
   APARTMENT,
   APARTMENT_REQUIRED_FIELDS,
   APARTMENT_EDITABLE_FIELDS,
-  APARTMENT_REQUIRED_CONTACT_FIELDS,
 } from './constants/project-apartment.constant';
 
 import {
@@ -169,7 +161,12 @@ export class ProjectApartmentService {
 
   resolveForRead(project: IProject): IProject | TResolvedApartment {
     if (!project.parentProject) {
-      return project;
+      return {
+        ...project,
+        contactName: null,
+        contactPhone: null,
+        contactRole: null,
+      };
     }
 
     return resolveApartment(project, project.parentProject);
@@ -200,12 +197,10 @@ export class ProjectApartmentService {
       await this.assertApartmentNumberFree(buildingId, requestedNumber);
     }
 
-    const contact = this.resolveContactChanges(apartment, changes);
     const team = this.resolveTeamChanges(changes);
     const lighting = resolveApartmentLightingChanges(changes, apartment);
 
     return {
-      ...contact,
       ...team,
       ...lighting,
       name: changes.name?.trim(),
@@ -236,29 +231,6 @@ export class ProjectApartmentService {
     return hasOwnTeamMember || changes.members?.length === 0
       ? { hasOwnTeam: true }
       : {};
-  }
-
-  private resolveContactChanges(
-    apartment: IProject,
-    changes: UpdateProjectDto,
-  ): Partial<IProjectContact> {
-    if (!hasContactChanges(changes)) {
-      return {};
-    }
-
-    const contact = mergeContact(apartment, changes);
-    const missingFields = findMissingContactFields(
-      contact,
-      APARTMENT_REQUIRED_CONTACT_FIELDS,
-    );
-
-    if (missingFields.length > 0) {
-      throw new BadRequestException(
-        `An apartment needs its contact person: ${missingFields.join(', ')}`,
-      );
-    }
-
-    return contact;
   }
 
   private assertCanHoldApartments(building: IProject): void {

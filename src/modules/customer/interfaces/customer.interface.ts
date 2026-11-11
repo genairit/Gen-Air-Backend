@@ -19,7 +19,6 @@ export interface ICustomer {
   priorityId: string | null;
   contactName: string | null;
   prioritySyncAttempts: number;
-  contacts?: ICustomerContact[];
   prioritySyncedAt: Date | null;
   primaryContactId?: string | null;
   prioritySyncError: string | null;

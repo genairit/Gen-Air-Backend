@@ -71,13 +71,21 @@ describe('customer import transaction boundary', () => {
       transaction,
     );
     expect(repository.create).toHaveBeenCalledWith(
-      { ...customer, paymentTerms: null, createdById: 'creator' },
+      {
+        ...customer,
+        phone: null,
+        email: null,
+        contactName: null,
+        paymentTerms: null,
+        createdById: 'creator',
+      },
       transaction,
     );
-    expect(dependencies.contacts.resolveForImport).toHaveBeenCalledWith(
+    expect(
+      dependencies.contacts.resolveDirectoryForImport,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         name: customer.contactName,
-        customerId: 'created-customer',
       }),
       transaction,
     );

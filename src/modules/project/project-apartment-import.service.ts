@@ -303,22 +303,7 @@ export class ProjectApartmentImportService {
     creator: IUser,
     transaction: Transaction,
   ): Promise<void> {
-    const customerContactId =
-      customer.primaryContactId ??
-      (customer.contactName
-        ? (
-            await this.contacts.resolveDirectoryForImport(
-              {
-                name: customer.contactName,
-                phone: customer.phone,
-                email: customer.email,
-                role: null,
-                createdById: creator.id,
-              },
-              transaction,
-            )
-          ).id
-        : null);
+    const customerContactId = customer.primaryContactId;
     if (customerContactId) {
       await this.contacts.linkDirectoryContactToProject(
         projectId,

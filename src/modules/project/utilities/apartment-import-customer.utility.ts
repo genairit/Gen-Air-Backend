@@ -118,9 +118,11 @@ export const compareApartmentImportCustomer = ({
       }
 
       const normalizedInput = normalizeCustomerComparisonInput(input, mode);
-      const normalizedStored = CUSTOMER_FIELD_NORMALIZERS[mode](
-        customer[field] ?? '',
-      );
+      const stored =
+        field === 'email' || field === 'phone'
+          ? customer.primaryContact?.[field]
+          : customer[field];
+      const normalizedStored = CUSTOMER_FIELD_NORMALIZERS[mode](stored ?? '');
       return normalizedInput !== normalizedStored;
     },
   );

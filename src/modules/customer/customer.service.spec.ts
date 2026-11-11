@@ -182,14 +182,13 @@ describe('CustomerService.create', () => {
       'trusted-user',
     );
 
-    expect(dependencies.contacts.resolveForImport).not.toHaveBeenCalled();
+    expect(
+      dependencies.contacts.resolveDirectoryForImport,
+    ).not.toHaveBeenCalled();
     expect(customerRepository.update).toHaveBeenCalledWith(
       CUSTOMER.id,
       {
         primaryContactId: contact.id,
-        contactName: contact.name,
-        phone: contact.phone,
-        email: contact.email,
       },
       dependencies.transaction,
     );
@@ -233,14 +232,18 @@ describe('CustomerService.create', () => {
     expect(customerRepository.create).toHaveBeenCalledWith(
       {
         ...input,
+        contactName: null,
+        phone: null,
+        email: null,
         paymentTerms: null,
         createdById: 'trusted-user',
       },
       dependencies.transaction,
     );
-    expect(dependencies.contacts.resolveForImport).toHaveBeenCalledWith(
+    expect(
+      dependencies.contacts.resolveDirectoryForImport,
+    ).toHaveBeenCalledWith(
       {
-        customerId: CUSTOMER.id,
         createdById: 'trusted-user',
         name: input.contactName,
         phone: input.phone,
@@ -260,7 +263,9 @@ describe('CustomerService.create', () => {
   it('propagates initial-contact failure to roll back customer creation', async () => {
     const { service, customerRepository, dependencies } = await createService();
     const failure = new Error('contact failed');
-    dependencies.contacts.resolveForImport.mockRejectedValueOnce(failure);
+    dependencies.contacts.resolveDirectoryForImport.mockRejectedValueOnce(
+      failure,
+    );
     await expect(service.create(input, 'trusted-user')).rejects.toBe(failure);
     expect(customerRepository.findById).not.toHaveBeenCalled();
   });
@@ -280,7 +285,9 @@ describe('CustomerService.create', () => {
       { ...withoutContact, createdById: 'trusted-user', paymentTerms: null },
       dependencies.transaction,
     );
-    expect(dependencies.contacts.resolveForImport).not.toHaveBeenCalled();
+    expect(
+      dependencies.contacts.resolveDirectoryForImport,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects an existing registration number before writing', async () => {

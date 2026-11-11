@@ -1014,44 +1014,11 @@ describe('ProjectService.update intake fields', () => {
     expect(updatedAttributes).not.toHaveProperty('addressPlaceId');
   });
 
-  it('lets a legacy project add its contact person without asking for the other intake fields', async () => {
-    const updatedAttributes = await getUpdatedAttributes(
-      CONTACT,
-      STORED_COMPANY_PROJECT,
-    );
-
-    expect(updatedAttributes).toMatchObject(CONTACT);
-  });
-
-  it('requires the whole contact person once a legacy project edits it', async () => {
-    const { service, projectRepository } = await createService();
-    projectRepository.findById.mockResolvedValue(STORED_COMPANY_PROJECT);
-
-    await expect(
-      service.update(PROJECT_ID, { contactName: 'דנה לוי' }, CREATOR),
-    ).rejects.toThrow(
-      new BadRequestException(
-        'Missing contact person details: contactRole, contactPhone',
-      ),
-    );
-  });
-
-  it('changes one contact field and keeps the others', async () => {
+  it('ignores old inline contact fields when updating a project', async () => {
     const updatedAttributes = await getUpdatedAttributes({
       contactPhone: '054-1112233',
     });
-
-    expect(updatedAttributes).toMatchObject({
-      ...CONTACT,
-      contactPhone: '054-1112233',
-    });
-  });
-
-  it('rejects clearing a contact field', async () => {
-    await expectRejection(
-      { contactRole: null },
-      'Missing contact person details: contactRole',
-    );
+    expect(updatedAttributes).not.toHaveProperty('contactPhone');
   });
 
   it('verifies a new address with Google', async () => {
@@ -1471,22 +1438,20 @@ describe('ProjectService.update apartment', () => {
     expect(transitionService.record).not.toHaveBeenCalled();
   });
 
-  it('updates the end customer and contact without asking for building fields', async () => {
+  it('updates the end customer without asking for building fields', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
 
     await service.update(
       STORED_APARTMENT.id,
-      { customerName: 'משפחת לוי', contactPhone: '054-1112233' },
+      { customerName: 'משפחת לוי' },
       CREATOR,
     );
 
     expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
-      ...CONTACT,
       customerFloor: 3,
       customerApartment: '12',
       customerName: 'משפחת לוי',
-      contactPhone: '054-1112233',
     });
   });
 
@@ -1768,13 +1733,14 @@ describe('ProjectService apartment contact', () => {
     expect(projectRepository.create.mock.calls[0][0].contactRole).toBeNull();
   });
 
-  it('rejects clearing the apartment contact mobile', async () => {
+  it('rejects changes to the retired apartment contact mobile', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
 
     await expect(
       service.update(STORED_APARTMENT.id, { contactPhone: null }, CREATOR),
     ).rejects.toThrow('contactPhone');
+    expect(projectRepository.update).not.toHaveBeenCalled();
   });
 });
 

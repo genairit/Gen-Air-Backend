@@ -8,7 +8,7 @@ export const createCustomerDependencyFixtures = () => {
     {},
   );
   const contacts = {
-    resolveForImport: jest.fn().mockResolvedValue({ id: 'contact-1' }),
+    resolveDirectoryForImport: jest.fn().mockResolvedValue({ id: 'contact-1' }),
   };
   const transactions = {
     run: jest.fn((work: (value: Transaction) => Promise<unknown>) =>

@@ -35,7 +35,6 @@ describe('ProjectCustomerDetailsDto', () => {
     ['customerCompanyNumber', '514287938'],
     ['customerAssociationNumber', '570123456'],
     ['customerPhone', '1234567'],
-    ['customerPhone', '052 1234567'],
     ['customerEmail', 'office@'],
     ['customerFloor', 1.5],
     ['customerFloor', 1000],
@@ -45,5 +44,11 @@ describe('ProjectCustomerDetailsDto', () => {
     await expect(findInvalidFields({ [field]: value })).resolves.toEqual([
       field,
     ]);
+  });
+
+  it('accepts a dialable mobile number with spaces', async () => {
+    await expect(
+      findInvalidFields({ customerPhone: '052 1234567' }),
+    ).resolves.toEqual([]);
   });
 });

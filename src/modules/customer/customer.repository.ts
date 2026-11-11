@@ -31,7 +31,6 @@ export class CustomerRepository {
     return Customer.findByPk(id, {
       include: [
         { model: User, paranoid: false },
-        { model: CustomerContact, as: 'contacts' },
         { model: CustomerContact, as: 'primaryContact' },
       ],
     });
@@ -43,8 +42,11 @@ export class CustomerRepository {
   ): Promise<Customer | null> {
     return Customer.findOne({
       where: { taxId },
+      include: [{ model: CustomerContact, as: 'primaryContact' }],
       transaction,
-      lock: transaction != null,
+      lock: transaction
+        ? { level: transaction.LOCK.UPDATE, of: Customer }
+        : false,
     });
   }
 
@@ -54,18 +56,7 @@ export class CustomerRepository {
   ): Promise<ICursorPage<Customer>> {
     const rows = await Customer.findAll({
       bind: { customerContactSearch: toContainsPattern(filter.search ?? '') },
-      include: [
-        { model: CustomerContact, as: 'primaryContact' },
-        {
-          model: CustomerContact,
-          as: 'contacts',
-          separate: true,
-          order: [
-            ['createdAt', 'ASC'],
-            ['id', 'ASC'],
-          ],
-        },
-      ],
+      include: [{ model: CustomerContact, as: 'primaryContact' }],
       where: {
         [Op.and]: [
           ...this.buildFilterWhere(filter),
@@ -135,8 +126,6 @@ export class CustomerRepository {
       [Op.or]: [
         { name: { [Op.iLike]: pattern } },
         { taxId: { [Op.iLike]: pattern } },
-        { phone: { [Op.iLike]: pattern } },
-        { email: { [Op.iLike]: pattern } },
         this.buildContactSearchWhere(),
         { priorityId: { [Op.iLike]: pattern } },
       ],
@@ -155,8 +144,7 @@ export class CustomerRepository {
       .join('.');
     return literal(`EXISTS (
       SELECT 1 FROM ${table} AS "searchContact"
-      WHERE ("searchContact"."customer_id" = "Customer"."id"
-        OR "searchContact"."id" = "Customer"."primary_contact_id")
+      WHERE "searchContact"."id" = "Customer"."primary_contact_id"
         AND "searchContact"."deleted_at" IS NULL
         AND (
           "searchContact"."name" ILIKE $customerContactSearch
