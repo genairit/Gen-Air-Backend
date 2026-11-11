@@ -71,8 +71,8 @@ export class QuotationPdfService {
         name: project?.customerName ?? customer.name,
         address: project?.customerAddress ?? customer.address,
         city: project?.addressCity ?? null,
-        email: project?.customerEmail ?? customer.email,
-        phone: project?.customerPhone ?? customer.phone,
+        email: project?.customerEmail ?? customer.primaryContact?.email ?? null,
+        phone: project?.customerPhone ?? customer.primaryContact?.phone ?? null,
         customerNumber: customer.priorityId,
       },
       project: {

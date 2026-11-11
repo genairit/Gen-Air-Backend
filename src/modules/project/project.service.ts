@@ -128,7 +128,14 @@ export class ProjectService {
       toCursorBatch(filter),
     );
 
-    return { ...page, items: await this.withWaitingReasons(page.items) };
+    return {
+      ...page,
+      items: await this.withWaitingReasons(
+        page.items.map((project) =>
+          this.projectApartmentService.resolveForRead(project),
+        ),
+      ),
+    };
   }
 
   async getStageCounts(

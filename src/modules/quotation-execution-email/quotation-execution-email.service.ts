@@ -61,11 +61,7 @@ export class QuotationExecutionEmailService {
       throw new ConflictException('The quotation task needs a linked customer');
     }
     const [contacts, record] = await Promise.all([
-      this.contacts.listForProject(
-        customerId,
-        project.id,
-        project.parentProjectId,
-      ),
+      this.contacts.listForProject(project.id, project.parentProjectId),
       this.records.findByTaskId(taskId),
     ]);
     return {

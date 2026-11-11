@@ -13,7 +13,7 @@ import { ProjectTypeController } from '@Modules/project-type/project-type.contro
 import { ProjectStageController } from '@Modules/project-stage/project-stage.controller';
 import { ProjectDriveController } from '@Modules/project-drive/project-drive.controller';
 import { ProjectMemberController } from '@Modules/project-member/project-member.controller';
-import { CustomerContactController } from '@Modules/customer-contact/customer-contact.controller';
+import { ContactDirectoryController } from '@Modules/customer-contact/contact-directory.controller';
 import { ProjectApartmentImportController } from '@Modules/project/project-apartment-import.controller';
 import { DriveTemplateFolderController } from '@Modules/drive-template-folder/drive-template-folder.controller';
 import { ProjectStageTransitionController } from '@Modules/project-stage-transition/project-stage-transition.controller';
@@ -26,7 +26,7 @@ const CONTROLLERS = [
   AddressController,
   ProjectController,
   CustomerController,
-  CustomerContactController,
+  ContactDirectoryController,
   ProjectApartmentImportController,
   ProjectTypeController,
   ProjectStageController,

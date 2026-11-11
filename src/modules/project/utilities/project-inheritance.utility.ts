@@ -14,16 +14,16 @@ export const resolveApartment = <TApartment extends TApartmentInheritanceInput>(
   const customerDetails = apartment.customer
     ? {
         customerName: apartment.customer.name,
-        customerPhone: apartment.customer.phone,
-        contactName: apartment.customer.contactName,
-        contactPhone: apartment.customer.phone,
-        contactRole: null,
+        customerPhone: apartment.customer.primaryContact?.phone ?? null,
       }
     : {};
 
   return {
     ...apartment,
     ...customerDetails,
+    contactName: null,
+    contactPhone: null,
+    contactRole: null,
     members: apartment.hasOwnTeam
       ? (apartment.members ?? [])
       : [

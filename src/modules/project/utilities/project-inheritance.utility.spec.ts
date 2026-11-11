@@ -97,6 +97,7 @@ const LINKED_CUSTOMER: ICustomer = {
   taxId: '123456789',
   address: 'תל אביב',
   contactName: 'דנה כהן',
+  primaryContact: { phone: '052-1112233' } as ICustomer['primaryContact'],
   customerType: PROJECT_DETAIL_FIELD_SETS.PRIVATE_CLIENT,
   createdById: 'user-1',
   createdAt: FIXTURE_DATE,
@@ -192,13 +193,13 @@ describe('resolveApartment customer and legacy details', () => {
     expect(resolveApartment(apartment, BUILDING)).toMatchObject({
       customerName: LINKED_CUSTOMER.name,
       customerPhone: LINKED_CUSTOMER.phone,
-      contactName: LINKED_CUSTOMER.contactName,
-      contactPhone: LINKED_CUSTOMER.phone,
+      contactName: null,
+      contactPhone: null,
       contactRole: null,
     });
   });
 
-  it('keeps stored free-text end-customer and contact details on a legacy apartment', () => {
+  it('keeps end-customer details but hides retired contact details on a legacy apartment', () => {
     const apartment = {
       ...APARTMENT,
       customerName: 'Legacy resident',
@@ -210,9 +211,9 @@ describe('resolveApartment customer and legacy details', () => {
     expect(resolveApartment(apartment, BUILDING)).toMatchObject({
       customerName: apartment.customerName,
       customerPhone: apartment.customerPhone,
-      contactName: apartment.contactName,
-      contactPhone: apartment.contactPhone,
-      contactRole: apartment.contactRole,
+      contactName: null,
+      contactPhone: null,
+      contactRole: null,
     });
   });
 

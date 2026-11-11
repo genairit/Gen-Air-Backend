@@ -21,14 +21,7 @@ export interface ICustomerContactValues {
   email: string | null;
 }
 
-export interface ICustomerContactImport extends ICustomerContactValues {
-  customerId: string;
+export type TCustomerContactCreation = ICustomerContactValues & {
   createdById: string;
-}
-
-export type TCustomerContactCreation = Omit<
-  ICustomerContactImport,
-  'customerId'
-> & {
   customerId: string | null;
 };

@@ -133,15 +133,6 @@ describe('transactional apartment importer orchestration', () => {
     expect(state.contacts.resolveDirectoryForImport).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        name: IMPORT_CUSTOMER.contactName,
-        phone: IMPORT_CUSTOMER.phone,
-        email: IMPORT_CUSTOMER.email,
-      }),
-      state.transaction,
-    );
-    expect(state.contacts.resolveDirectoryForImport).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
         name: IMPORT_ROW.contactName,
         phone: IMPORT_ROW.contactPhone,
         email: IMPORT_ROW.contactEmail,
@@ -313,7 +304,7 @@ describe('transactional apartment importer orchestration', () => {
         .existing,
     ).toBe(1);
     expect(state.projects.create).toHaveBeenCalledTimes(1);
-    expect(state.contacts.resolveDirectoryForImport).toHaveBeenCalledTimes(2);
+    expect(state.contacts.resolveDirectoryForImport).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a missing upload or missing initial building without writes', async () => {
@@ -382,7 +373,7 @@ describe('transactional apartment importer orchestration', () => {
       IMPORT_CREATOR,
     );
     expect(result.counts.created).toBe(1);
-    expect(state.contacts.resolveDirectoryForImport).toHaveBeenCalledTimes(1);
+    expect(state.contacts.resolveDirectoryForImport).not.toHaveBeenCalled();
   });
 
   it('does not invent a contact when an imported customer has no primary contact', async () => {

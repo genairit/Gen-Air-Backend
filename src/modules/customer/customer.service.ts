@@ -72,20 +72,19 @@ export class CustomerService {
         paymentTerms: customer.paymentTerms ?? null,
         name,
         taxId,
-        phone: phone ?? null,
-        email: email ?? null,
+        phone: null,
+        email: null,
         address,
-        contactName: contactName ?? null,
+        contactName: null,
         customerType,
         createdById,
       },
       transaction,
     );
     if (contactName) {
-      const contact = await this.contacts.resolveForImport(
+      const contact = await this.contacts.resolveDirectoryForImport(
         {
           createdById,
-          customerId: created.id,
           name: contactName,
           phone: phone ?? null,
           email: email ?? null,
@@ -163,9 +162,6 @@ export class CustomerService {
             created.id,
             {
               primaryContactId: contact.id,
-              contactName: contact.name,
-              phone: contact.phone,
-              email: contact.email,
             },
             transaction,
           );
@@ -233,9 +229,6 @@ export class CustomerService {
         id,
         {
           primaryContactId: contact?.id ?? null,
-          contactName: contact?.name ?? null,
-          phone: contact?.phone ?? null,
-          email: contact?.email ?? null,
         },
         transaction,
       );
