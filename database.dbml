@@ -420,6 +420,57 @@ Table catalogue_items {
   Note: 'The price list of everything that can be put on a quotation: indoor and outdoor units, controls, headers, piping and other goods. Rows are imported from the reviewed source catalogue and maintained by catalogue managers; quotation lines copy from here rather than pointing at live prices. Soft deleted.'
 }
 
+Table materials {
+  id uuid [pk, default: `gen_random_uuid()`, note: 'Stable reusable procurement material identity']
+  code varchar(100) [not null, unique, note: 'Internal material code; not a supplier SKU']
+  name varchar(200) [not null]
+  category varchar(100) [not null]
+  specification varchar(300) [note: 'Size, model, or other identity-defining detail']
+  unit varchar(12) [not null, note: 'unit, set, m, or sqm']
+  status varchar(20) [not null, default: 'needs_spec', note: 'active, needs_spec, or inactive']
+  notes varchar(1000) [not null, default: '']
+  created_at timestamptz(3) [not null, default: `now()`]
+  updated_at timestamptz(3) [not null, default: `now()`]
+
+  indexes {
+    (status, category, code) [name: 'idx_materials_search']
+  }
+  Note: 'Reusable procurement material directory. Needs-spec entries cannot be mistaken for approved supplier products.'
+}
+
+Table catalogue_item_materials {
+  id uuid [pk, default: `gen_random_uuid()`]
+  catalogue_item_id uuid [not null, ref: > catalogue_items.id]
+  material_id uuid [not null, ref: > materials.id]
+  quantity_per_item numeric(14,4) [note: 'Positive for fixed, conditional, and included; null for project measurement']
+  basis varchar(24) [not null, note: 'fixed, conditional, included, or project_measurement']
+  display_order integer [not null]
+  notes varchar(1000) [not null, default: '']
+  created_at timestamptz(3) [not null, default: `now()`]
+  updated_at timestamptz(3) [not null, default: `now()`]
+
+  indexes {
+    (catalogue_item_id, material_id) [unique, name: 'uq_catalogue_item_material']
+    (catalogue_item_id, display_order) [unique, name: 'uq_catalogue_item_material_order']
+    material_id [name: 'idx_catalogue_item_materials_material']
+  }
+  Note: 'Current per-catalogue-unit component mapping. Project-measured lengths remain unknown; conditional and included lines are not automatically ordered.'
+}
+
+Table catalogue_item_material_revisions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  catalogue_item_id uuid [not null, ref: > catalogue_items.id]
+  revision integer [not null, note: 'Monotonic per catalogue item']
+  lines jsonb [not null, note: 'Immutable material identity, specification, unit, status, basis, and quantity snapshot']
+  created_by_id uuid [ref: > users.id, note: 'Null only for the initial system seed']
+  created_at timestamptz(3) [not null, default: `now()`]
+
+  indexes {
+    (catalogue_item_id, revision) [unique, name: 'uq_catalogue_item_material_revision']
+  }
+  Note: 'Append-only mapping revisions. A future project BOQ copies a selected revision and its project measurements rather than reading mutable current links.'
+}
+
 Table quotations {
   rule_configuration jsonb [not null, note: 'Snapshot of the quotation_rules settings this quotation was last evaluated against, so an approved offer keeps the rules it was approved under']
   id uuid [pk, note: 'Internal quotation identifier referenced by its sections']

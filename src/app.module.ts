@@ -7,6 +7,7 @@ import { UserModule } from '@Modules/user/user.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AddressModule } from '@Modules/address/address.module';
 import { ProjectModule } from '@Modules/project/project.module';
+import { MaterialModule } from '@Modules/material/material.module';
 import { CustomerModule } from '@Modules/customer/customer.module';
 import { QuotationModule } from '@Modules/quotation/quotation.module';
 import { DatabaseModule } from './providers/database/database.module';
@@ -24,6 +25,7 @@ import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-emai
 @Module({
   imports: [
     DatabaseModule,
+    MaterialModule,
     QuotationModule,
     QuotationExecutionEmailModule,
     EventEmitterModule.forRoot(),
