@@ -74,7 +74,9 @@ export class CatalogueMaterialService {
     if (new Set(itemIds).size !== itemIds.length) {
       throw new BadRequestException('פריט קטלוג כפול בתצוגת החומרים');
     }
-    if (values.items.some((item) => !new Decimal(item.quantity).isPositive())) {
+    if (
+      values.items.some((item) => !new Decimal(item.quantity).greaterThan(0))
+    ) {
       throw new BadRequestException('כמות פריט קטלוג חייבת להיות חיובית');
     }
     return this.transactions.readSnapshot(async (transaction) => {
@@ -252,7 +254,7 @@ export class CatalogueMaterialService {
       }
       if (
         !measured &&
-        (quantity == null || !new Decimal(quantity).isPositive())
+        (quantity == null || !new Decimal(quantity).greaterThan(0))
       ) {
         throw new BadRequestException(
           'כמות חומר ליחידת קטלוג חייבת להיות חיובית',

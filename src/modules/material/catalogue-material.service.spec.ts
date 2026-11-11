@@ -210,4 +210,28 @@ describe('CatalogueMaterialService', () => {
     ).rejects.toThrow('כמות מדידה נקבעת בפרויקט');
     expect(transactions.run.mock.calls).toHaveLength(0);
   });
+
+  it('rejects zero quantities before writing links or previewing', async () => {
+    await expect(
+      service.replace(
+        itemId,
+        {
+          expectedRevision: 0,
+          lines: [
+            {
+              materialId: copperId,
+              basis: MATERIAL_BASIS.FIXED,
+              quantityPerItem: '0',
+              displayOrder: 0,
+            },
+          ],
+        },
+        randomUUID(),
+      ),
+    ).rejects.toThrow('כמות חומר ליחידת קטלוג חייבת להיות חיובית');
+    expect(() =>
+      service.preview({ items: [{ catalogueItemId: itemId, quantity: '0' }] }),
+    ).toThrow('כמות פריט קטלוג חייבת להיות חיובית');
+    expect(transactions.run.mock.calls).toHaveLength(0);
+  });
 });
