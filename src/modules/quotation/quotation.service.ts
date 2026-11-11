@@ -502,6 +502,9 @@ export class QuotationService {
             target.brand !== targetBrand ||
             target.equipmentRole !== item.equipmentRole ||
             !isCompatible(target, section.systemType) ||
+            (item.capacityBtu !== null &&
+              item.capacityBtu > 0 &&
+              (!target.capacityBtu || target.capacityBtu <= 0)) ||
             (item.equipmentType !== null &&
               !target.equipmentTypes.includes(item.equipmentType))
           ) {

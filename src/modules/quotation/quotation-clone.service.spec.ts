@@ -86,7 +86,11 @@ const actor = mock<IAuthorizedUser>({
   firstName: 'Test',
   lastName: 'User',
 });
-const catalogueItem = (id: string, brand: string) =>
+const catalogueItem = (
+  id: string,
+  brand: string,
+  capacityBtu: number | null = 12000,
+) =>
   mock<CatalogueItem>({
     id,
     brand,
@@ -98,7 +102,7 @@ const catalogueItem = (id: string, brand: string) =>
     description: 'Target unit',
     price: '120',
     unit: 'unit',
-    capacityBtu: 12000,
+    capacityBtu,
     includesRemote: false,
     includesThermostat: false,
     preference: '',
@@ -231,6 +235,26 @@ describe('QuotationService.clone', () => {
     );
     expect(repository.create.mock.calls).toHaveLength(0);
   });
+
+  it.each([0, null])(
+    'rejects a %s-capacity replacement for a sized source unit',
+    async (capacity) => {
+      const { service, repository, catalogue } = setup();
+      catalogue.getByIds
+        .mockReset()
+        .mockResolvedValueOnce([
+          catalogueItem(generalCatalogueId, ''),
+          catalogueItem(sourceCatalogueId, 'אלקטרה'),
+        ])
+        .mockResolvedValueOnce([
+          catalogueItem(targetCatalogueId, 'תדיראן', capacity),
+        ]);
+      await expect(service.clone(sourceId, input, actor)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(repository.create.mock.calls).toHaveLength(0);
+    },
+  );
 
   it('rejects a multi-brand source', async () => {
     const { service, repository } = setup();
