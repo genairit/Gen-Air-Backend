@@ -14,6 +14,7 @@ import { IntersectionType, OmitType } from '@nestjs/swagger';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { ProjectIntakeDetailsDto } from './project-intake-details.dto';
 import { ProjectCustomerDetailsDto } from './project-customer-details.dto';
+import { LinkProjectContactDto } from '@Modules/project-contact/dto/link-project-contact.dto';
 import { AssignProjectMemberDto } from '@Modules/project-member/dto/assign-project-member.dto';
 
 export class CreateProjectDto extends IntersectionType(
@@ -49,4 +50,10 @@ export class CreateProjectDto extends IntersectionType(
   @ValidateNested({ each: true })
   @Type(() => AssignProjectMemberDto)
   declare members: AssignProjectMemberDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LinkProjectContactDto)
+  declare contacts?: LinkProjectContactDto[];
 }

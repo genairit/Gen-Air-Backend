@@ -1,5 +1,6 @@
 import {
   IsIn,
+  IsUUID,
   IsEmail,
   IsString,
   MinLength,
@@ -26,6 +27,10 @@ import { IsDialablePhone } from '@Decorators/is-dialable-phone.decorator';
 import { IsIsraeliCompanyNumber } from '@Decorators/is-israeli-company-number.decorator';
 
 export class CreateCustomerDto {
+  @IsOptional()
+  @IsUUID()
+  declare primaryContactId?: string | null;
+
   @ValidateIf((_object, value) => value != null)
   @IsIn(PAYMENT_TERMS_VALUES)
   declare paymentTerms?: PaymentTermsType | null;

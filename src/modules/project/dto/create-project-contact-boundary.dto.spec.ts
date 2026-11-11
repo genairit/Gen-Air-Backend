@@ -15,6 +15,36 @@ const pipe = new ValidationPipe({
 });
 
 describe('new project customer-contact boundary', () => {
+  it('accepts selected directory contacts in project creation', async () => {
+    const contacts = [
+      {
+        contactId: '33333333-3333-4333-8333-333333333333',
+        role: null,
+        isPrimary: true,
+      },
+    ];
+    const result: unknown = await pipe.transform(
+      { ...projectInput, contacts },
+      {
+        type: 'body',
+        metatype: CreateProjectDto,
+      },
+    );
+    expect(result).toMatchObject({ contacts });
+  });
+
+  it('rejects invalid directory contact ids', async () => {
+    await expect(
+      pipe.transform(
+        {
+          ...projectInput,
+          contacts: [{ contactId: 'invalid', isPrimary: true }],
+        },
+        { type: 'body', metatype: CreateProjectDto },
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
   it('keeps linked customer and site inputs without inline contacts', async () => {
     const result: unknown = await pipe.transform(projectInput, {
       type: 'body',

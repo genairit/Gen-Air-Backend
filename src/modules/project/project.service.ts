@@ -77,7 +77,10 @@ import { ProjectStageService } from '@Modules/project-stage/project-stage.servic
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
 import { ProjectTaskInitializationService } from './project-task-initialization.service';
+import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
+import { LinkProjectContactDto } from '@Modules/project-contact/dto/link-project-contact.dto';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-sync-status.constant';
 import { IProjectMemberAssignment } from '@Modules/project-member/interfaces/project-member.interface';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
@@ -202,6 +205,7 @@ export class ProjectService {
         customerId: project.customerId,
       },
       { members: project.members, creator },
+      project.contacts ?? [],
     );
 
     return this.completeProjectCreation(createdProjectId);
@@ -447,12 +451,41 @@ export class ProjectService {
   private async persistNewProject(
     attributes: TProjectCreationAttributes,
     { members, creator }: INewProjectContext,
+    contacts: LinkProjectContactDto[] = [],
   ): Promise<string> {
     return this.databaseTransactionService.run(async (transaction) => {
       const created = await this.projectRepository.create(
         attributes,
         transaction,
       );
+
+      if (contacts.length > 0) {
+        const uniqueIds = new Set(contacts.map((contact) => contact.contactId));
+        const primaryCount = contacts.filter(
+          (contact) => contact.isPrimary,
+        ).length;
+        const existingCount = await CustomerContact.count({
+          where: { id: [...uniqueIds] },
+          transaction,
+        });
+        if (
+          uniqueIds.size !== contacts.length ||
+          primaryCount > 1 ||
+          existingCount !== contacts.length
+        ) {
+          throw new BadRequestException('Invalid project contacts');
+        }
+
+        await ProjectContactLink.bulkCreate(
+          contacts.map((contact) => ({
+            projectId: created.id,
+            contactId: contact.contactId,
+            role: contact.role ?? null,
+            isPrimary: contact.isPrimary ?? false,
+          })),
+          { transaction },
+        );
+      }
 
       await this.projectMemberService.replaceForProject(
         created.id,

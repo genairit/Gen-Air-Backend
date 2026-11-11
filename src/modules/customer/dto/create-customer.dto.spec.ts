@@ -27,6 +27,24 @@ const invalidFields = async (input: object): Promise<string[]> => {
 };
 
 describe('CreateCustomerDto', () => {
+  it('accepts an existing directory contact for a new customer', async () => {
+    await expect(
+      invalidFields({
+        ...CUSTOMER_WITHOUT_CONTACT,
+        primaryContactId: '11111111-1111-4111-8111-111111111111',
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('rejects an invalid existing contact id', async () => {
+    await expect(
+      invalidFields({
+        ...CUSTOMER_WITHOUT_CONTACT,
+        primaryContactId: 'not-a-contact-id',
+      }),
+    ).resolves.toEqual(['primaryContactId']);
+  });
+
   it.each([
     '03-1234567',
     '031234567',
