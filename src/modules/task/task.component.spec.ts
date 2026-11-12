@@ -94,6 +94,7 @@ describe('Task HTTP permission boundaries', () => {
     findByFilter: jest.fn(() =>
       Promise.resolve({ items: [state.task], nextCursor: null }),
     ),
+    findProtectedForProject: jest.fn(() => Promise.resolve([] as ITask[])),
     create: jest
       .fn<Promise<ITask>, [object, object?]>()
       .mockImplementation(() => Promise.resolve(state.task)),
@@ -144,7 +145,10 @@ describe('Task HTTP permission boundaries', () => {
         },
         {
           provide: DatabaseTransactionService,
-          useValue: { run: (work: () => Promise<unknown>) => work() },
+          useValue: {
+            run: (work: () => Promise<unknown>) => work(),
+            lockKey: () => Promise.resolve(),
+          },
         },
         { provide: EventEmitter2, useValue: events },
         {
@@ -172,6 +176,7 @@ describe('Task HTTP permission boundaries', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     state.task = task();
+    repository.findProtectedForProject.mockResolvedValue([]);
     for (const actor of Object.values(users)) {
       actor.permissions = baselinePermissions(actor.role);
     }
@@ -211,6 +216,32 @@ describe('Task HTTP permission boundaries', () => {
       .auth('manager', { type: 'bearer' })
       .send({ ...payload, assigneeId: null })
       .expect(201);
+  });
+
+  it('reads exact protected task slots, including a retained unavailable slot, with create permission', async () => {
+    repository.findProtectedForProject.mockResolvedValueOnce([
+      { ...task(), taskType: TASK_TYPES.QUOTATION, customerId: null },
+      {
+        ...task(),
+        id: OTHER_ID,
+        taskType: TASK_TYPES.PLANNING,
+        customerId: null,
+        deletedAt: new Date(),
+      },
+    ]);
+    const response = await request(server())
+      .get(`/task/project/${PROJECT_ID}/protected`)
+      .auth('manager', { type: 'bearer' })
+      .expect(200);
+    expect(response.body).toEqual([
+      { id: TASK_ID, taskType: TASK_TYPES.QUOTATION, available: true },
+      { id: OTHER_ID, taskType: TASK_TYPES.PLANNING, available: false },
+    ]);
+    users.manager.permissions = [PERMISSIONS.TASKS_READ];
+    await request(server())
+      .get(`/task/project/${PROJECT_ID}/protected`)
+      .auth('manager', { type: 'bearer' })
+      .expect(403);
   });
 
   it('accepts a task engineer whose active role differs from the assigned role', async () => {
@@ -793,35 +824,46 @@ describe('Task HTTP permission boundaries', () => {
     }
   });
 
-  it.each([TASK_TYPES.QUOTATION, TASK_TYPES.PLANNING, 'unknown'])(
-    'rejects manual creation of %s even for an administrator',
+  it.each([TASK_TYPES.QUOTATION, TASK_TYPES.PLANNING])(
+    'allows deliberate creation of %s for a project',
     async (taskType) => {
       await request(server())
         .post('/task')
         .auth('manager', { type: 'bearer' })
         .send({ ...payload, taskType })
-        .expect(400);
-      expect(repository.create).not.toHaveBeenCalled();
-      expect(transitions.create).not.toHaveBeenCalled();
+        .expect(201);
+      expect(repository.create.mock.calls.at(-1)?.[0]).toMatchObject({
+        taskType,
+        projectId: PROJECT_ID,
+        customerId: null,
+      });
+      expect(transitions.create).toHaveBeenCalledTimes(1);
     },
   );
 
-  it('does not allow service callers to bypass protected creation through DTO validation', async () => {
-    const service = application.app!.get(TaskService);
-    await expect(
-      service.create(
-        { ...payload, taskType: TASK_TYPES.QUOTATION },
-        users.manager,
-      ),
-    ).rejects.toThrow();
-    await expect(
-      service.create(
-        { ...payload, taskType: TASK_TYPES.PLANNING },
-        users.manager,
-      ),
-    ).rejects.toThrow();
+  it('rejects an unknown task type at the API boundary', async () => {
+    await request(server())
+      .post('/task')
+      .auth('manager', { type: 'bearer' })
+      .send({ ...payload, taskType: 'unknown' })
+      .expect(400);
     expect(repository.create).not.toHaveBeenCalled();
   });
+
+  it.each([TASK_TYPES.QUOTATION, TASK_TYPES.PLANNING])(
+    'rejects a second %s task for the same project',
+    async (taskType) => {
+      repository.findProtectedForProject.mockResolvedValueOnce([
+        { ...task(), taskType, customerId: null },
+      ]);
+      await request(server())
+        .post('/task')
+        .auth('manager', { type: 'bearer' })
+        .send({ ...payload, taskType })
+        .expect(409);
+      expect(repository.create).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([TASK_TYPES.QUOTATION, TASK_TYPES.PLANNING])(
     'protects the lifetime slot of a %s task',

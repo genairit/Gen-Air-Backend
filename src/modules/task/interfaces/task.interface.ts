@@ -1,8 +1,8 @@
-import { TaskType } from '../constants/task-type.constant';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { TaskStatusType } from '../constants/task-status.constant';
 import { IProject } from '@Modules/project/interfaces/project.interface';
 import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
+import { TaskType, ProtectedTaskType } from '../constants/task-type.constant';
 import { TaskProjectAttributeType } from '../constants/task-include.constant';
 import { CustomerReferenceAttributeType } from '@Modules/customer/constants/customer-reference.constant';
 
@@ -38,6 +38,12 @@ export interface ITask {
   urgencyMarkedBy?: IUser | null;
   customer?: TTaskCustomer | null;
   urgencyMarkedById: string | null;
+}
+
+export interface IProtectedTaskSlot {
+  id: string;
+  available: boolean;
+  taskType: ProtectedTaskType;
 }
 
 export interface ITaskFilter {

@@ -42,7 +42,6 @@ import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
 import { PARAN_JERUSALEM_PLACE } from '@Modules/address/testing/paran-jerusalem.fixture';
-import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
@@ -256,9 +255,6 @@ const createService = async () => {
       .fn<Promise<TNoteByProjectId>, [ITargetStageNoteQuery]>()
       .mockResolvedValue(new Map()),
   };
-  const taskInitialization = {
-    ensureForProject: jest.fn().mockResolvedValue(null),
-  };
   const projectTypeService = {
     getById: jest.fn((id: keyof typeof PROJECT_TYPES) =>
       Promise.resolve(PROJECT_TYPES[id]),
@@ -285,10 +281,6 @@ const createService = async () => {
       ProjectService,
       ProjectIntakeService,
       ProjectApartmentService,
-      {
-        provide: ProjectTaskInitializationService,
-        useValue: taskInitialization,
-      },
       { provide: CustomerService, useValue: customerService },
       { provide: AddressService, useValue: addressService },
       { provide: EventEmitter2, useValue: eventEmitter },
@@ -308,7 +300,6 @@ const createService = async () => {
     addressService,
     projectRepository,
     transitionService,
-    taskInitialization,
     projectTypeService,
     projectMemberService,
   };
@@ -324,13 +315,12 @@ describe('ProjectService.create', () => {
     members: [{ userId: 'user-2', role: USER_ROLES.SECRETARY }],
   };
 
-  it('creates the project in Draft with its members, mandatory tasks and an opening timeline entry', async () => {
+  it('creates the project in Draft with its members and an opening timeline entry', async () => {
     const {
       service,
       projectRepository,
       projectMemberService,
       transitionService,
-      taskInitialization,
     } = await createService();
 
     await service.create(PROJECT, CREATOR);
@@ -353,22 +343,6 @@ describe('ProjectService.create', () => {
       expect.objectContaining({ fromStageId: null, toStageId: DRAFT_STAGE_ID }),
       TRANSACTION,
     );
-    expect(taskInitialization.ensureForProject).toHaveBeenCalledWith(
-      { id: PROJECT_ID, name: PROJECT.name },
-      CREATOR,
-      TRANSACTION,
-    );
-  });
-
-  it('does not publish a project when mandatory task initialization fails', async () => {
-    const { service, taskInitialization, eventEmitter } = await createService();
-    taskInitialization.ensureForProject.mockRejectedValue(
-      new Error('task write failed'),
-    );
-    await expect(service.create(PROJECT, CREATOR)).rejects.toThrow(
-      'task write failed',
-    );
-    expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
   });
 
   it('announces the new project after it is saved so Drive folders get created', async () => {
@@ -1134,8 +1108,7 @@ const STORED_APARTMENT = {
 
 describe('ProjectService.createApartment', () => {
   it('creates the apartment with everything the building decides', async () => {
-    const { service, projectRepository, eventEmitter, taskInitialization } =
-      await createService();
+    const { service, projectRepository, eventEmitter } = await createService();
     projectRepository.findById.mockResolvedValueOnce(BUILDING);
     projectRepository.countApartmentsEverCreated.mockResolvedValue(4);
 
@@ -1161,11 +1134,6 @@ describe('ProjectService.createApartment', () => {
       parentProjectId: BUILDING_ID,
       projectTypeId: 'type-building',
     });
-    expect(taskInitialization.ensureForProject).toHaveBeenCalledWith(
-      { id: PROJECT_ID, name: 'דירה 12' },
-      CREATOR,
-      TRANSACTION,
-    );
     expect(eventEmitter.emitAsync).toHaveBeenCalledTimes(1);
     expect(eventEmitter.emitAsync).toHaveBeenCalledWith(
       DOMAIN_EVENTS.PROJECT_CREATED,
@@ -1174,19 +1142,6 @@ describe('ProjectService.createApartment', () => {
     expect(projectRepository.create.mock.invocationCallOrder[0]).toBeLessThan(
       eventEmitter.emitAsync.mock.invocationCallOrder[0],
     );
-  });
-
-  it('does not announce an apartment whose mandatory task initialization fails', async () => {
-    const { service, projectRepository, eventEmitter, taskInitialization } =
-      await createService();
-    projectRepository.findById.mockResolvedValueOnce(BUILDING);
-    taskInitialization.ensureForProject.mockRejectedValue(
-      new Error('mandatory task failed'),
-    );
-    await expect(
-      service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
-    ).rejects.toThrow('mandatory task failed');
-    expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
   });
 
   it('does not announce an apartment whose persistence fails', async () => {
@@ -2090,7 +2045,6 @@ describe('ProjectService lighting persistence', () => {
     ).rejects.toThrow(BadRequestException);
     expect(state.projectRepository.create).not.toHaveBeenCalled();
     expect(state.projectMemberService.replaceForProject).not.toHaveBeenCalled();
-    expect(state.taskInitialization.ensureForProject).not.toHaveBeenCalled();
     expect(state.eventEmitter.emitAsync).not.toHaveBeenCalled();
   });
 

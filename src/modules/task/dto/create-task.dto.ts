@@ -11,11 +11,11 @@ import {
 
 import type { TaskType } from '../constants/task-type.constant';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
-import { MANUAL_TASK_TYPES } from '../constants/task-type.constant';
+import { TASK_TYPE_VALUES } from '../constants/task-type.constant';
 
 export class CreateTaskDto {
   @IsOptional()
-  @IsIn(MANUAL_TASK_TYPES)
+  @IsIn(TASK_TYPE_VALUES)
   declare taskType?: TaskType;
 
   @IsNotEmpty()

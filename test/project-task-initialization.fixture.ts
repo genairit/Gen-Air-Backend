@@ -1,3 +1,8 @@
+import {
+  authorizedUser,
+  baselinePermissions,
+} from '../src/testing/authorization.fixture';
+
 import 'reflect-metadata';
 import { resolve } from 'node:path';
 import { Test } from '@nestjs/testing';
@@ -7,6 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { Sequelize } from 'sequelize-typescript';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UserService } from '@Modules/user/user.service';
+import { TaskService } from '@Modules/task/task.service';
 import { User } from '@Modules/user/entities/user.entity';
 import { Task } from '@Modules/task/entities/task.entity';
 import { USER_ROLES } from '@Constants/user-role.constant';
@@ -40,7 +46,7 @@ import { DatabaseTransactionService } from '@Providers/database/database-transac
 import { TaskStatusTransitionRepository } from '@Modules/task/task-status-transition.repository';
 import { CustomerContactRepository } from '@Modules/customer-contact/customer-contact.repository';
 import { ProjectApartmentImportService } from '@Modules/project/project-apartment-import.service';
-import { ProjectTaskInitializationService } from '@Modules/project/project-task-initialization.service';
+import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
 import { ProjectStageTransitionRepository } from '@Modules/project-stage-transition/project-stage-transition.repository';
@@ -78,6 +84,7 @@ export const createProjectTaskEnvironment = async () => {
       User,
       Customer,
       CustomerContact,
+      ProjectContactLink,
       ProjectType,
       ProjectStage,
       Project,
@@ -217,7 +224,7 @@ export const createProjectTaskEnvironment = async () => {
         ProjectRepository,
         ProjectApartmentService,
         ProjectIntakeService,
-        ProjectTaskInitializationService,
+        TaskService,
         ProjectMemberService,
         ProjectMemberRepository,
         ProjectStageService,
@@ -283,20 +290,12 @@ export const createProjectTaskEnvironment = async () => {
         Customer.count(),
         CustomerContact.count(),
       ]);
-    const rejectPlanning = async () => {
-      await sequelize.query(`CREATE FUNCTION public.test_reject_planning_task() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.task_type = 'planning' THEN RAISE EXCEPTION 'injected planning failure'; END IF; RETURN NEW; END; $$;
-        CREATE TRIGGER test_reject_planning BEFORE INSERT ON public.tasks FOR EACH ROW EXECUTE FUNCTION public.test_reject_planning_task()`);
-    };
-    const restorePlanning = async () => {
-      await sequelize.query(
-        'DROP TRIGGER IF EXISTS test_reject_planning ON public.tasks; DROP FUNCTION IF EXISTS public.test_reject_planning_task()',
-      );
-    };
     return {
       sequelize,
       creator,
       engineer,
       customer,
+      buildingTypeId: buildingType.id,
       legacyProject,
       legacyCustomerTaskId,
       legacyDualTaskId,
@@ -307,13 +306,14 @@ export const createProjectTaskEnvironment = async () => {
       projectInput,
       createLegacyProject,
       counts,
-      rejectPlanning,
-      restorePlanning,
+      taskActor: {
+        ...authorizedUser(baselinePermissions(USER_ROLES.SYSTEM_ADMIN)),
+        id: creator.id,
+      },
+      tasks: module.get(TaskService),
       projects: module.get(ProjectService),
       imports: module.get(ProjectApartmentImportService),
-      initialize: module.get(ProjectTaskInitializationService),
       stages: module.get(ProjectStageService),
-      transactions: module.get(DatabaseTransactionService),
       close,
     };
   } catch (error) {

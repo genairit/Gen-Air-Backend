@@ -8,6 +8,7 @@ import {
   makeImportFile,
 } from '@Modules/project/testing/apartment-import.fixture';
 
+import { ConflictException } from '@nestjs/common';
 import { Task } from '@Modules/task/entities/task.entity';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { QueryTypes, UniqueConstraintError } from 'sequelize';
@@ -16,7 +17,6 @@ import { Project } from '@Modules/project/entities/project.entity';
 import { TASK_TYPES } from '@Modules/task/constants/task-type.constant';
 import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { TASK_STATUSES } from '@Modules/task/constants/task-status.constant';
-import { toProjectTaskAttributes } from '@Modules/project/utilities/project-task.utility';
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
 
 const state: { environment: TProjectTaskEnvironment | null } = {
@@ -31,30 +31,11 @@ const getEnvironment = () => {
   return state.environment;
 };
 
-const expectProtectedPair = async (projectId: string, name: string) => {
-  const tasks = await Task.findAll({ where: { projectId } });
-  expect(tasks).toHaveLength(2);
-  expect(tasks.map((task) => task.taskType).sort()).toEqual(
-    [TASK_TYPES.PLANNING, TASK_TYPES.QUOTATION].sort(),
-  );
-  for (const task of tasks) {
-    expect(task.customerId).toBeNull();
-    expect(task.assigneeId).toBeNull();
-    expect(task.dueDate).toBeNull();
-    expect(task.status).toBe(TASK_STATUSES.NOT_STARTED);
-    expect(task.description).toContain(name);
-    expect(task.title).toContain(name);
-    const history = await TaskStatusTransition.findAll({
-      where: { taskId: task.id },
-    });
-    expect(history).toHaveLength(1);
-    expect(history[0].fromStatus).toBeNull();
-    expect(history[0].toStatus).toBe(TASK_STATUSES.NOT_STARTED);
-  }
-  return tasks;
+const expectNoTasks = async (projectId: string) => {
+  expect(await Task.count({ where: { projectId } })).toBe(0);
 };
 
-describe('project task initialization against isolated PostgreSQL', () => {
+describe('explicit project tasks against isolated PostgreSQL', () => {
   beforeAll(async () => {
     state.environment = await createProjectTaskEnvironment();
   });
@@ -63,9 +44,6 @@ describe('project task initialization against isolated PostgreSQL', () => {
   });
   beforeEach(() => {
     getEnvironment().events.emitAsync.mockClear();
-  });
-  afterEach(async () => {
-    await state.environment?.restorePlanning();
   });
 
   it('applies the actual migration twice without reassigning legacy projects/tasks/history and retains fixed statuses and RLS', async () => {
@@ -127,7 +105,7 @@ describe('project task initialization against isolated PostgreSQL', () => {
   });
 
   it.each(['פרויקט חדש', 'א'.repeat(FIELD_LENGTHS.PROJECT_NAME)])(
-    'atomically creates Draft project, full-name pair and history for valid project name length %s',
+    'creates a standalone project without tasks for valid name length %s',
     async (name) => {
       const environment = getEnvironment();
       const project = await environment.projects.create(
@@ -135,20 +113,20 @@ describe('project task initialization against isolated PostgreSQL', () => {
         environment.creator,
       );
       expect(project.stageId).toBe(PROJECT_STATUS_IDS.NOT_STARTED);
-      const tasks = await expectProtectedPair(project.id, name);
-      expect(
-        tasks.find((task) => task.taskType === TASK_TYPES.QUOTATION)?.title,
-      ).toBe(`הצעת מחיר — ${name}`);
-      expect(
-        tasks.find((task) => task.taskType === TASK_TYPES.PLANNING)?.title,
-      ).toBe(`תכנון — ${name}`);
+      await expectNoTasks(project.id);
       expect(environment.events.emitAsync).toHaveBeenCalledTimes(1);
     },
   );
 
-  it('creates the pair for a manual apartment and does not backfill its existing parent', async () => {
+  it('creates a building and its manual apartment without protected tasks', async () => {
     const environment = getEnvironment();
-    const building = await environment.createLegacyProject('בניין קודם', true);
+    const building = await environment.projects.create(
+      {
+        ...environment.projectInput('בניין חדש', environment.buildingTypeId),
+        members: [],
+      },
+      environment.creator,
+    );
     const apartment = await environment.projects.createApartment(
       building.id,
       {
@@ -161,12 +139,11 @@ describe('project task initialization against isolated PostgreSQL', () => {
       },
       environment.creator,
     );
-    expect(apartment.stageId).toBe(PROJECT_STATUS_IDS.NOT_STARTED);
-    await expectProtectedPair(apartment.id, apartment.name);
-    expect(await Task.count({ where: { projectId: building.id } })).toBe(0);
+    await expectNoTasks(building.id);
+    await expectNoTasks(apartment.id);
   });
 
-  it('creates exactly one pair for an imported apartment and preserves it on import retry', async () => {
+  it('imports an apartment without tasks and leaves it unchanged on retry', async () => {
     const environment = getEnvironment();
     const building = await environment.createLegacyProject('בניין ייבוא', true);
     const file = await makeImportFile([IMPORT_ROW]);
@@ -184,10 +161,9 @@ describe('project task initialization against isolated PostgreSQL', () => {
     });
     expect(apartment).not.toBeNull();
     if (!apartment) {
-      throw new Error('The imported apartment was not persisted');
+      throw new Error('The apartment was not persisted');
     }
-    expect(apartment.stageId).toBe(PROJECT_STATUS_IDS.NOT_STARTED);
-    const tasks = await expectProtectedPair(apartment.id, apartment.name);
+    await expectNoTasks(apartment.id);
     const retry = await environment.imports.import(
       building.id,
       file,
@@ -195,135 +171,48 @@ describe('project task initialization against isolated PostgreSQL', () => {
     );
     expect(retry.counts.existing).toBe(1);
     expect(retry.counts.created).toBe(0);
-    expect(
-      (await Task.findAll({ where: { projectId: apartment.id } }))
-        .map((task) => task.id)
-        .sort(),
-    ).toEqual(tasks.map((task) => task.id).sort());
+    await expectNoTasks(apartment.id);
   });
 
-  it('rolls back the real project, member, both task writes and histories when planning persistence fails', async () => {
+  it('explicitly creates one quotation and one planning task with separate history', async () => {
     const environment = getEnvironment();
-    const before = await environment.counts();
-    await environment.rejectPlanning();
-    await expect(
-      environment.projects.create(
-        environment.projectInput('פרויקט שנכשל'),
-        environment.creator,
-      ),
-    ).rejects.toThrow('injected planning failure');
-    expect(await environment.counts()).toEqual(before);
-    expect(environment.events.emitAsync).not.toHaveBeenCalled();
-  });
-
-  it('rolls back the real manual apartment, members, tasks and histories when planning persistence fails', async () => {
-    const environment = getEnvironment();
-    const building = await environment.createLegacyProject('בניין שנשמר', true);
-    const before = await environment.counts();
-    await environment.rejectPlanning();
-    await expect(
-      environment.projects.createApartment(
-        building.id,
-        {
-          customerId: environment.customer.id,
-          customerFloor: 2,
-          customerApartment: '29',
-          members: [
-            {
-              userId: environment.engineer.id,
-              role: USER_ROLES.ENGINEER,
-            },
-          ],
-        },
-        environment.creator,
-      ),
-    ).rejects.toThrow('injected planning failure');
-    expect(await environment.counts()).toEqual(before);
-    expect(environment.events.emitAsync).not.toHaveBeenCalled();
-  });
-
-  it('rolls back imported customer, contacts, apartment and task/history writes together on mandatory task failure', async () => {
-    const environment = getEnvironment();
-    const building = await environment.createLegacyProject(
-      'בניין ייבוא שנכשל',
-      true,
-    );
-    const before = await environment.counts();
-    await environment.rejectPlanning();
-    const row = {
-      ...IMPORT_ROW,
-      customerTaxId: '000000026',
-      customerName: 'לקוח שיבוטל',
-    };
-    const result = await environment.imports.import(
-      building.id,
-      await makeImportFile([row]),
+    const project = await environment.projects.create(
+      environment.projectInput('פרויקט משימות'),
       environment.creator,
     );
-    expect(result.counts.error).toBe(1);
-    expect(result.counts.created).toBe(0);
-    expect(await environment.counts()).toEqual(before);
-    expect(environment.events.emitAsync).not.toHaveBeenCalled();
+    for (const taskType of [TASK_TYPES.QUOTATION, TASK_TYPES.PLANNING]) {
+      const task = await environment.tasks.create(
+        {
+          taskType,
+          projectId: project.id,
+          title: `${taskType} — ${project.name}`,
+          description: `Work on ${taskType}`,
+        },
+        environment.taskActor,
+      );
+      expect(task.taskType).toBe(taskType);
+      expect(task.projectId).toBe(project.id);
+      expect(task.customerId).toBeNull();
+      expect(task.status).toBe(TASK_STATUSES.NOT_STARTED);
+      expect(
+        await TaskStatusTransition.count({ where: { taskId: task.id } }),
+      ).toBe(1);
+    }
+    expect(await Task.count({ where: { projectId: project.id } })).toBe(2);
   });
 
-  it('serializes simultaneous initialization and preserves completed task IDs/history on retry', async () => {
+  it('blocks concurrent duplicates and preserves the first task ID and history', async () => {
     const environment = getEnvironment();
     const project = await environment.createLegacyProject('פרויקט תחרות');
-    await Promise.all(
-      [1, 2, 3].map(() =>
-        environment.transactions.run((transaction) =>
-          environment.initialize.ensureForProject(
-            project,
-            environment.creator,
-            transaction,
-          ),
-        ),
-      ),
-    );
-    const tasks = await expectProtectedPair(project.id, project.name);
-    const quote = tasks.find((task) => task.taskType === TASK_TYPES.QUOTATION);
-    if (!quote) {
-      throw new Error('The quotation task was not persisted');
-    }
-    await quote.update({ status: TASK_STATUSES.PROPOSAL_SENT });
-    await TaskStatusTransition.create({
-      taskId: quote.id,
-      fromStatus: TASK_STATUSES.NOT_STARTED,
-      toStatus: TASK_STATUSES.PROPOSAL_SENT,
-      changedById: environment.creator.id,
-      changedByRole: environment.creator.role,
-    });
-    await environment.transactions.run((transaction) =>
-      environment.initialize.ensureForProject(
-        project,
-        environment.creator,
-        transaction,
-      ),
-    );
-    expect(
-      (await Task.findAll({ where: { projectId: project.id } }))
-        .map((task) => task.id)
-        .sort(),
-    ).toEqual(tasks.map((task) => task.id).sort());
-    expect((await Task.findByPk(quote.id))?.status).toBe(
-      TASK_STATUSES.PROPOSAL_SENT,
-    );
-    expect(
-      await TaskStatusTransition.count({ where: { taskId: quote.id } }),
-    ).toBe(2);
-  });
-
-  it('enforces protected lifetime uniqueness at the DB boundary, including completion/archive, while allowing general duplicates', async () => {
-    const environment = getEnvironment();
-    const project = await environment.createLegacyProject('פרויקט גבול DB');
-    const attributes = toProjectTaskAttributes(
-      project,
-      environment.creator.id,
-      TASK_TYPES.QUOTATION,
-    );
+    const input = {
+      taskType: TASK_TYPES.QUOTATION,
+      projectId: project.id,
+      title: 'הצעת מחיר לפרויקט תחרות',
+      description: 'הכנת הצעת מחיר',
+    };
     const results = await Promise.allSettled([
-      Task.create(attributes),
-      Task.create(attributes),
+      environment.tasks.create(input, environment.taskActor),
+      environment.tasks.create(input, environment.taskActor),
     ]);
     expect(
       results.filter((result) => result.status === 'fulfilled'),
@@ -332,17 +221,51 @@ describe('project task initialization against isolated PostgreSQL', () => {
       results.filter((result) => result.status === 'rejected'),
     ).toHaveLength(1);
     const rejected = results.find((result) => result.status === 'rejected');
-    const reason: unknown = rejected?.reason;
-    expect(reason).toBeInstanceOf(UniqueConstraintError);
-    const quote = await Task.findOne({ where: { projectId: project.id } });
-    if (!quote) {
+    expect(rejected?.reason).toBeInstanceOf(ConflictException);
+    if (rejected?.reason instanceof ConflictException) {
+      expect(rejected.reason.getStatus()).toBe(409);
+    }
+    const task = await Task.findOne({ where: { projectId: project.id } });
+    if (!task) {
       throw new Error('The quotation task was not persisted');
     }
-    await quote.update({ status: TASK_STATUSES.PROPOSAL_SENT });
+    await environment.tasks.updateStatus(
+      task.id,
+      TASK_STATUSES.PROPOSAL_SENT,
+      environment.taskActor,
+    );
+    await expect(
+      environment.tasks.create(input, environment.taskActor),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect((await Task.findByPk(task.id))?.status).toBe(
+      TASK_STATUSES.PROPOSAL_SENT,
+    );
+    expect(
+      await TaskStatusTransition.count({ where: { taskId: task.id } }),
+    ).toBe(2);
+    await expect(
+      environment.tasks.delete(task.id, environment.taskActor),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('keeps lifetime uniqueness at the DB boundary while allowing General duplicates', async () => {
+    const environment = getEnvironment();
+    const project = await environment.createLegacyProject('פרויקט גבול DB');
+    const attributes = {
+      taskType: TASK_TYPES.QUOTATION,
+      projectId: project.id,
+      customerId: null,
+      createdById: environment.creator.id,
+      assigneeId: null,
+      title: 'הצעת מחיר',
+      description: 'הכנת הצעת מחיר',
+      dueDate: null,
+    };
+    const first = await Task.create(attributes);
     await expect(Task.create(attributes)).rejects.toBeInstanceOf(
       UniqueConstraintError,
     );
-    await quote.destroy();
+    await first.destroy();
     await expect(Task.create(attributes)).rejects.toBeInstanceOf(
       UniqueConstraintError,
     );
@@ -355,13 +278,18 @@ describe('project task initialization against isolated PostgreSQL', () => {
     ).toBe(2);
   });
 
-  it('requires a project-only association for protected rows without rejecting retained general customer-only rows', async () => {
+  it('preserves legacy customer-only tasks and rejects invalid protected association', async () => {
     const environment = getEnvironment();
-    const attributes = toProjectTaskAttributes(
-      environment.legacyProject,
-      environment.creator.id,
-      TASK_TYPES.PLANNING,
-    );
+    const attributes = {
+      taskType: TASK_TYPES.PLANNING,
+      projectId: environment.legacyProject.id,
+      customerId: null,
+      createdById: environment.creator.id,
+      assigneeId: null,
+      title: 'תכנון',
+      description: 'הכנת תכנון',
+      dueDate: null,
+    };
     await expect(
       Task.create({
         ...attributes,
