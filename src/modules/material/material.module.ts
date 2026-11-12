@@ -17,5 +17,6 @@ import { CatalogueItemModule } from '@Modules/catalogue-item/catalogue-item.modu
     CatalogueMaterialService,
     CatalogueMaterialRepository,
   ],
+  exports: [MaterialService, CatalogueMaterialService],
 })
 export class MaterialModule {}
