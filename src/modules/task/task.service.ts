@@ -12,6 +12,7 @@ import {
   ITaskFilter,
   TTaskLinkInput,
   ITaskUrgentEvent,
+  IProtectedTaskSlot,
   TTaskUpdateAttributes,
 } from './interfaces/task.interface';
 
@@ -20,15 +21,14 @@ import {
   resolveTaskCustomerId,
 } from './utilities/task-link.utility';
 
-import { Transaction } from 'sequelize';
 import { TaskRepository } from './task.repository';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { UserService } from '@Modules/user/user.service';
 import { USER_ROLES } from '@Constants/user-role.constant';
-import { TASK_TYPES } from './constants/task-type.constant';
 import { GetTasksByFilterDto } from './dto/get-by-filter.dto';
+import { Transaction, UniqueConstraintError } from 'sequelize';
 import { isDueDateBeforeToday } from '@Utilities/date.utility';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toCursorBatch } from '@Utilities/cursor-batch.utility';
@@ -38,6 +38,7 @@ import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { TaskStatusType } from './constants/task-status.constant';
 import { assertPermissions } from '@Utilities/permission.utility';
 import { isProtectedTaskType } from './utilities/task-type.utility';
+import { TASK_TYPES, TaskType } from './constants/task-type.constant';
 import { findChangedAssigneeId } from './utilities/task-assignee.utility';
 import { EMPTY_TASK_STATUS_COUNTS } from './constants/task-status.constant';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
@@ -58,6 +59,23 @@ export class TaskService {
 
   getById(id: string): Promise<ITask> {
     return this.requireDetailedTask(id);
+  }
+
+  async getProtectedForProject(
+    projectId: string,
+  ): Promise<IProtectedTaskSlot[]> {
+    const tasks = await this.taskRepository.findProtectedForProject(projectId);
+    return tasks.flatMap((task) =>
+      isProtectedTaskType(task.taskType)
+        ? [
+            {
+              id: task.id,
+              taskType: task.taskType,
+              available: task.deletedAt === null,
+            },
+          ]
+        : [],
+    );
   }
 
   getByFilter(filter: GetTasksByFilterDto): Promise<ICursorPage<ITask>> {
@@ -130,49 +148,80 @@ export class TaskService {
       assertPermissions(creator, PERMISSIONS.TASKS_ASSIGN);
     }
 
-    if (input.taskType != null && input.taskType !== TASK_TYPES.GENERAL) {
-      throw new BadRequestException(
-        'Quotation and planning tasks are created automatically with a project',
-      );
-    }
     this.assertDueDateNotPast(input.dueDate ?? null);
 
     const link = this.requireTaskLink(input);
+    const taskType = input.taskType ?? TASK_TYPES.GENERAL;
 
     await Promise.all([
       this.assertLinkExists(link),
       this.assertAssignableEngineer(input.assigneeId ?? null),
     ]);
 
-    const createdId = await this.transactions.run(async (transaction) => {
-      const created = await this.taskRepository.create(
-        {
-          taskType: TASK_TYPES.GENERAL,
-          title: input.title.trim(),
-          ...link,
-          createdById: creator.id,
-          assigneeId: input.assigneeId ?? null,
-          description: input.description.trim(),
-          dueDate: input.dueDate ? new Date(input.dueDate) : null,
-        },
-        transaction,
-      );
-
-      await this.taskStatusTransitionRepository.create(
-        {
-          taskId: created.id,
-          fromStatus: null,
-          toStatus: created.status,
-          changedById: creator.id,
-          changedByRole: creator.role,
-        },
-        transaction,
-      );
-
-      return created.id;
-    });
+    const createdId = await this.createTask(input, creator, link, taskType);
 
     return this.requireDetailedTask(createdId);
+  }
+
+  private async createTask(
+    input: CreateTaskDto,
+    creator: IAuthorizedUser,
+    link: TTaskLink,
+    taskType: TaskType,
+  ): Promise<string> {
+    try {
+      return await this.transactions.run(async (transaction) => {
+        if (isProtectedTaskType(taskType)) {
+          await this.transactions.lockKey(
+            `project-task:${input.projectId}:${taskType}`,
+            transaction,
+          );
+          const existing = await this.taskRepository.findProtectedForProject(
+            input.projectId,
+            transaction,
+          );
+          if (existing.some((task) => task.taskType === taskType)) {
+            throw new ConflictException(
+              'This project already has a task of this type',
+            );
+          }
+        }
+
+        const created = await this.taskRepository.create(
+          {
+            taskType,
+            ...link,
+            title: input.title.trim(),
+            createdById: creator.id,
+            assigneeId: input.assigneeId ?? null,
+            description: input.description.trim(),
+            dueDate: input.dueDate ? new Date(input.dueDate) : null,
+          },
+          transaction,
+        );
+        await this.taskStatusTransitionRepository.create(
+          {
+            taskId: created.id,
+            fromStatus: null,
+            toStatus: created.status,
+            changedById: creator.id,
+            changedByRole: creator.role,
+          },
+          transaction,
+        );
+        return created.id;
+      });
+    } catch (error) {
+      if (
+        isProtectedTaskType(taskType) &&
+        error instanceof UniqueConstraintError
+      ) {
+        throw new ConflictException(
+          'This project already has a task of this type',
+        );
+      }
+      throw error;
+    }
   }
 
   async update(
@@ -292,7 +341,7 @@ export class TaskService {
       const task = await this.requireTask(id, transaction);
       if (isProtectedTaskType(task.taskType)) {
         throw new ConflictException(
-          'Automatic quotation and planning tasks cannot be deleted',
+          'Quotation and planning tasks cannot be deleted',
         );
       }
       await this.taskRepository.softDelete(id, transaction);
@@ -357,7 +406,7 @@ export class TaskService {
     const isChanged = link !== null && link.projectId !== task.projectId;
     if (isProtectedTaskType(task.taskType) && isChanged) {
       throw new ConflictException(
-        'Automatic project tasks cannot move to another project',
+        'Quotation and planning tasks cannot move to another project',
       );
     }
   }

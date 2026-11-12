@@ -12,6 +12,12 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 
+import {
+  ITask,
+  ITaskCounts,
+  IProtectedTaskSlot,
+} from './interfaces/task.interface';
+
 import { TaskService } from './task.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -19,7 +25,6 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { GetTasksByFilterDto } from './dto/get-by-filter.dto';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
-import { ITask, ITaskCounts } from './interfaces/task.interface';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
 import { UpdateTaskUrgencyDto } from './dto/update-task-urgency.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
@@ -67,6 +72,13 @@ export class TaskController {
     @AuthenticatedUser() user: IAuthorizedUser,
   ): Promise<ITask> {
     return this.taskService.claim(id, user);
+  }
+  @Get('project/:projectId/protected')
+  @RequirePermissions(PERMISSIONS.TASKS_CREATE)
+  getProtectedForProject(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+  ): Promise<IProtectedTaskSlot[]> {
+    return this.taskService.getProtectedForProject(projectId);
   }
   @Get(':id')
   @RequirePermissions(PERMISSIONS.TASKS_READ)

@@ -22,7 +22,6 @@ import { HTTP_ERROR_MESSAGES } from '@Constants/http-error-message.constant';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
-import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 
@@ -106,7 +105,6 @@ describe('waiting-for-response reason API', () => {
           useValue: { resolveChanges: () => Promise.resolve({}) },
         },
         { provide: ProjectMemberService, useValue: {} },
-        { provide: ProjectTaskInitializationService, useValue: {} },
         { provide: APP_GUARD, useClass: AuthGuard },
         {
           provide: AuthService,
