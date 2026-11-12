@@ -116,10 +116,10 @@ export class ProjectBoqService {
     const changed = proposal.lines
       .filter((line) => {
         const previous = existingByKey.get(line.sourceKey);
+        if (!previous) return false;
         return (
-          previous !== undefined &&
           JSON.stringify(this.comparable(previous)) !==
-            JSON.stringify(this.comparable(line))
+          JSON.stringify(this.comparable(line))
         );
       })
       .map((line) => line.sourceKey);
@@ -374,6 +374,27 @@ export class ProjectBoqService {
           const needsReview =
             material.basis !== MATERIAL_BASIS.FIXED ||
             material.status !== MATERIAL_STATUS.ACTIVE;
+          const priorStatus =
+            prior && 'materialStatus' in prior.sourceSnapshot
+              ? prior.sourceSnapshot.materialStatus
+              : null;
+          const sourceChanged =
+            Boolean(prior) &&
+            (prior?.sourceBasis !== material.basis ||
+              prior.materialUnit !== material.unit ||
+              prior.materialSpecification !== material.specification ||
+              prior.materialCode !== material.code ||
+              prior.materialName !== material.name ||
+              prior.materialCategory !== material.category ||
+              prior.proposedQuantity !== proposedQuantity ||
+              priorStatus !== material.status);
+          const requiredQuantity = prior?.quantityOverridden
+            ? prior.requiredQuantity
+            : needsReview
+              ? null
+              : proposedQuantity;
+          const mustReview =
+            requiredQuantity === null || (needsReview && sourceChanged);
           rows.push({
             id: prior?.id ?? randomUUID(),
             materialId: material.materialId,
@@ -387,18 +408,12 @@ export class ProjectBoqService {
             materialUnit: material.unit,
             sourceBasis: material.basis,
             proposedQuantity,
-            requiredQuantity: prior?.quantityOverridden
-              ? prior.requiredQuantity
-              : needsReview
-                ? null
-                : proposedQuantity,
+            requiredQuantity,
             quantityOverridden: prior?.quantityOverridden ?? false,
             estimatedUnitCost: prior?.estimatedUnitCost ?? null,
-            reviewState:
-              prior?.reviewState ??
-              (needsReview
-                ? PROJECT_BOQ_REVIEW.PENDING
-                : PROJECT_BOQ_REVIEW.CONFIRMED),
+            reviewState: mustReview
+              ? PROJECT_BOQ_REVIEW.PENDING
+              : (prior?.reviewState ?? PROJECT_BOQ_REVIEW.CONFIRMED),
             notes: prior?.notes ?? material.notes,
             sourceSnapshot: {
               quotationId,
@@ -408,6 +423,7 @@ export class ProjectBoqService {
               catalogueQuantity: item.quantity,
               breakdownRevision: breakdown.revision,
               materialBasis: material.basis,
+              materialStatus: material.status,
               quantityPerItem: material.quantityPerItem,
             },
             displayOrder: rows.length,
@@ -422,10 +438,7 @@ export class ProjectBoqService {
           version: quotation.version,
           lines: rows.map((line) => ({
             sourceKey: line.sourceKey,
-            sourceSnapshot: line.sourceSnapshot,
-            proposedQuantity: line.proposedQuantity,
-            materialUnit: line.materialUnit,
-            materialSpecification: line.materialSpecification,
+            ...this.comparable(line),
           })),
           unmappedCatalogueItems,
           included,

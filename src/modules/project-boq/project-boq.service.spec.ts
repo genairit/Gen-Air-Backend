@@ -128,6 +128,58 @@ describe('ProjectBoqService', () => {
     );
   });
 
+  it('invalidates a preview when a material name changes without a quantity change', async () => {
+    const preview = await service.preview(projectId, quoteId);
+    breakdowns.getCurrent.mockResolvedValue({
+      catalogueItemId: itemId,
+      revision: 1,
+      lines: [
+        { ...material(MATERIAL_BASIS.FIXED, '3'), name: 'New bracket name' },
+      ],
+    });
+    const changed = await service.preview(projectId, quoteId);
+    expect(changed.fingerprint).not.toBe(preview.fingerprint);
+  });
+
+  it('returns a formerly fixed line to pending when the material becomes conditional', async () => {
+    const boq = mock<ProjectBoq>({ id: randomUUID(), projectId, revision: 1 });
+    const sourceKey = `${sectionId}:${itemLineId}:${materialId}`;
+    const old = mock<ProjectBoqLine>({
+      id: randomUUID(),
+      sourceKey,
+      materialId,
+      systemTitle: 'Cooling',
+      componentTitle: 'Unit',
+      materialCode: 'MAT-1',
+      materialName: 'Bracket',
+      materialCategory: 'Mounting',
+      materialSpecification: null,
+      materialUnit: 'unit',
+      sourceBasis: MATERIAL_BASIS.FIXED,
+      proposedQuantity: '6.00000000',
+      requiredQuantity: '6.00000000',
+      quantityOverridden: false,
+      estimatedUnitCost: null,
+      reviewState: PROJECT_BOQ_REVIEW.CONFIRMED,
+      notes: '',
+      sourceSnapshot: { materialStatus: MATERIAL_STATUS.ACTIVE },
+      displayOrder: 0,
+    });
+    repository.find.mockResolvedValue(boq);
+    repository.lines.mockResolvedValue([old]);
+    breakdowns.getCurrent.mockResolvedValue({
+      catalogueItemId: itemId,
+      revision: 2,
+      lines: [material(MATERIAL_BASIS.CONDITIONAL, '3')],
+    });
+    const preview = await service.preview(projectId, quoteId);
+    expect(preview.changed).toContain(sourceKey);
+    expect(preview.lines[0]).toMatchObject({
+      requiredQuantity: null,
+      reviewState: PROJECT_BOQ_REVIEW.PENDING,
+    });
+  });
+
   it('rejects a stale generation revision before writing', async () => {
     repository.find.mockResolvedValue(mock<ProjectBoq>({ revision: 2 }));
     await expect(
