@@ -647,3 +647,67 @@ Table questionnaire_submissions {
   Note: 'One filled-in questionnaire response, tied to the exact version that was answered. Append-only. Trigger validates answer identity, uniqueness, types and per-question length against the immutable questionnaire. RLS enabled, no public Data API grants.'
 }
 Ref: questionnaire_submissions.questionnaire_id > questionnaires.id [delete: restrict]
+
+Table project_boqs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  project_id uuid [not null, unique]
+  source_quotation_id uuid
+  source_quotation_version integer
+  revision integer [not null, default: 0]
+  created_by_id uuid [not null]
+  updated_by_id uuid [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table project_boq_lines {
+  id uuid [pk, default: `gen_random_uuid()`]
+  boq_id uuid [not null]
+  material_id uuid [not null]
+  source_key varchar(200) [not null]
+  system_title varchar(200) [not null]
+  component_title varchar(300) [not null]
+  material_code varchar(100) [not null]
+  material_name varchar(200) [not null]
+  material_category varchar(100) [not null]
+  material_specification varchar(300)
+  material_unit varchar(12) [not null]
+  source_basis varchar(24) [not null]
+  proposed_quantity numeric(16,8)
+  required_quantity numeric(16,8)
+  quantity_overridden boolean [not null, default: false]
+  estimated_unit_cost numeric(16,4)
+  review_state varchar(20) [not null, default: 'pending']
+  notes varchar(1000) [not null]
+  source_snapshot jsonb [not null]
+  display_order integer [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  indexes {
+    (boq_id, source_key) [unique]
+  }
+}
+
+Table project_boq_revisions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  boq_id uuid [not null]
+  revision integer [not null]
+  source_quotation_id uuid
+  source_quotation_version integer
+  lines jsonb [not null]
+  created_by_id uuid [not null]
+  created_at timestamptz [not null, default: `now()`]
+  indexes {
+    (boq_id, revision) [unique]
+  }
+}
+
+Ref: project_boqs.project_id > projects.id [delete: restrict]
+Ref: project_boqs.source_quotation_id > quotations.id [delete: restrict]
+Ref: project_boqs.created_by_id > users.id [delete: restrict]
+Ref: project_boqs.updated_by_id > users.id [delete: restrict]
+Ref: project_boq_lines.boq_id > project_boqs.id [delete: restrict]
+Ref: project_boq_lines.material_id > materials.id [delete: restrict]
+Ref: project_boq_revisions.boq_id > project_boqs.id [delete: restrict]
+Ref: project_boq_revisions.source_quotation_id > quotations.id [delete: restrict]
+Ref: project_boq_revisions.created_by_id > users.id [delete: restrict]

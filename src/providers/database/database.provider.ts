@@ -10,6 +10,7 @@ import { Material } from '@Modules/material/entities/material.entity';
 import { UserRole } from '@Modules/user-role/entities/user-role.entity';
 import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { Permission } from '@Modules/permission/entities/permission.entity';
+import { ProjectBoq } from '@Modules/project-boq/entities/project-boq.entity';
 import { EnvironmentManager } from '../../utilities/environment-manager.utility';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
@@ -18,10 +19,12 @@ import { QuotationRule } from '@Modules/quotation-rule/entities/quotation-rule.e
 import { CatalogueItem } from '@Modules/catalogue-item/entities/catalogue-item.entity';
 import { QuotationItem } from '@Modules/quotation-item/entities/quotation-item.entity';
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
+import { ProjectBoqLine } from '@Modules/project-boq/entities/project-boq-line.entity';
 import { UserRoleAudit } from '@Modules/user-role-audit/entities/user-role-audit.entity';
 import { RolePermission } from '@Modules/role-permission/entities/role-permission.entity';
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
+import { ProjectBoqRevision } from '@Modules/project-boq/entities/project-boq-revision.entity';
 import { QuotationSection } from '@Modules/quotation-section/entities/quotation-section.entity';
 import { QuotationProject } from '@Modules/quotation-project/entities/quotation-project.entity';
 import { CatalogueItemMaterial } from '@Modules/material/entities/catalogue-item-material.entity';
@@ -110,6 +113,9 @@ export const DatabaseProvider: Provider = {
       UserRole,
       UserRoleAudit,
       Project,
+      ProjectBoq,
+      ProjectBoqLine,
+      ProjectBoqRevision,
       Customer,
       CustomerContact,
       ProjectContactLink,
