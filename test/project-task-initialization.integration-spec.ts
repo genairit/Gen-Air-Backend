@@ -121,7 +121,10 @@ describe('explicit project tasks against isolated PostgreSQL', () => {
   it('creates a building and its manual apartment without protected tasks', async () => {
     const environment = getEnvironment();
     const building = await environment.projects.create(
-      environment.projectInput('בניין חדש', environment.buildingTypeId),
+      {
+        ...environment.projectInput('בניין חדש', environment.buildingTypeId),
+        members: [],
+      },
       environment.creator,
     );
     const apartment = await environment.projects.createApartment(

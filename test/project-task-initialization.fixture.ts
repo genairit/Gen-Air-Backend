@@ -46,6 +46,7 @@ import { DatabaseTransactionService } from '@Providers/database/database-transac
 import { TaskStatusTransitionRepository } from '@Modules/task/task-status-transition.repository';
 import { CustomerContactRepository } from '@Modules/customer-contact/customer-contact.repository';
 import { ProjectApartmentImportService } from '@Modules/project/project-apartment-import.service';
+import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
 import { ProjectStageTransitionRepository } from '@Modules/project-stage-transition/project-stage-transition.repository';
@@ -83,6 +84,7 @@ export const createProjectTaskEnvironment = async () => {
       User,
       Customer,
       CustomerContact,
+      ProjectContactLink,
       ProjectType,
       ProjectStage,
       Project,
