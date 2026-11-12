@@ -116,7 +116,10 @@ export class ProjectBoqService {
     const changed = proposal.lines
       .filter((line) => {
         const previous = existingByKey.get(line.sourceKey);
-        if (!previous) return false;
+        if (!previous) {
+          return false;
+        }
+
         return (
           JSON.stringify(this.comparable(previous)) !==
           JSON.stringify(this.comparable(line))
@@ -378,16 +381,16 @@ export class ProjectBoqService {
             prior && 'materialStatus' in prior.sourceSnapshot
               ? prior.sourceSnapshot.materialStatus
               : null;
-          const sourceChanged =
-            Boolean(prior) &&
-            (prior?.sourceBasis !== material.basis ||
+          const sourceChanged = prior
+            ? prior.sourceBasis !== material.basis ||
               prior.materialUnit !== material.unit ||
               prior.materialSpecification !== material.specification ||
               prior.materialCode !== material.code ||
               prior.materialName !== material.name ||
               prior.materialCategory !== material.category ||
               prior.proposedQuantity !== proposedQuantity ||
-              priorStatus !== material.status);
+              priorStatus !== material.status
+            : false;
           const requiredQuantity = prior?.quantityOverridden
             ? prior.requiredQuantity
             : needsReview
