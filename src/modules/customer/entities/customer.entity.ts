@@ -90,16 +90,20 @@ export class Customer
   declare address: string;
 
   @Column({
-    allowNull: false,
+    allowNull: true,
     type: DataType.STRING(FIELD_LENGTHS.CONTACT_NAME),
   })
-  declare contactName: string;
+  declare contactName: string | null;
 
-  @Column({ allowNull: false, type: DataType.STRING(FIELD_LENGTHS.PHONE) })
-  declare phone: string;
+  @Column({ allowNull: true, type: DataType.STRING(FIELD_LENGTHS.PHONE) })
+  declare phone: string | null;
 
-  @Column({ allowNull: false, type: DataType.CITEXT })
-  declare email: string;
+  @Column({ allowNull: true, type: DataType.CITEXT })
+  declare email: string | null;
+
+  @ForeignKey(() => CustomerContact)
+  @Column(DataType.UUID)
+  declare primaryContactId: string | null;
 
   @Column(DataType.STRING(FIELD_LENGTHS.PRIORITY_ID))
   declare priorityId: string | null;
@@ -139,6 +143,9 @@ export class Customer
 
   @HasMany(() => CustomerContact, 'customerId')
   declare contacts?: CustomerContact[];
+
+  @BelongsTo(() => CustomerContact, 'primaryContactId')
+  declare primaryContact?: CustomerContact;
 
   @BelongsTo(() => User, 'createdById')
   declare createdBy?: User;

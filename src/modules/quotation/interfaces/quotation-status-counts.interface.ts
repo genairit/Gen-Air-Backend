@@ -3,4 +3,5 @@ export interface IQuotationStatusCounts {
   draft: number;
   review: number;
   approved: number;
+  cancelled: number;
 }

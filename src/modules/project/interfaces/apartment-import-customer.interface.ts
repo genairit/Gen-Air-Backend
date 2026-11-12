@@ -1,3 +1,4 @@
+import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
 import { CreateCustomerDto } from '@Modules/customer/dto/create-customer.dto';
 
 export interface IApartmentImportCustomerIdentity {
@@ -11,8 +12,8 @@ export interface IApartmentImportNewCustomer {
 }
 
 export interface IApartmentImportCustomerComparison {
+  customer: ICustomer;
   cells: readonly string[];
-  customer: CreateCustomerDto;
 }
 
 export interface IApartmentCustomerDeclarationInput {

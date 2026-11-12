@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 
 import {
@@ -11,6 +12,7 @@ import {
 
 import { Transaction } from 'sequelize';
 import { TypedLogger } from '@Logger/logger.service';
+import { Customer } from './entities/customer.entity';
 import { CustomerRepository } from './customer.repository';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
@@ -19,6 +21,7 @@ import { toCursorBatch } from '@Utilities/cursor-batch.utility';
 import { GetCustomersByFilterDto } from './dto/get-by-filter.dto';
 import { isCustomerTaxIdConflict } from './utilities/customer-tax-id.utility';
 import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
+import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { EMPTY_CUSTOMER_SYNC_STATUS_COUNTS } from './constants/priority-sync-status.constant';
 
@@ -52,27 +55,51 @@ export class CustomerService {
     return this.customerRepository.findByTaxId(taxId, transaction);
   }
 
-  createForImport(
+  async createForImport(
     customer: CreateCustomerDto,
     createdById: string,
     transaction: Transaction,
   ): Promise<ICustomer> {
     const { name, taxId, phone, email, address, contactName, customerType } =
       customer;
-    return this.customerRepository.create(
+    if (!contactName && (phone || email)) {
+      throw new BadRequestException(
+        'Contact name is required when contact details are provided',
+      );
+    }
+    const created = await this.customerRepository.create(
       {
         paymentTerms: customer.paymentTerms ?? null,
         name,
         taxId,
-        phone,
-        email,
+        phone: null,
+        email: null,
         address,
-        contactName,
+        contactName: null,
         customerType,
         createdById,
       },
       transaction,
     );
+    if (contactName) {
+      const contact = await this.contacts.resolveDirectoryForImport(
+        {
+          createdById,
+          name: contactName,
+          phone: phone ?? null,
+          email: email ?? null,
+          role: null,
+        },
+        transaction,
+      );
+      await this.customerRepository.update(
+        created.id,
+        { primaryContactId: contact.id },
+        transaction,
+      );
+      created.primaryContactId = contact.id;
+    }
+    return created;
   }
 
   getByFilter(
@@ -103,6 +130,15 @@ export class CustomerService {
     customer: CreateCustomerDto,
     createdById: string,
   ): Promise<ICustomer> {
+    if (
+      customer.primaryContactId &&
+      (customer.contactName || customer.phone || customer.email)
+    ) {
+      throw new BadRequestException(
+        'Choose an existing contact or enter a new contact',
+      );
+    }
+
     await this.assertTaxIdAvailable(customer.taxId);
     try {
       const createdId = await this.transactions.run(async (transaction) => {
@@ -111,17 +147,26 @@ export class CustomerService {
           createdById,
           transaction,
         );
-        await this.contacts.resolveForImport(
-          {
-            createdById,
-            customerId: created.id,
-            name: customer.contactName,
-            phone: customer.phone,
-            email: customer.email,
-            role: null,
-          },
-          transaction,
-        );
+        if (customer.primaryContactId) {
+          const contact = await CustomerContact.findByPk(
+            customer.primaryContactId,
+            { transaction },
+          );
+          if (!contact) {
+            throw new NotFoundException(
+              `Contact ${customer.primaryContactId} was not found`,
+            );
+          }
+
+          await this.customerRepository.update(
+            created.id,
+            {
+              primaryContactId: contact.id,
+            },
+            transaction,
+          );
+        }
+
         return created.id;
       });
       return this.getById(createdId);
@@ -137,6 +182,15 @@ export class CustomerService {
   }
 
   async update(id: string, changes: UpdateCustomerDto): Promise<ICustomer> {
+    if (
+      Object.hasOwn(changes, 'contactName') ||
+      Object.hasOwn(changes, 'phone') ||
+      Object.hasOwn(changes, 'email')
+    ) {
+      throw new BadRequestException(
+        'Change customer contacts through the contact directory',
+      );
+    }
     const customer = await this.getById(id);
     const requestedTaxId = changes.taxId ?? null;
     const isTaxIdChanging =
@@ -148,6 +202,37 @@ export class CustomerService {
 
     await this.customerRepository.update(id, changes);
 
+    return this.getById(id);
+  }
+
+  async setPrimaryContact(
+    id: string,
+    contactId: string | null,
+  ): Promise<ICustomer> {
+    await this.transactions.run(async (transaction) => {
+      const customer = await Customer.findByPk(id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!customer) {
+        throw new NotFoundException(`Customer ${id} was not found`);
+      }
+
+      const contact = contactId
+        ? await CustomerContact.findByPk(contactId, { transaction })
+        : null;
+      if (contactId && !contact) {
+        throw new NotFoundException(`Contact ${contactId} was not found`);
+      }
+
+      await this.customerRepository.update(
+        id,
+        {
+          primaryContactId: contact?.id ?? null,
+        },
+        transaction,
+      );
+    });
     return this.getById(id);
   }
 

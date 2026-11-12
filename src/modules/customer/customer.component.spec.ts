@@ -10,6 +10,7 @@ import { CustomerRepository } from './customer.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { baselinePermissions } from '../../testing/authorization.fixture';
+import { CustomerProjectLinkService } from './customer-project-link.service';
 import { PRIORITY_SYNC_STATUSES } from './constants/priority-sync-status.constant';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { createCustomerDependencyFixtures } from '@Modules/customer-contact/testing/customer-dependencies.fixture';
@@ -36,6 +37,7 @@ describe('CRM-only customer creation API', () => {
   const application: { app: INestApplication<Server> | null } = { app: null };
   const customerRepository = {
     create: jest.fn().mockResolvedValue(STORED_CUSTOMER),
+    update: jest.fn().mockResolvedValue(true),
     findByTaxId: jest.fn().mockResolvedValue(null),
     findById: jest.fn().mockResolvedValue(STORED_CUSTOMER),
   };
@@ -45,6 +47,7 @@ describe('CRM-only customer creation API', () => {
       controllers: [CustomerController],
       providers: [
         CustomerService,
+        { provide: CustomerProjectLinkService, useValue: {} },
         ...dependencies.providers,
         { provide: CustomerRepository, useValue: customerRepository },
         { provide: APP_GUARD, useClass: AuthGuard },
@@ -109,6 +112,9 @@ describe('CRM-only customer creation API', () => {
       expect(customerRepository.create).toHaveBeenCalledWith(
         {
           ...CUSTOMER_INPUT,
+          contactName: null,
+          phone: null,
+          email: null,
           paymentTerms: null,
           createdById: 'trusted-user',
         },

@@ -30,7 +30,7 @@ import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
 export class TaskRepository {
   findProtectedForProject(
     projectId: string,
-    transaction: Transaction,
+    transaction?: Transaction,
   ): Promise<Task[]> {
     return Task.findAll({
       where: { projectId, taskType: { [Op.in]: PROTECTED_TASK_TYPES } },

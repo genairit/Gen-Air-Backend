@@ -7,18 +7,11 @@ import {
 import {
   IProject,
   IApartmentPage,
-  IProjectContact,
   TResolvedApartment,
   IProjectStageCounts,
   TProjectUpdateAttributes,
   TProjectCreationAttributes,
 } from './interfaces/project.interface';
-
-import {
-  mergeContact,
-  hasContactChanges,
-  findMissingContactFields,
-} from './utilities/project-intake.utility';
 
 import {
   formatApartmentCode,
@@ -29,11 +22,16 @@ import {
   APARTMENT,
   APARTMENT_REQUIRED_FIELDS,
   APARTMENT_EDITABLE_FIELDS,
-  APARTMENT_REQUIRED_CONTACT_FIELDS,
 } from './constants/project-apartment.constant';
+
+import {
+  resolveNewApartmentLighting,
+  resolveApartmentLightingChanges,
+} from './utilities/apartment-lighting.utility';
 
 import { Transaction } from 'sequelize';
 import { ProjectRepository } from './project.repository';
+import { USER_ROLES } from '@Constants/user-role.constant';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { IUser } from '@Modules/user/interfaces/user.interface';
@@ -89,7 +87,13 @@ export class ProjectApartmentService {
       customerId: apartment.customerId,
       apartmentOwnership: apartment.apartmentOwnership ?? null,
       apartmentCredit: apartment.apartmentCredit ?? null,
-      hasOwnTeam: apartment.members != null,
+      hasOwnTeam:
+        apartment.members != null &&
+        (apartment.members.length === 0 ||
+          apartment.members.some(
+            (member) => member.role !== USER_ROLES.ENGINEER,
+          )),
+      ...resolveNewApartmentLighting(apartment),
       stageId,
       address: null,
       addressCity: null,
@@ -135,6 +139,12 @@ export class ProjectApartmentService {
     };
   }
 
+  listAll(building: IProject, transaction?: Transaction): Promise<IProject[]> {
+    this.assertCanHoldApartments(building);
+
+    return this.projectRepository.findLiveApartments(building.id, transaction);
+  }
+
   async countByStage(building: IProject): Promise<IProjectStageCounts> {
     this.assertCanHoldApartments(building);
 
@@ -151,7 +161,12 @@ export class ProjectApartmentService {
 
   resolveForRead(project: IProject): IProject | TResolvedApartment {
     if (!project.parentProject) {
-      return project;
+      return {
+        ...project,
+        contactName: null,
+        contactPhone: null,
+        contactRole: null,
+      };
     }
 
     return resolveApartment(project, project.parentProject);
@@ -182,12 +197,12 @@ export class ProjectApartmentService {
       await this.assertApartmentNumberFree(buildingId, requestedNumber);
     }
 
-    const contact = this.resolveContactChanges(apartment, changes);
     const team = this.resolveTeamChanges(changes);
+    const lighting = resolveApartmentLightingChanges(changes, apartment);
 
     return {
-      ...contact,
       ...team,
+      ...lighting,
       name: changes.name?.trim(),
       apartmentOwnership: changes.apartmentOwnership,
       apartmentCredit: changes.apartmentCredit,
@@ -202,38 +217,20 @@ export class ProjectApartmentService {
   private resolveTeamChanges(
     changes: UpdateProjectDto,
   ): TProjectUpdateAttributes {
-    if (changes.hasOwnTeam === false && (changes.members?.length ?? 0) > 0) {
+    const hasOwnTeamMember = changes.members?.some(
+      (member) => member.role !== USER_ROLES.ENGINEER,
+    );
+    if (changes.hasOwnTeam === false && hasOwnTeamMember) {
       throw new BadRequestException(
-        'An inherited apartment team cannot also provide its own members',
+        'An inherited apartment team cannot also provide its own non-engineering members',
       );
     }
     if (changes.hasOwnTeam != null) {
       return { hasOwnTeam: changes.hasOwnTeam };
     }
-    return changes.members != null ? { hasOwnTeam: true } : {};
-  }
-
-  private resolveContactChanges(
-    apartment: IProject,
-    changes: UpdateProjectDto,
-  ): Partial<IProjectContact> {
-    if (!hasContactChanges(changes)) {
-      return {};
-    }
-
-    const contact = mergeContact(apartment, changes);
-    const missingFields = findMissingContactFields(
-      contact,
-      APARTMENT_REQUIRED_CONTACT_FIELDS,
-    );
-
-    if (missingFields.length > 0) {
-      throw new BadRequestException(
-        `An apartment needs its contact person: ${missingFields.join(', ')}`,
-      );
-    }
-
-    return contact;
+    return hasOwnTeamMember || changes.members?.length === 0
+      ? { hasOwnTeam: true }
+      : {};
   }
 
   private assertCanHoldApartments(building: IProject): void {

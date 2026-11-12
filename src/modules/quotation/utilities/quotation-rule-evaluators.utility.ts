@@ -3,6 +3,7 @@ import {
   EQUIPMENT_ROLE,
   CATALOGUE_STATUS,
   CATALOGUE_PREFERENCE,
+  WARNING_SCOPE_VERSION,
   QUOTATION_DECIMAL as Decimal,
 } from '../constants/quotation.constant';
 
@@ -19,6 +20,7 @@ import {
 } from '@Modules/quotation-rule/constants/quotation-rule.constant';
 
 import { quotationPaymentIssues } from './quotation-payment.utility';
+import { hasApprovedQuotationSnapshot } from './quotation-cancellation.utility';
 import type { IQuotationDocument } from '../interfaces/quotation-document.interface';
 import { ruleParameter } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
@@ -35,6 +37,15 @@ const hasRole = (items: IQuotationItem[], role: string): boolean =>
   items.some(
     (item) => item.equipmentRole === role && new Decimal(item.quantity).gt(0),
   );
+const accumulateCircuit = (
+  previous: IQuotationCircuit,
+  item: IQuotationItem,
+): IQuotationCircuit => {
+  const capacity = new Decimal(item.capacityBtu ?? 0).times(item.quantity);
+  return item.equipmentRole === EQUIPMENT_ROLE.INDOOR
+    ? { ...previous, indoor: capacity.plus(previous.indoor).toString() }
+    : { ...previous, outdoor: capacity.plus(previous.outdoor).toString() };
+};
 const missingController = (
   item: IQuotationItem,
   items: IQuotationItem[],
@@ -47,7 +58,7 @@ const missingController = (
       child.parentItemId === item.id &&
       child.equipmentRole === EQUIPMENT_ROLE.CONTROL,
   );
-export const quotationCircuits = (
+const legacyQuotationCircuits = (
   quotation: IQuotationDocument,
 ): IQuotationCircuit[] => {
   const equipment = quotation.sections
@@ -62,15 +73,56 @@ export const quotationCircuits = (
     (result, item) => {
       const name = item.circuit ?? 'A';
       const previous = result[name] ?? { name, indoor: '0', outdoor: '0' };
-      const capacity = new Decimal(item.capacityBtu ?? 0).times(item.quantity);
-      const updated =
-        item.equipmentRole === EQUIPMENT_ROLE.INDOOR
-          ? { ...previous, indoor: capacity.plus(previous.indoor).toString() }
-          : {
-              ...previous,
-              outdoor: capacity.plus(previous.outdoor).toString(),
-            };
-      return { ...result, [name]: updated };
+      return { ...result, [name]: accumulateCircuit(previous, item) };
+    },
+    {},
+  );
+  return Object.values(circuits);
+};
+export const quotationCircuits = (
+  quotation: IQuotationDocument,
+): IQuotationCircuit[] => {
+  if (
+    hasApprovedQuotationSnapshot(quotation) &&
+    quotation.warningScopeVersion === WARNING_SCOPE_VERSION.LEGACY
+  ) {
+    return legacyQuotationCircuits(quotation);
+  }
+  const sections = quotation.sections
+    .map((section, index) => ({ section, index }))
+    .filter(({ section }) => section.systemType === SYSTEM_TYPE.VRF);
+  const brands = sections.map(
+    ({ section }) => section.brand ?? quotation.brand,
+  );
+  const equipment = sections
+    .flatMap(({ section, index }) =>
+      section.items.map((item) => ({
+        item,
+        brand: section.brand ?? quotation.brand,
+        sectionId: section.id,
+        sectionTitle: section.title,
+        sectionIndex: index,
+      })),
+    )
+    .filter(({ item }) =>
+      [EQUIPMENT_ROLE.INDOOR, EQUIPMENT_ROLE.OUTDOOR].some(
+        (role) => role === item.equipmentRole,
+      ),
+    );
+  const hasMultipleBrands = new Set(brands).size > 1;
+  const hasMultipleSections = sections.length > 1;
+  const circuits = equipment.reduce<Record<string, IQuotationCircuit>>(
+    (result, { item, brand, sectionId, sectionTitle, sectionIndex }) => {
+      const circuit = item.circuit ?? 'A';
+      const key = JSON.stringify([sectionId, circuit]);
+      const label = hasMultipleSections
+        ? `${sectionTitle.trim() || 'מערכת'} ${sectionIndex + 1}`
+        : null;
+      const name = [hasMultipleBrands ? brand : null, label, circuit]
+        .filter((part) => part !== null)
+        .join(' · ');
+      const previous = result[key] ?? { name, indoor: '0', outdoor: '0' };
+      return { ...result, [key]: accumulateCircuit(previous, item) };
     },
     {},
   );

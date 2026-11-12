@@ -111,7 +111,7 @@ describe('customer related projects against isolated PostgreSQL', () => {
     expect(page.total).toBe(1);
     expect(page.counts).toEqual({
       total: 1,
-      byStage: { [PROJECT_STATUS_IDS.DRAFT]: 1 },
+      byStage: { [PROJECT_STATUS_IDS.NOT_STARTED]: 1 },
     });
   });
 
@@ -273,7 +273,7 @@ describe('customer related projects against isolated PostgreSQL', () => {
     await environment.project({ customerId: customer.id, name: 'מחסן רגיל' });
     const page = await environment.projects.getPage(customer.id, {
       search: '%_',
-      stageId: PROJECT_STATUS_IDS.DRAFT,
+      stageId: PROJECT_STATUS_IDS.NOT_STARTED,
     });
 
     expect(page.items.map((item) => item.id)).toEqual([draft.id]);
@@ -281,7 +281,7 @@ describe('customer related projects against isolated PostgreSQL', () => {
     expect(page.counts).toEqual({
       total: 2,
       byStage: {
-        [PROJECT_STATUS_IDS.DRAFT]: 1,
+        [PROJECT_STATUS_IDS.NOT_STARTED]: 1,
         [PROJECT_STATUS_IDS.IN_PROGRESS]: 1,
       },
     });
@@ -444,7 +444,7 @@ describe('customer related projects against isolated PostgreSQL', () => {
     await expect(
       environment.projects.getPage(customer.id, {
         batchCursor: cursor,
-        stageId: PROJECT_STATUS_IDS.DRAFT,
+        stageId: PROJECT_STATUS_IDS.NOT_STARTED,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(

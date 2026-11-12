@@ -1,5 +1,7 @@
 import {
   IStageChange,
+  TNoteByProjectId,
+  ITargetStageNoteQuery,
   IProjectStageTransition,
 } from './interfaces/project-stage-transition.interface';
 
@@ -15,6 +17,22 @@ export class ProjectStageTransitionService {
 
   getByProject(projectId: string): Promise<IProjectStageTransition[]> {
     return this.projectStageTransitionRepository.findByProject(projectId);
+  }
+
+  async findLatestNotesByTargetStages(
+    query: ITargetStageNoteQuery,
+  ): Promise<TNoteByProjectId> {
+    if (query.projectIds.length === 0) {
+      return new Map();
+    }
+
+    const notes =
+      await this.projectStageTransitionRepository.findNotesByTargetStages(
+        query,
+      );
+
+    // Notes arrive oldest first, so each project's newest note overwrites its older ones.
+    return new Map(notes.map(({ projectId, note }) => [projectId, note]));
   }
 
   async record(change: IStageChange, transaction?: Transaction): Promise<void> {

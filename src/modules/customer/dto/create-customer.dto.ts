@@ -1,10 +1,11 @@
 import {
   IsIn,
+  IsUUID,
   IsEmail,
-  Matches,
   IsString,
   MinLength,
   MaxLength,
+  IsOptional,
   IsNotEmpty,
 } from 'class-validator';
 
@@ -21,10 +22,15 @@ import {
 import { ValidateIf } from 'class-validator';
 import { Trim } from '@Decorators/trim.decorator';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
-import { FIELD_VALIDATION_REGEX } from '@Constants/field-validation.constant';
+import { NullIfBlank } from '@Decorators/null-if-blank.decorator';
+import { IsDialablePhone } from '@Decorators/is-dialable-phone.decorator';
 import { IsIsraeliCompanyNumber } from '@Decorators/is-israeli-company-number.decorator';
 
 export class CreateCustomerDto {
+  @IsOptional()
+  @IsUUID()
+  declare primaryContactId?: string | null;
+
   @ValidateIf((_object, value) => value != null)
   @IsIn(PAYMENT_TERMS_VALUES)
   declare paymentTerms?: PaymentTermsType | null;
@@ -54,21 +60,24 @@ export class CreateCustomerDto {
   declare address: string;
 
   @Trim()
-  @IsNotEmpty()
+  @NullIfBlank()
+  @IsOptional()
   @IsString()
   @MinLength(FIELD_LENGTHS.CONTACT_NAME_MIN)
   @MaxLength(FIELD_LENGTHS.CONTACT_NAME)
-  declare contactName: string;
+  declare contactName?: string | null;
 
   @Trim()
-  @IsNotEmpty()
-  @IsString()
-  @Matches(FIELD_VALIDATION_REGEX.ISRAELI_PHONE)
-  declare phone: string;
+  @NullIfBlank()
+  @IsOptional()
+  @IsDialablePhone()
+  @MaxLength(FIELD_LENGTHS.PHONE)
+  declare phone?: string | null;
 
   @Trim()
-  @IsNotEmpty()
+  @NullIfBlank()
+  @IsOptional()
   @IsEmail()
   @MaxLength(FIELD_LENGTHS.EMAIL)
-  declare email: string;
+  declare email?: string | null;
 }

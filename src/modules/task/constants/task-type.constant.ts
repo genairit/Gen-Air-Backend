@@ -9,7 +9,6 @@ export const TASK_TYPES = {
 export type TaskType = (typeof TASK_TYPES)[keyof typeof TASK_TYPES];
 
 export const TASK_TYPE_VALUES = Object.values(TASK_TYPES);
-export const MANUAL_TASK_TYPES = [TASK_TYPES.GENERAL] as const;
 export const PROTECTED_TASK_TYPES = [
   TASK_TYPES.QUOTATION,
   TASK_TYPES.PLANNING,

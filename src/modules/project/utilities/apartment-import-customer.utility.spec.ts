@@ -13,7 +13,7 @@ import {
 } from '../constants/apartment-import-customer.constant';
 
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
-import { CreateCustomerDto } from '@Modules/customer/dto/create-customer.dto';
+import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
 import { APARTMENT_IMPORT_COLUMNS } from '../constants/apartment-import.constant';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 
@@ -82,16 +82,17 @@ describe('new apartment import customer', () => {
     },
   );
 
-  it.each(Object.values(APARTMENT_IMPORT_CUSTOMER_FIELDS))(
-    'requires %s for new customers through the existing DTO',
-    async (key) => {
-      const result = await prepareApartmentImportCustomer(
-        makeCells({ [key]: '' }),
-      );
-      expect(result.customer).toBeNull();
-      expect(result.errors).toHaveLength(1);
-    },
-  );
+  it.each(
+    Object.values(APARTMENT_IMPORT_CUSTOMER_FIELDS).filter(
+      (key) => key !== 'customerPhone' && key !== 'customerEmail',
+    ),
+  )('requires %s for new customers through the existing DTO', async (key) => {
+    const result = await prepareApartmentImportCustomer(
+      makeCells({ [key]: '' }),
+    );
+    expect(result.customer).toBeNull();
+    expect(result.errors).toHaveLength(1);
+  });
 
   it('trims all inputs and maps customer phone/email rather than secondary contacts', async () => {
     const padded = makeCells().map((value) => `  ${value}  `);
@@ -133,7 +134,7 @@ describe('new apartment import customer', () => {
   });
 });
 
-const STORED_CUSTOMER: CreateCustomerDto = {
+const STORED_CUSTOMER = {
   name: CUSTOMER_CELLS.customerName,
   taxId: CUSTOMER_CELLS.customerTaxId,
   address: CUSTOMER_CELLS.customerAddress,
@@ -141,7 +142,12 @@ const STORED_CUSTOMER: CreateCustomerDto = {
   email: CUSTOMER_CELLS.customerEmail,
   contactName: CUSTOMER_CELLS.contactName,
   customerType: PROJECT_DETAIL_FIELD_SETS.COMPANY,
-};
+  primaryContact: {
+    name: CUSTOMER_CELLS.contactName,
+    phone: CUSTOMER_CELLS.customerPhone,
+    email: CUSTOMER_CELLS.customerEmail,
+  },
+} as ICustomer;
 
 describe('existing apartment customer consistency', () => {
   it('accepts matching supplied values without changing the stored customer', () => {
@@ -252,7 +258,14 @@ describe('existing apartment customer consistency', () => {
     expect(
       compareApartmentImportCustomer({
         cells: makeCells({ customerName: 'שם שונה' }),
-        customer: prepared.customer,
+        customer: {
+          ...prepared.customer,
+          primaryContact: {
+            name: prepared.customer.contactName,
+            phone: prepared.customer.phone,
+            email: prepared.customer.email,
+          },
+        } as ICustomer,
       }),
     ).toHaveLength(1);
   });

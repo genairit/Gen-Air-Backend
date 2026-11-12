@@ -10,6 +10,17 @@ import {
   TProjectCreationAttributes,
 } from './interfaces/project.interface';
 
+import {
+  PROJECT_STATUS_IDS,
+  ARCHIVED_PROJECT_STATUS_IDS,
+  WAITING_REASON_SOURCE_STATUS_IDS,
+} from '@Constants/project-status.constant';
+
+import {
+  TNoteByProjectId,
+  ITargetStageNoteQuery,
+} from '@Modules/project-stage-transition/interfaces/project-stage-transition.interface';
+
 import { Test } from '@nestjs/testing';
 import { ProjectService } from './project.service';
 import { ForbiddenException } from '@nestjs/common';
@@ -25,12 +36,12 @@ import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { authorizedUser } from '../../testing/authorization.fixture';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { ProjectApartmentService } from './project-apartment.service';
-import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
+import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
 import { APARTMENT_OWNERSHIP } from './constants/apartment-commercial.constant';
 import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
-import { ProjectTaskInitializationService } from './project-task-initialization.service';
+import { PARAN_JERUSALEM_PLACE } from '@Modules/address/testing/paran-jerusalem.fixture';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
@@ -38,11 +49,17 @@ import { ProjectStageTransitionService } from '@Modules/project-stage-transition
 const TRANSACTION = { id: 'transaction' };
 const PROJECT_ID = 'project-1';
 const QUOTE_STAGE_ID = 'stage-quote';
-const DRAFT_STAGE_ID = PROJECT_STATUS_IDS.DRAFT;
+const DRAFT_STAGE_ID = PROJECT_STATUS_IDS.NOT_STARTED;
 const ORDER_STAGE_ID = 'stage-order';
 const COMPANY_TYPE_ID = 'type-company';
 const PRIVATE_TYPE_ID = 'type-private';
+const BUILDING_TYPE_ID = 'type-building';
 const CUSTOMER_ID = 'customer-1';
+const WAITING_STAGE_ID = PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE;
+
+const waitingReasonRequired = {
+  response: { code: HTTP_ERROR_CODES.WAITING_REASON_REQUIRED },
+};
 
 const LINKED_CUSTOMER = {
   name: 'בבלי נדל״ן',
@@ -62,6 +79,12 @@ const PROJECT_TYPES = {
     canHaveApartments: false,
     detailFieldSet: PROJECT_DETAIL_FIELD_SETS.PRIVATE_CLIENT,
   },
+  [BUILDING_TYPE_ID]: {
+    id: BUILDING_TYPE_ID,
+    name: 'בנייה רוויה',
+    canHaveApartments: true,
+    detailFieldSet: PROJECT_DETAIL_FIELD_SETS.COMPANY,
+  },
 };
 
 const COMPANY_DETAILS = {
@@ -73,6 +96,7 @@ const COMPANY_DETAILS = {
 };
 
 const TEL_AVIV_PLACE_ID = 'ChIJ-tel-aviv' as const;
+const PARAN_PLACE_ID = PARAN_JERUSALEM_PLACE.id;
 const ROAD_PLACE_ID = 'ChIJ-road-without-city' as const;
 const UNKNOWN_PLACE_ID = 'ChIJ-unknown' as const;
 
@@ -82,6 +106,13 @@ const VERIFIED_ADDRESSES = {
     city: 'תל אביב-יפו',
     placeId: TEL_AVIV_PLACE_ID,
     formattedAddress: 'דרך נמיר 94, תל אביב-יפו',
+  },
+  [PARAN_PLACE_ID]: {
+    city: 'ירושלים',
+    countryCode: null,
+    placeId: PARAN_PLACE_ID,
+    formattedAddress: PARAN_JERUSALEM_PLACE.formattedAddress,
+    location: PARAN_JERUSALEM_PLACE.location,
   },
   [ROAD_PLACE_ID]: {
     city: null,
@@ -214,11 +245,15 @@ const createService = async () => {
   };
   const projectMemberService = {
     replaceForProject: jest.fn().mockResolvedValue(null),
+    replaceApartmentTeam: jest.fn().mockResolvedValue(null),
+    setApartmentEngineer: jest.fn().mockResolvedValue(null),
     validateAssignments: jest.fn().mockResolvedValue(null),
   };
-  const transitionService = { record: jest.fn().mockResolvedValue(null) };
-  const taskInitialization = {
-    ensureForProject: jest.fn().mockResolvedValue(null),
+  const transitionService = {
+    record: jest.fn().mockResolvedValue(null),
+    findLatestNotesByTargetStages: jest
+      .fn<Promise<TNoteByProjectId>, [ITargetStageNoteQuery]>()
+      .mockResolvedValue(new Map()),
   };
   const projectTypeService = {
     getById: jest.fn((id: keyof typeof PROJECT_TYPES) =>
@@ -246,10 +281,6 @@ const createService = async () => {
       ProjectService,
       ProjectIntakeService,
       ProjectApartmentService,
-      {
-        provide: ProjectTaskInitializationService,
-        useValue: taskInitialization,
-      },
       { provide: CustomerService, useValue: customerService },
       { provide: AddressService, useValue: addressService },
       { provide: EventEmitter2, useValue: eventEmitter },
@@ -269,7 +300,6 @@ const createService = async () => {
     addressService,
     projectRepository,
     transitionService,
-    taskInitialization,
     projectTypeService,
     projectMemberService,
   };
@@ -285,13 +315,12 @@ describe('ProjectService.create', () => {
     members: [{ userId: 'user-2', role: USER_ROLES.SECRETARY }],
   };
 
-  it('creates the project in Draft with its members, mandatory tasks and an opening timeline entry', async () => {
+  it('creates the project in Draft with its members and an opening timeline entry', async () => {
     const {
       service,
       projectRepository,
       projectMemberService,
       transitionService,
-      taskInitialization,
     } = await createService();
 
     await service.create(PROJECT, CREATOR);
@@ -314,22 +343,6 @@ describe('ProjectService.create', () => {
       expect.objectContaining({ fromStageId: null, toStageId: DRAFT_STAGE_ID }),
       TRANSACTION,
     );
-    expect(taskInitialization.ensureForProject).toHaveBeenCalledWith(
-      { id: PROJECT_ID, name: PROJECT.name },
-      CREATOR,
-      TRANSACTION,
-    );
-  });
-
-  it('does not publish a project when mandatory task initialization fails', async () => {
-    const { service, taskInitialization, eventEmitter } = await createService();
-    taskInitialization.ensureForProject.mockRejectedValue(
-      new Error('task write failed'),
-    );
-    await expect(service.create(PROJECT, CREATOR)).rejects.toThrow(
-      'task write failed',
-    );
-    expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
   });
 
   it('announces the new project after it is saved so Drive folders get created', async () => {
@@ -444,6 +457,288 @@ describe('ProjectService.move', () => {
   });
 });
 
+describe('ProjectService.move waiting reason', () => {
+  it.each([
+    ['missing', {}],
+    ['empty', { note: '' }],
+    ['whitespace', { note: '   ' }],
+  ])(
+    'rejects moving to waiting with a %s reason before any write',
+    async (_case, reason) => {
+      const { service, projectRepository, transitionService } =
+        await createService();
+
+      const move = service.move(
+        PROJECT_ID,
+        { stageId: WAITING_STAGE_ID, ...reason },
+        CREATOR,
+      );
+
+      await expect(move).rejects.toBeInstanceOf(BadRequestException);
+      await expect(move).rejects.toMatchObject(waitingReasonRequired);
+      expect(projectRepository.update).not.toHaveBeenCalled();
+      expect(transitionService.record).not.toHaveBeenCalled();
+    },
+  );
+
+  it('stores the reason on the waiting transition', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+
+    await service.move(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID, note: 'ממתינים לאישור הלקוח' },
+      CREATOR,
+    );
+
+    expect(projectRepository.update).toHaveBeenCalledWith(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID },
+      TRANSACTION,
+    );
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toStageId: WAITING_STAGE_ID,
+        note: 'ממתינים לאישור הלקוח',
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('keeps the note optional for other statuses and stores a blank one as null', async () => {
+    const { service, transitionService } = await createService();
+
+    await service.move(
+      PROJECT_ID,
+      { stageId: PROJECT_STATUS_IDS.COMPLETED, note: '' },
+      CREATOR,
+    );
+
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        note: null,
+        toStageId: PROJECT_STATUS_IDS.COMPLETED,
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('does not ask for a reason when the project is already waiting', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...STORED_COMPANY_PROJECT,
+      stageId: WAITING_STAGE_ID,
+    });
+
+    await service.move(PROJECT_ID, { stageId: WAITING_STAGE_ID }, CREATOR);
+
+    expect(projectRepository.update).not.toHaveBeenCalled();
+    expect(transitionService.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService.update waiting reason', () => {
+  it.each([
+    ['missing', {}],
+    ['empty', { stageNote: '' }],
+    ['whitespace', { stageNote: '   ' }],
+  ])(
+    'rejects updating into waiting with a %s stageNote before any write',
+    async (_case, reason) => {
+      const { service, projectRepository, transitionService } =
+        await createService();
+      const update = service.update(
+        PROJECT_ID,
+        { stageId: WAITING_STAGE_ID, ...reason },
+        CREATOR,
+      );
+
+      await expect(update).rejects.toBeInstanceOf(BadRequestException);
+      await expect(update).rejects.toMatchObject(waitingReasonRequired);
+      expect(projectRepository.update).not.toHaveBeenCalled();
+      expect(transitionService.record).not.toHaveBeenCalled();
+    },
+  );
+
+  it('records the stageNote when updating into waiting', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+
+    await service.update(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID, stageNote: 'ממתינים לחתימה' },
+      CREATOR,
+    );
+
+    expect(projectRepository.update).toHaveBeenCalledWith(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID },
+      TRANSACTION,
+    );
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changedBy: CREATOR,
+        toStageId: WAITING_STAGE_ID,
+        note: 'ממתינים לחתימה',
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('keeps stageNote optional when updating into another status', async () => {
+    const { service, transitionService } = await createService();
+
+    await service.update(
+      PROJECT_ID,
+      { stageId: PROJECT_STATUS_IDS.COMPLETED },
+      CREATOR,
+    );
+
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        note: null,
+        toStageId: PROJECT_STATUS_IDS.COMPLETED,
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('ignores a stageNote when the stage does not change', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...STORED_COMPANY_PROJECT,
+      stageId: WAITING_STAGE_ID,
+    });
+
+    await service.update(
+      PROJECT_ID,
+      { stageId: WAITING_STAGE_ID, stageNote: '' },
+      CREATOR,
+    );
+    await service.update(PROJECT_ID, { stageNote: 'סיבה' }, CREATOR);
+
+    expect(transitionService.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService waiting reason reads', () => {
+  const WAITING_PROJECT = {
+    ...STORED_COMPANY_PROJECT,
+    stageId: WAITING_STAGE_ID,
+  };
+
+  it('exposes the latest waiting reason of a waiting project', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(WAITING_PROJECT);
+    transitionService.findLatestNotesByTargetStages.mockResolvedValue(
+      new Map([[PROJECT_ID, 'ממתינים לתוכניות']]),
+    );
+
+    await expect(service.getById(PROJECT_ID)).resolves.toMatchObject({
+      waitingReason: 'ממתינים לתוכניות',
+    });
+    expect(
+      transitionService.findLatestNotesByTargetStages,
+    ).toHaveBeenCalledWith({
+      projectIds: [PROJECT_ID],
+      toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
+    });
+  });
+
+  it('exposes the archived On Hold reason of a migration-remapped waiting project', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(WAITING_PROJECT);
+    transitionService.findLatestNotesByTargetStages.mockResolvedValue(
+      new Map([[PROJECT_ID, 'סיבה מלהמתין']]),
+    );
+
+    await expect(service.getById(PROJECT_ID)).resolves.toMatchObject({
+      waitingReason: 'סיבה מלהמתין',
+    });
+    expect(WAITING_REASON_SOURCE_STATUS_IDS).toEqual([
+      PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE,
+      ARCHIVED_PROJECT_STATUS_IDS.ON_HOLD,
+    ]);
+  });
+
+  it('exposes null for a project that is not waiting, even with an old waiting note', async () => {
+    const { service, transitionService } = await createService();
+    transitionService.findLatestNotesByTargetStages.mockImplementation(
+      ({ projectIds }) =>
+        Promise.resolve(new Map(projectIds.map((id) => [id, 'סיבה ישנה']))),
+    );
+
+    await expect(service.getById(PROJECT_ID)).resolves.toMatchObject({
+      waitingReason: null,
+    });
+    expect(
+      transitionService.findLatestNotesByTargetStages,
+    ).toHaveBeenCalledWith({
+      projectIds: [],
+      toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
+    });
+  });
+
+  it('returns null after the project moves out of waiting', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById
+      .mockResolvedValueOnce(WAITING_PROJECT)
+      .mockResolvedValue({
+        ...STORED_COMPANY_PROJECT,
+        stageId: PROJECT_STATUS_IDS.IN_PROGRESS,
+      });
+
+    const moved = await service.move(
+      PROJECT_ID,
+      { stageId: PROJECT_STATUS_IDS.IN_PROGRESS },
+      CREATOR,
+    );
+
+    expect(moved.waitingReason).toBeNull();
+    expect(
+      transitionService.findLatestNotesByTargetStages,
+    ).toHaveBeenLastCalledWith({
+      projectIds: [],
+      toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
+    });
+  });
+
+  it('exposes reasons on the board list only for waiting projects', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    const otherProjectId = 'project-2';
+    projectRepository.findByFilter.mockResolvedValue({
+      items: [
+        WAITING_PROJECT,
+        { ...STORED_COMPANY_PROJECT, id: otherProjectId },
+      ],
+      nextCursor: 'cursor',
+    });
+    transitionService.findLatestNotesByTargetStages.mockResolvedValue(
+      new Map([[PROJECT_ID, 'ממתינים להצעת מחיר']]),
+    );
+
+    const page = await service.getByFilter({});
+
+    expect(page.nextCursor).toBe('cursor');
+    expect(page.items.map((item) => item.waitingReason)).toEqual([
+      'ממתינים להצעת מחיר',
+      null,
+    ]);
+    expect(
+      transitionService.findLatestNotesByTargetStages,
+    ).toHaveBeenCalledWith({
+      projectIds: [PROJECT_ID],
+      toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
+    });
+  });
+});
+
 describe('ProjectService.update', () => {
   it('leaves members untouched when the form does not send them', async () => {
     const { service, projectMemberService, transitionService } =
@@ -474,7 +769,9 @@ describe('ProjectService.update site details', () => {
 
     const [, updatedAttributes] = projectRepository.update.mock.calls[0];
 
-    expect(projectTypeService.getById).not.toHaveBeenCalled();
+    expect(projectTypeService.getById).toHaveBeenCalledWith(
+      LEGACY_PROJECT.projectTypeId,
+    );
     expect(updatedAttributes).toMatchObject({ name: 'שם חדש' });
     expect(updatedAttributes).not.toHaveProperty('customerName');
   });
@@ -580,6 +877,24 @@ describe('ProjectService.create intake fields', () => {
     });
   });
 
+  it('stores the selected verified Paran 1 place ID and Jerusalem address', async () => {
+    const { service, projectRepository } = await createService();
+
+    await service.create(
+      { ...PROJECT, addressPlaceId: PARAN_PLACE_ID },
+      CREATOR,
+    );
+
+    expect(projectRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addressPlaceId: PARAN_PLACE_ID,
+        addressCity: 'ירושלים',
+        address: 'פארן 1, ירושלים',
+      }),
+      TRANSACTION,
+    );
+  });
+
   it('rejects a project without an address', async () => {
     await expectRejection(
       { ...PROJECT, addressPlaceId: null },
@@ -673,44 +988,11 @@ describe('ProjectService.update intake fields', () => {
     expect(updatedAttributes).not.toHaveProperty('addressPlaceId');
   });
 
-  it('lets a legacy project add its contact person without asking for the other intake fields', async () => {
-    const updatedAttributes = await getUpdatedAttributes(
-      CONTACT,
-      STORED_COMPANY_PROJECT,
-    );
-
-    expect(updatedAttributes).toMatchObject(CONTACT);
-  });
-
-  it('requires the whole contact person once a legacy project edits it', async () => {
-    const { service, projectRepository } = await createService();
-    projectRepository.findById.mockResolvedValue(STORED_COMPANY_PROJECT);
-
-    await expect(
-      service.update(PROJECT_ID, { contactName: 'דנה לוי' }, CREATOR),
-    ).rejects.toThrow(
-      new BadRequestException(
-        'Missing contact person details: contactRole, contactPhone',
-      ),
-    );
-  });
-
-  it('changes one contact field and keeps the others', async () => {
+  it('ignores old inline contact fields when updating a project', async () => {
     const updatedAttributes = await getUpdatedAttributes({
       contactPhone: '054-1112233',
     });
-
-    expect(updatedAttributes).toMatchObject({
-      ...CONTACT,
-      contactPhone: '054-1112233',
-    });
-  });
-
-  it('rejects clearing a contact field', async () => {
-    await expectRejection(
-      { contactRole: null },
-      'Missing contact person details: contactRole',
-    );
+    expect(updatedAttributes).not.toHaveProperty('contactPhone');
   });
 
   it('verifies a new address with Google', async () => {
@@ -801,7 +1083,7 @@ const BUILDING = {
   ...STORED_INTAKE_PROJECT,
   id: BUILDING_ID,
   code: 'GA-84811',
-  projectTypeId: 'type-building',
+  projectTypeId: BUILDING_TYPE_ID,
   projectType: {
     name: 'בנייה רוויה',
     canHaveApartments: true,
@@ -826,8 +1108,7 @@ const STORED_APARTMENT = {
 
 describe('ProjectService.createApartment', () => {
   it('creates the apartment with everything the building decides', async () => {
-    const { service, projectRepository, eventEmitter, taskInitialization } =
-      await createService();
+    const { service, projectRepository, eventEmitter } = await createService();
     projectRepository.findById.mockResolvedValueOnce(BUILDING);
     projectRepository.countApartmentsEverCreated.mockResolvedValue(4);
 
@@ -853,11 +1134,6 @@ describe('ProjectService.createApartment', () => {
       parentProjectId: BUILDING_ID,
       projectTypeId: 'type-building',
     });
-    expect(taskInitialization.ensureForProject).toHaveBeenCalledWith(
-      { id: PROJECT_ID, name: 'דירה 12' },
-      CREATOR,
-      TRANSACTION,
-    );
     expect(eventEmitter.emitAsync).toHaveBeenCalledTimes(1);
     expect(eventEmitter.emitAsync).toHaveBeenCalledWith(
       DOMAIN_EVENTS.PROJECT_CREATED,
@@ -866,19 +1142,6 @@ describe('ProjectService.createApartment', () => {
     expect(projectRepository.create.mock.invocationCallOrder[0]).toBeLessThan(
       eventEmitter.emitAsync.mock.invocationCallOrder[0],
     );
-  });
-
-  it('does not announce an apartment whose mandatory task initialization fails', async () => {
-    const { service, projectRepository, eventEmitter, taskInitialization } =
-      await createService();
-    projectRepository.findById.mockResolvedValueOnce(BUILDING);
-    taskInitialization.ensureForProject.mockRejectedValue(
-      new Error('mandatory task failed'),
-    );
-    await expect(
-      service.createApartment(BUILDING_ID, NEW_APARTMENT, CREATOR),
-    ).rejects.toThrow('mandatory task failed');
-    expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
   });
 
   it('does not announce an apartment whose persistence fails', async () => {
@@ -1011,7 +1274,7 @@ describe('ProjectService apartment customer, creation terms and team', () => {
   it('persists a creation-time team override and validates its assignments', async () => {
     const { service, projectRepository, projectMemberService } =
       await createService();
-    const members = [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }];
+    const members = [{ userId: 'secretary-1', role: USER_ROLES.SECRETARY }];
     projectRepository.findById.mockResolvedValueOnce(BUILDING);
     await service.createApartment(
       BUILDING_ID,
@@ -1093,22 +1356,57 @@ describe('ProjectService.update apartment', () => {
     expect(projectRepository.update).not.toHaveBeenCalled();
   });
 
-  it('updates the end customer and contact without asking for building fields', async () => {
+  it('moves an apartment into waiting through a generic update with its stageNote', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+
+    await service.update(
+      STORED_APARTMENT.id,
+      { stageId: WAITING_STAGE_ID, stageNote: 'ממתינים לבעל הדירה' },
+      CREATOR,
+    );
+
+    expect(transitionService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: STORED_APARTMENT.id,
+        toStageId: WAITING_STAGE_ID,
+        note: 'ממתינים לבעל הדירה',
+      }),
+      TRANSACTION,
+    );
+  });
+
+  it('rejects a generic update moving an apartment into waiting without a stageNote', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+
+    await expect(
+      service.update(
+        STORED_APARTMENT.id,
+        { stageId: WAITING_STAGE_ID },
+        CREATOR,
+      ),
+    ).rejects.toMatchObject(waitingReasonRequired);
+    expect(projectRepository.update).not.toHaveBeenCalled();
+    expect(transitionService.record).not.toHaveBeenCalled();
+  });
+
+  it('updates the end customer without asking for building fields', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
 
     await service.update(
       STORED_APARTMENT.id,
-      { customerName: 'משפחת לוי', contactPhone: '054-1112233' },
+      { customerName: 'משפחת לוי' },
       CREATOR,
     );
 
     expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
-      ...CONTACT,
       customerFloor: 3,
       customerApartment: '12',
       customerName: 'משפחת לוי',
-      contactPhone: '054-1112233',
     });
   });
 
@@ -1182,6 +1480,31 @@ describe('ProjectService customer link', () => {
 });
 
 describe('ProjectService building guards', () => {
+  it('removes a standalone engineer before converting to a residential building', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue({
+      ...STORED_INTAKE_PROJECT,
+      projectType: PROJECT_TYPES[COMPANY_TYPE_ID],
+      members: [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }],
+    });
+
+    await service.update(
+      PROJECT_ID,
+      { projectTypeId: BUILDING_TYPE_ID, members: [] },
+      CREATOR,
+    );
+
+    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+      PROJECT_ID,
+      [],
+      TRANSACTION,
+    );
+    expect(
+      projectMemberService.replaceForProject.mock.invocationCallOrder[0],
+    ).toBeLessThan(projectRepository.update.mock.invocationCallOrder[0]);
+  });
+
   it('refuses to delete a building that still has apartments', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.countLiveApartments.mockResolvedValue(3);
@@ -1262,6 +1585,49 @@ describe('ProjectService.getApartments inheritance', () => {
   });
 });
 
+describe('ProjectService.getApartments waiting reason', () => {
+  it('exposes the reason of a waiting apartment and null for the others', async () => {
+    const { service, projectRepository, transitionService } =
+      await createService();
+    const waitingApartment = {
+      ...STORED_APARTMENT,
+      id: 'apartment-waiting',
+      stageId: PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE,
+    };
+    const activeApartment = {
+      ...STORED_APARTMENT,
+      id: 'apartment-active',
+      stageId: PROJECT_STATUS_IDS.IN_PROGRESS,
+    };
+    projectRepository.findById.mockResolvedValueOnce({
+      ...BUILDING,
+      ...BUILDING_INHERITANCE,
+    });
+    projectRepository.findByFilter.mockResolvedValue({
+      items: [waitingApartment, activeApartment],
+      nextCursor: null,
+    });
+    projectRepository.countByFilter.mockResolvedValue(2);
+    transitionService.findLatestNotesByTargetStages.mockResolvedValue(
+      new Map([[waitingApartment.id, 'ממתינים לבעל הדירה']]),
+    );
+
+    const page = await service.getApartments(BUILDING_ID, {});
+
+    expect(page.total).toBe(2);
+    expect(page.items.map((item) => item.waitingReason)).toEqual([
+      'ממתינים לבעל הדירה',
+      null,
+    ]);
+    expect(
+      transitionService.findLatestNotesByTargetStages,
+    ).toHaveBeenCalledWith({
+      projectIds: [waitingApartment.id],
+      toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
+    });
+  });
+});
+
 describe('ProjectService.update apartment notes', () => {
   it('saves the apartment own notes', async () => {
     const { service, projectRepository } = await createService();
@@ -1322,31 +1688,89 @@ describe('ProjectService apartment contact', () => {
     expect(projectRepository.create.mock.calls[0][0].contactRole).toBeNull();
   });
 
-  it('rejects clearing the apartment contact mobile', async () => {
+  it('rejects changes to the retired apartment contact mobile', async () => {
     const { service, projectRepository } = await createService();
     projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
 
     await expect(
       service.update(STORED_APARTMENT.id, { contactPhone: null }, CREATOR),
     ).rejects.toThrow('contactPhone');
+    expect(projectRepository.update).not.toHaveBeenCalled();
   });
 });
 
 describe('ProjectService apartment team changes', () => {
+  it('honors an explicit null engineer even when legacy members include an engineer', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    await service.update(
+      STORED_APARTMENT.id,
+      {
+        engineerUserId: null,
+        members: [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }],
+      },
+      CREATOR,
+    );
+    expect(projectMemberService.setApartmentEngineer).toHaveBeenCalledWith(
+      STORED_APARTMENT.id,
+      null,
+      TRANSACTION,
+    );
+  });
+
+  it('assigns an apartment engineer without overriding inherited non-engineering roles', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    await service.update(
+      STORED_APARTMENT.id,
+      { engineerUserId: 'engineer-1' },
+      CREATOR,
+    );
+    expect(projectRepository.update.mock.calls[0][1]).not.toHaveProperty(
+      'hasOwnTeam',
+    );
+    expect(projectMemberService.replaceApartmentTeam).not.toHaveBeenCalled();
+    expect(projectMemberService.setApartmentEngineer).toHaveBeenCalledWith(
+      STORED_APARTMENT.id,
+      'engineer-1',
+      TRANSACTION,
+    );
+  });
+
+  it('clears only the apartment engineer when requested', async () => {
+    const { service, projectRepository, projectMemberService } =
+      await createService();
+    projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
+    await service.update(
+      STORED_APARTMENT.id,
+      { engineerUserId: null },
+      CREATOR,
+    );
+    expect(projectMemberService.replaceApartmentTeam).not.toHaveBeenCalled();
+    expect(projectMemberService.setApartmentEngineer).toHaveBeenCalledWith(
+      STORED_APARTMENT.id,
+      null,
+      TRANSACTION,
+    );
+  });
+
   it('starts an own team when members are assigned', async () => {
     const { service, projectRepository, projectMemberService } =
       await createService();
-    const members = [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }];
+    const members = [{ userId: 'secretary-1', role: USER_ROLES.SECRETARY }];
     projectRepository.findById.mockResolvedValue(STORED_APARTMENT);
     await service.update(STORED_APARTMENT.id, { members }, CREATOR);
     expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
       hasOwnTeam: true,
     });
-    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+    expect(projectMemberService.replaceApartmentTeam).toHaveBeenCalledWith(
       STORED_APARTMENT.id,
       members,
       TRANSACTION,
     );
+    expect(projectMemberService.setApartmentEngineer).not.toHaveBeenCalled();
   });
 
   it('keeps an explicitly empty own team distinct from inheritance', async () => {
@@ -1361,7 +1785,7 @@ describe('ProjectService apartment team changes', () => {
     expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
       hasOwnTeam: true,
     });
-    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+    expect(projectMemberService.replaceApartmentTeam).toHaveBeenCalledWith(
       STORED_APARTMENT.id,
       [],
       TRANSACTION,
@@ -1379,11 +1803,12 @@ describe('ProjectService apartment team changes', () => {
     expect(projectRepository.update.mock.calls[0][1]).toMatchObject({
       hasOwnTeam: false,
     });
-    expect(projectMemberService.replaceForProject).toHaveBeenCalledWith(
+    expect(projectMemberService.replaceApartmentTeam).toHaveBeenCalledWith(
       STORED_APARTMENT.id,
       [],
       TRANSACTION,
     );
+    expect(projectMemberService.setApartmentEngineer).not.toHaveBeenCalled();
   });
 
   it('rejects conflicting inherited-team and own-member changes atomically', async () => {
@@ -1395,13 +1820,13 @@ describe('ProjectService apartment team changes', () => {
         STORED_APARTMENT.id,
         {
           hasOwnTeam: false,
-          members: [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }],
+          members: [{ userId: 'secretary-1', role: USER_ROLES.SECRETARY }],
         },
         CREATOR,
       ),
-    ).rejects.toThrow('cannot also provide its own members');
+    ).rejects.toThrow('cannot also provide its own non-engineering members');
     expect(projectRepository.update).not.toHaveBeenCalled();
-    expect(projectMemberService.replaceForProject).not.toHaveBeenCalled();
+    expect(projectMemberService.replaceApartmentTeam).not.toHaveBeenCalled();
   });
 
   it('does not replace the team when only apartment notes change', async () => {
@@ -1412,7 +1837,7 @@ describe('ProjectService apartment team changes', () => {
     expect(projectRepository.update.mock.calls[0][1]).not.toHaveProperty(
       'hasOwnTeam',
     );
-    expect(projectMemberService.replaceForProject).not.toHaveBeenCalled();
+    expect(projectMemberService.replaceApartmentTeam).not.toHaveBeenCalled();
   });
 
   it('rejects inheritance changes on a standalone project', async () => {
@@ -1423,6 +1848,19 @@ describe('ProjectService apartment team changes', () => {
     ).rejects.toThrow('only be changed for apartments');
     expect(projectRepository.update).not.toHaveBeenCalled();
     expect(projectMemberService.replaceForProject).not.toHaveBeenCalled();
+  });
+
+  it('rejects assigning an engineer directly to a residential building', async () => {
+    const { service, projectRepository } = await createService();
+    projectRepository.findById.mockResolvedValue(BUILDING);
+    await expect(
+      service.update(
+        BUILDING_ID,
+        { members: [{ userId: 'engineer-1', role: USER_ROLES.ENGINEER }] },
+        CREATOR,
+      ),
+    ).rejects.toThrow('Assign engineering workers to apartments');
+    expect(projectRepository.update).not.toHaveBeenCalled();
   });
 
   it.each(['א24', '24/1', '24אב'])(
@@ -1607,7 +2045,6 @@ describe('ProjectService lighting persistence', () => {
     ).rejects.toThrow(BadRequestException);
     expect(state.projectRepository.create).not.toHaveBeenCalled();
     expect(state.projectMemberService.replaceForProject).not.toHaveBeenCalled();
-    expect(state.taskInitialization.ensureForProject).not.toHaveBeenCalled();
     expect(state.eventEmitter.emitAsync).not.toHaveBeenCalled();
   });
 

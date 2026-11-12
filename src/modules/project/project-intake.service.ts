@@ -7,17 +7,9 @@ import {
 import {
   TProjectIntake,
   IProjectAddress,
-  IProjectContact,
   TProjectIntakeInput,
   IProjectIntakeChangeRequest,
 } from './interfaces/project.interface';
-
-import {
-  mergeContact,
-  hasAddressChanges,
-  hasContactChanges,
-  findMissingContactFields,
-} from './utilities/project-intake.utility';
 
 import {
   EMPTY_CONTACT,
@@ -26,6 +18,7 @@ import {
 
 import { AddressService } from '@Modules/address/address.service';
 import { IPlaceAddress } from '@Interfaces/google-places.interface';
+import { hasAddressChanges } from './utilities/project-intake.utility';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
 
 @Injectable()
@@ -45,28 +38,12 @@ export class ProjectIntakeService {
     return { ...address, ...contact };
   }
 
-  resolveContact(intake: TProjectIntakeInput): IProjectContact {
-    return this.requireCompleteContact(mergeContact({}, intake));
-  }
-
   async resolveChanges(
     request: IProjectIntakeChangeRequest,
   ): Promise<Partial<TProjectIntake>> {
-    const contact = this.resolveContactChanges(request);
     const address = await this.resolveAddressChanges(request);
 
-    return { ...address, ...contact };
-  }
-
-  private resolveContactChanges({
-    project,
-    changes,
-  }: IProjectIntakeChangeRequest): Partial<IProjectContact> {
-    if (!hasContactChanges(changes)) {
-      return {};
-    }
-
-    return this.requireCompleteContact(mergeContact(project, changes));
+    return address;
   }
 
   private async resolveAddressChanges(
@@ -87,18 +64,6 @@ export class ProjectIntakeService {
     }
 
     return {};
-  }
-
-  private requireCompleteContact(contact: IProjectContact): IProjectContact {
-    const missingFields = findMissingContactFields(contact);
-
-    if (missingFields.length > 0) {
-      throw new BadRequestException(
-        `Missing contact person details: ${missingFields.join(', ')}`,
-      );
-    }
-
-    return contact;
   }
 
   private async resolveAddress(

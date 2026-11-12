@@ -10,6 +10,7 @@ import {
 } from './utilities/quotation-selection.utility';
 
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { quotationSectionBrand } from './utilities/quotation-brand.utility';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { isCompatible } from '@Modules/catalogue-item/utilities/catalogue-ranking.utility';
 import type { IQuotationSelectionRequest } from './interfaces/quotation-selection.interface';
@@ -63,7 +64,12 @@ export class QuotationSelectionService {
       if (!isCompatible(catalogue, section.systemType)) {
         throw new BadRequestException('הפריט אינו מתאים לסוג המערכת');
       }
-      if (catalogue.brand && input.brand && catalogue.brand !== input.brand) {
+      const sectionBrand = quotationSectionBrand(section, input.brand);
+      const isWrongBrand =
+        sectionBrand === null
+          ? catalogue.brand !== ''
+          : catalogue.brand !== '' && catalogue.brand !== sectionBrand;
+      if (isWrongBrand) {
         throw new BadRequestException('יש לבחור פריט תואם לחברת המיזוג');
       }
       return quotationItemSnapshot({

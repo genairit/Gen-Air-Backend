@@ -16,6 +16,8 @@ import {
 } from '@Constants/field-validation.constant';
 
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
+import { NullIfBlank } from '@Decorators/null-if-blank.decorator';
+import { IsDialablePhone } from '@Decorators/is-dialable-phone.decorator';
 import { IsIsraeliCompanyNumber } from '@Decorators/is-israeli-company-number.decorator';
 
 export class ProjectCustomerDetailsDto {
@@ -49,10 +51,9 @@ export class ProjectCustomerDetailsDto {
   declare customerCity?: string | null;
 
   @IsOptional()
+  @NullIfBlank()
   @IsString()
-  @Matches(FIELD_VALIDATION_REGEX.ISRAELI_PHONE, {
-    message: 'customerPhone must be an Israeli phone number, e.g. 052-1234567',
-  })
+  @IsDialablePhone()
   declare customerPhone?: string | null;
 
   @IsOptional()

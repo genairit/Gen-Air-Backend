@@ -10,9 +10,11 @@ import {
 
 import {
   IProject,
-  IApartmentPage,
+  TProjectRead,
   INewProjectContext,
+  TApartmentReadPage,
   IProjectStageCounts,
+  IProjectWaitingReason,
   IProjectFieldSetTarget,
   IProjectCustomerDetails,
   TProjectUpdateAttributes,
@@ -21,9 +23,19 @@ import {
 } from './interfaces/project.interface';
 
 import {
+  PROJECT_STATUS_IDS,
+  WAITING_REASON_SOURCE_STATUS_IDS,
+} from '@Constants/project-status.constant';
+
+import {
   resolveProjectLighting,
   resolveProjectLightingChanges,
 } from './utilities/project-lighting.utility';
+
+import {
+  resolveStageNote,
+  findChangingStageId,
+} from './utilities/project-stage-note.utility';
 
 import {
   pickCustomerDetails,
@@ -64,8 +76,10 @@ import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
-import { ProjectTaskInitializationService } from './project-task-initialization.service';
+import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
+import { LinkProjectContactDto } from '@Modules/project-contact/dto/link-project-contact.dto';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-sync-status.constant';
 import { IProjectMemberAssignment } from '@Modules/project-member/interfaces/project-member.interface';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
@@ -84,23 +98,24 @@ export class ProjectService {
     private readonly projectStageTransitionService: ProjectStageTransitionService,
     @Inject(forwardRef(() => ProjectStageService))
     private readonly projectStageService: ProjectStageService,
-    private readonly taskInitialization: ProjectTaskInitializationService,
   ) {}
 
-  async getById(id: string): Promise<IProject> {
+  async getById(id: string): Promise<TProjectRead> {
     const project = await this.getStoredById(id);
+    const [projectWithReason] = await this.withWaitingReasons([
+      this.projectApartmentService.resolveForRead(project),
+    ]);
 
-    return this.projectApartmentService.resolveForRead(project);
+    return projectWithReason;
   }
 
   async getByFilter(
     filter: GetProjectsByFilterDto,
-  ): Promise<ICursorPage<IProject>> {
+  ): Promise<ICursorPage<TProjectRead>> {
     const projectIds = await this.findManagedProjectIds(
       filter.managerId ?? null,
     );
-
-    return this.projectRepository.findByFilter(
+    const page = await this.projectRepository.findByFilter(
       {
         projectIds,
         parentProjectId: null,
@@ -110,6 +125,15 @@ export class ProjectService {
       },
       toCursorBatch(filter),
     );
+
+    return {
+      ...page,
+      items: await this.withWaitingReasons(
+        page.items.map((project) =>
+          this.projectApartmentService.resolveForRead(project),
+        ),
+      ),
+    };
   }
 
   async getStageCounts(
@@ -145,13 +169,22 @@ export class ProjectService {
     return this.projectRepository.isNameAvailable(name, excludeId);
   }
 
-  async create(project: CreateProjectDto, creator: IUser): Promise<IProject> {
+  async create(
+    project: CreateProjectDto,
+    creator: IUser,
+  ): Promise<TProjectRead> {
     const [initialStage, projectType] = await Promise.all([
       this.projectStageService.getInitialStage(),
       this.projectTypeService.getById(project.projectTypeId),
       this.projectMemberService.validateAssignments(project.members),
       this.assertLinkableCustomer(project.customerId),
     ]);
+
+    this.assertBuildingEngineerNotAssigned(
+      projectType.canHaveApartments,
+      null,
+      project.members,
+    );
 
     const customerDetails = this.resolveCustomerDetails(
       pickCustomerDetails(project),
@@ -177,6 +210,7 @@ export class ProjectService {
         customerId: project.customerId,
       },
       { members: project.members, creator },
+      project.contacts ?? [],
     );
 
     return this.completeProjectCreation(createdProjectId);
@@ -186,8 +220,13 @@ export class ProjectService {
     buildingId: string,
     apartment: CreateApartmentDto,
     creator: IUser,
-  ): Promise<IProject> {
-    const members = apartment.members ?? [];
+  ): Promise<TProjectRead> {
+    const members = [
+      ...(apartment.members ?? []),
+      ...(apartment.engineerUserId
+        ? [{ role: USER_ROLES.ENGINEER, userId: apartment.engineerUserId }]
+        : []),
+    ];
     const [building, initialStage] = await Promise.all([
       this.getStoredById(buildingId),
       this.projectStageService.getInitialStage(),
@@ -212,17 +251,30 @@ export class ProjectService {
   async getApartments(
     buildingId: string,
     filter: GetApartmentsByFilterDto,
-  ): Promise<IApartmentPage> {
+  ): Promise<TApartmentReadPage> {
     const building = await this.getStoredById(buildingId);
+    const page = await this.projectApartmentService.findByBuilding(
+      building,
+      filter,
+    );
 
-    return this.projectApartmentService.findByBuilding(building, filter);
+    return { ...page, items: await this.withWaitingReasons(page.items) };
+  }
+
+  async listBuildingApartments(
+    buildingId: string,
+    transaction?: Transaction,
+  ): Promise<IProject[]> {
+    const building = await this.getStoredById(buildingId, transaction);
+
+    return this.projectApartmentService.listAll(building, transaction);
   }
 
   updateForActor(
     id: string,
     input: UpdateProjectDto,
     actor: IAuthorizedUser,
-  ): Promise<IProject> {
+  ): Promise<TProjectRead> {
     assertPermissions(actor, PERMISSIONS.PROJECTS_UPDATE);
     if ('stageId' in input) {
       assertPermissions(actor, PERMISSIONS.PROJECTS_STATUS_CHANGE);
@@ -235,31 +287,55 @@ export class ProjectService {
     id: string,
     changes: UpdateProjectDto,
     editor: IUser,
-  ): Promise<IProject> {
+  ): Promise<TProjectRead> {
     const [project] = await Promise.all([
       this.getStoredById(id),
       this.validateChanges(changes),
     ]);
+    const stageChange = this.resolveStageChange({
+      project,
+      changedBy: editor,
+      note: changes.stageNote ?? null,
+      toStageId: changes.stageId ?? null,
+    });
+    const targetType = changes.projectTypeId
+      ? await this.projectTypeService.getById(changes.projectTypeId)
+      : (project.projectType ??
+        (await this.projectTypeService.getById(project.projectTypeId)));
+    this.assertBuildingEngineerNotAssigned(
+      targetType.canHaveApartments,
+      project.parentProjectId,
+      changes.members ?? project.members ?? [],
+    );
     const attributes = await this.resolveUpdateAttributes(project, changes);
+    const removeEngineerBeforeTypeChange =
+      !project.parentProjectId &&
+      targetType.canHaveApartments &&
+      changes.projectTypeId !== undefined &&
+      project.members?.some((member) => member.role === USER_ROLES.ENGINEER) &&
+      changes.members !== undefined;
 
     await this.databaseTransactionService.run(async (transaction) => {
+      if (removeEngineerBeforeTypeChange) {
+        await this.replaceMembersWhenProvided(
+          id,
+          changes.members ?? null,
+          transaction,
+        );
+      }
       await this.projectRepository.update(id, attributes, transaction);
 
-      await this.replaceMembersWhenProvided(
-        id,
-        changes.hasOwnTeam === false ? [] : (changes.members ?? null),
-        transaction,
-      );
+      if (project.parentProjectId) {
+        await this.updateApartmentMembers(id, changes, transaction);
+      } else if (!removeEngineerBeforeTypeChange) {
+        await this.replaceMembersWhenProvided(
+          id,
+          changes.members ?? null,
+          transaction,
+        );
+      }
 
-      await this.applyStageChange(
-        {
-          project,
-          note: null,
-          changedBy: editor,
-          toStageId: changes.stageId ?? null,
-        },
-        transaction,
-      );
+      await this.applyStageChange(stageChange, transaction);
     });
 
     return this.getById(id);
@@ -269,22 +345,20 @@ export class ProjectService {
     id: string,
     move: MoveProjectDto,
     changedBy: IUser,
-  ): Promise<IProject> {
+  ): Promise<TProjectRead> {
     const [project] = await Promise.all([
-      this.getById(id),
+      this.getStoredById(id),
       this.projectStageService.getById(move.stageId),
     ]);
+    const stageChange = this.resolveStageChange({
+      project,
+      changedBy,
+      note: move.note ?? null,
+      toStageId: move.stageId,
+    });
 
     await this.databaseTransactionService.run((transaction) =>
-      this.applyStageChange(
-        {
-          project,
-          changedBy,
-          note: move.note ?? null,
-          toStageId: move.stageId,
-        },
-        transaction,
-      ),
+      this.applyStageChange(stageChange, transaction),
     );
 
     return this.getById(id);
@@ -334,7 +408,9 @@ export class ProjectService {
     }
   }
 
-  private async completeProjectCreation(projectId: string): Promise<IProject> {
+  private async completeProjectCreation(
+    projectId: string,
+  ): Promise<TProjectRead> {
     const projectCreated: IProjectCreatedEvent = { projectId };
     await this.eventEmitter.emitAsync(
       DOMAIN_EVENTS.PROJECT_CREATED,
@@ -343,8 +419,32 @@ export class ProjectService {
     return this.getById(projectId);
   }
 
-  private async getStoredById(id: string): Promise<IProject> {
-    const project = await this.projectRepository.findById(id);
+  private async withWaitingReasons<T extends IProject>(
+    projects: T[],
+  ): Promise<(T & IProjectWaitingReason)[]> {
+    const waitingProjectIds = projects
+      .filter(
+        (project) =>
+          project.stageId === PROJECT_STATUS_IDS.WAITING_FOR_RESPONSE,
+      )
+      .map((project) => project.id);
+    const reasonByProjectId =
+      await this.projectStageTransitionService.findLatestNotesByTargetStages({
+        projectIds: waitingProjectIds,
+        toStageIds: WAITING_REASON_SOURCE_STATUS_IDS,
+      });
+
+    return projects.map((project) => ({
+      ...project,
+      waitingReason: reasonByProjectId.get(project.id) ?? null,
+    }));
+  }
+
+  private async getStoredById(
+    id: string,
+    transaction?: Transaction,
+  ): Promise<IProject> {
+    const project = await this.projectRepository.findById(id, transaction);
 
     if (!project) {
       throw new NotFoundException(`Project ${id} was not found`);
@@ -356,12 +456,41 @@ export class ProjectService {
   private async persistNewProject(
     attributes: TProjectCreationAttributes,
     { members, creator }: INewProjectContext,
+    contacts: LinkProjectContactDto[] = [],
   ): Promise<string> {
     return this.databaseTransactionService.run(async (transaction) => {
       const created = await this.projectRepository.create(
         attributes,
         transaction,
       );
+
+      if (contacts.length > 0) {
+        const uniqueIds = new Set(contacts.map((contact) => contact.contactId));
+        const primaryCount = contacts.filter(
+          (contact) => contact.isPrimary,
+        ).length;
+        const existingCount = await CustomerContact.count({
+          where: { id: [...uniqueIds] },
+          transaction,
+        });
+        if (
+          uniqueIds.size !== contacts.length ||
+          primaryCount > 1 ||
+          existingCount !== contacts.length
+        ) {
+          throw new BadRequestException('Invalid project contacts');
+        }
+
+        await ProjectContactLink.bulkCreate(
+          contacts.map((contact) => ({
+            projectId: created.id,
+            contactId: contact.contactId,
+            role: contact.role ?? null,
+            isPrimary: contact.isPrimary ?? false,
+          })),
+          { transaction },
+        );
+      }
 
       await this.projectMemberService.replaceForProject(
         created.id,
@@ -377,12 +506,6 @@ export class ProjectService {
           projectId: created.id,
           toStageId: attributes.stageId,
         },
-        transaction,
-      );
-
-      await this.taskInitialization.ensureForProject(
-        { id: created.id, name: attributes.name },
-        creator,
         transaction,
       );
 
@@ -402,6 +525,12 @@ export class ProjectService {
       });
     }
 
+    if ('hasOwnLighting' in changes) {
+      throw new BadRequestException(
+        'Only apartments can override building lighting',
+      );
+    }
+
     return this.resolveProjectChanges(project, changes);
   }
 
@@ -413,6 +542,10 @@ export class ProjectService {
       throw new BadRequestException(
         'Apartment ownership and credit belong to apartments only',
       );
+    }
+
+    if ('engineerUserId' in changes) {
+      throw new BadRequestException('Only apartments can assign an engineer');
     }
 
     if ('hasOwnTeam' in changes) {
@@ -518,7 +651,29 @@ export class ProjectService {
       changes.members
         ? this.projectMemberService.validateAssignments(changes.members)
         : null,
+      changes.engineerUserId
+        ? this.projectMemberService.validateAssignments([
+            { userId: changes.engineerUserId, role: USER_ROLES.ENGINEER },
+          ])
+        : null,
     ]);
+  }
+
+  private assertBuildingEngineerNotAssigned(
+    canHaveApartments: boolean,
+    parentProjectId: string | null,
+    members: readonly { role: string }[],
+  ): void {
+    const isResidentialBuilding = canHaveApartments && !parentProjectId;
+    const hasEngineer = members.some(
+      (member) => member.role === USER_ROLES.ENGINEER,
+    );
+
+    if (isResidentialBuilding && hasEngineer) {
+      throw new BadRequestException(
+        'Assign engineering workers to apartments, not their parent building',
+      );
+    }
   }
 
   private async findTargetFieldSet(
@@ -593,14 +748,59 @@ export class ProjectService {
     );
   }
 
+  private resolveStageChange(
+    request: IProjectStageChangeRequest,
+  ): IProjectStageChangeRequest {
+    const toStageId = findChangingStageId(request);
+
+    if (!toStageId) {
+      return request;
+    }
+
+    return {
+      ...request,
+      note: resolveStageNote({ toStageId, note: request.note }),
+    };
+  }
+
+  private async updateApartmentMembers(
+    projectId: string,
+    changes: UpdateProjectDto,
+    transaction: Transaction,
+  ): Promise<void> {
+    const team = changes.hasOwnTeam === false ? [] : (changes.members ?? null);
+    const legacyEngineer = changes.members?.find(
+      (member) => member.role === USER_ROLES.ENGINEER,
+    );
+    const engineerChanged = 'engineerUserId' in changes || legacyEngineer;
+
+    if (team) {
+      await this.projectMemberService.replaceApartmentTeam(
+        projectId,
+        team,
+        transaction,
+      );
+    }
+
+    if (engineerChanged) {
+      await this.projectMemberService.setApartmentEngineer(
+        projectId,
+        'engineerUserId' in changes
+          ? (changes.engineerUserId ?? null)
+          : (legacyEngineer?.userId ?? null),
+        transaction,
+      );
+    }
+  }
+
   private async applyStageChange(
     request: IProjectStageChangeRequest,
     transaction: Transaction,
   ): Promise<void> {
-    const { project, toStageId } = request;
-    const isStageChanging = toStageId !== null && toStageId !== project.stageId;
+    const { project, note } = request;
+    const toStageId = findChangingStageId(request);
 
-    if (!isStageChanging) {
+    if (!toStageId) {
       return;
     }
 
@@ -612,8 +812,8 @@ export class ProjectService {
 
     await this.projectStageTransitionService.record(
       {
+        note,
         toStageId,
-        note: request.note,
         projectId: project.id,
         fromStageId: project.stageId,
         changedBy: request.changedBy,

@@ -1,5 +1,4 @@
 import { UpdateProjectDto } from '../dto/update-project.dto';
-import { IProjectContact } from '../interfaces/project.interface';
 
 export const APARTMENT = {
   PAGE_SIZE: 25,
@@ -14,11 +13,13 @@ export const APARTMENT_EDITABLE_FIELDS: readonly (keyof UpdateProjectDto)[] = [
   'name',
   'notes',
   'stageId',
+  'stageNote',
   'members',
+  'engineerUserId',
   'hasOwnTeam',
-  'contactName',
-  'contactRole',
-  'contactPhone',
+  'hasOwnLighting',
+  'hasGeneralLightingCeilingLowering',
+  'generalLightingCeilingLoweringHeight',
   'customerName',
   'customerPhone',
   'customerFloor',
@@ -29,6 +30,3 @@ export const APARTMENT_REQUIRED_FIELDS: readonly (keyof UpdateProjectDto)[] = [
   'customerFloor',
   'customerApartment',
 ];
-
-export const APARTMENT_REQUIRED_CONTACT_FIELDS: readonly (keyof IProjectContact)[] =
-  ['contactName', 'contactPhone'];

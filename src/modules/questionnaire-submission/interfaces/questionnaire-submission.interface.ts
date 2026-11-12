@@ -6,7 +6,6 @@ export interface IQuestionnaireSubmission {
   id: string;
   role: string;
   createdAt: Date;
-  updatedAt: Date;
   fullName: string;
   requestId: string;
   department: string;
@@ -15,7 +14,7 @@ export interface IQuestionnaireSubmission {
 }
 export type TQuestionnaireSubmissionCreation = Omit<
   IQuestionnaireSubmission,
-  'id' | 'createdAt' | 'updatedAt'
+  'id' | 'createdAt'
 >;
 export interface IQuestionnaireReceipt {
   id: string;

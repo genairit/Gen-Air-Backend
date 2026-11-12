@@ -19,6 +19,7 @@ import {
   MAX_SECTIONS,
   type TSystemType,
   MAX_ITEMS_PER_SECTION,
+  MAX_QUOTATION_CANCELLATION_REASON_LENGTH,
 } from '../constants/quotation.constant';
 
 import {
@@ -45,7 +46,7 @@ export class QuotationItemDto {
   @IsUUID()
   declare parentItemId: string | null;
   @IsString()
-  @MaxLength(1000)
+  @MaxLength(MAX_QUOTATION_CANCELLATION_REASON_LENGTH)
   declare description: string;
   @Matches(/^\d{1,12}(?:\.\d{1,4})?$/)
   declare quotedPrice: string;
@@ -71,6 +72,10 @@ export class QuotationSectionDto {
   declare title: string;
   @IsIn(SYSTEM_TYPES)
   declare systemType: TSystemType;
+  @ValidateIf((_o, v) => v !== null && v != null)
+  @IsString()
+  @MaxLength(100)
+  declare brand?: string | null;
   @IsArray()
   @ArrayMaxSize(MAX_ITEMS_PER_SECTION)
   @ValidateNested({ each: true })
@@ -83,6 +88,9 @@ export class CreateQuotationDto {
   @ValidateIf((_o, v) => v != null)
   @IsUUID()
   declare projectId?: string | null;
+  @ValidateIf((_o, v) => v != null)
+  @IsUUID()
+  declare salesAgentId?: string | null;
 }
 export class SaveQuotationDto {
   @IsInt()
@@ -93,12 +101,21 @@ export class SaveQuotationDto {
   @ValidateIf((_o, v) => v !== null)
   @IsUUID()
   declare projectId: string | null;
+  @ValidateIf((_o, v) => v != null)
+  @IsUUID()
+  declare salesAgentId?: string | null;
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   @IsDateString({ strict: true })
   declare date: string;
   @IsString()
   @MaxLength(100)
   declare brand: string;
+  @ValidateIf((_o, v) => v != null)
+  @IsArray()
+  @ArrayMaxSize(14)
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  declare brands?: string[];
   @ValidateIf((_o, v) => v !== null)
   @IsIn(PAYMENT_TERMS_VALUES)
   declare paymentTerms: PaymentTermsType | null;
@@ -135,6 +152,17 @@ export class QuotationTransitionDto {
   ])
   declare status: 'draft' | 'review' | 'approved';
 }
+export class QuotationCancellationDto {
+  @IsInt()
+  @Min(1)
+  declare version: number;
+}
+export class CancelQuotationDto extends QuotationCancellationDto {
+  @IsString()
+  @MaxLength(1000)
+  @Matches(/\S/u)
+  declare reason: string;
+}
 export class AcknowledgeWarningsDto {
   @IsInt()
   @Min(1)
@@ -144,4 +172,12 @@ export class AcknowledgeWarningsDto {
   @IsString({ each: true })
   @MaxLength(100, { each: true })
   declare warningKeys: string[];
+}
+export class UpdateSalesAgentDto {
+  @IsInt()
+  @Min(1)
+  declare version: number;
+  @ValidateIf((_o, v) => v !== null)
+  @IsUUID()
+  declare salesAgentId: string | null;
 }

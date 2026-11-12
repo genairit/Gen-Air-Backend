@@ -29,7 +29,10 @@ export class CustomerRepository {
 
   findById(id: string): Promise<Customer | null> {
     return Customer.findByPk(id, {
-      include: [{ model: User, paranoid: false }, { model: CustomerContact }],
+      include: [
+        { model: User, paranoid: false },
+        { model: CustomerContact, as: 'primaryContact' },
+      ],
     });
   }
 
@@ -39,8 +42,11 @@ export class CustomerRepository {
   ): Promise<Customer | null> {
     return Customer.findOne({
       where: { taxId },
+      include: [{ model: CustomerContact, as: 'primaryContact' }],
       transaction,
-      lock: transaction != null,
+      lock: transaction
+        ? { level: transaction.LOCK.UPDATE, of: Customer }
+        : false,
     });
   }
 
@@ -50,16 +56,7 @@ export class CustomerRepository {
   ): Promise<ICursorPage<Customer>> {
     const rows = await Customer.findAll({
       bind: { customerContactSearch: toContainsPattern(filter.search ?? '') },
-      include: [
-        {
-          model: CustomerContact,
-          separate: true,
-          order: [
-            ['createdAt', 'ASC'],
-            ['id', 'ASC'],
-          ],
-        },
-      ],
+      include: [{ model: CustomerContact, as: 'primaryContact' }],
       where: {
         [Op.and]: [
           ...this.buildFilterWhere(filter),
@@ -147,7 +144,7 @@ export class CustomerRepository {
       .join('.');
     return literal(`EXISTS (
       SELECT 1 FROM ${table} AS "searchContact"
-      WHERE "searchContact"."customer_id" = "Customer"."id"
+      WHERE "searchContact"."id" = "Customer"."primary_contact_id"
         AND "searchContact"."deleted_at" IS NULL
         AND (
           "searchContact"."name" ILIKE $customerContactSearch

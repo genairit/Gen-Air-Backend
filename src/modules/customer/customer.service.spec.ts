@@ -10,6 +10,7 @@ import { CustomerRepository } from './customer.repository';
 import { ICustomer } from './interfaces/customer.interface';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
+import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { createCustomerDependencyFixtures } from '@Modules/customer-contact/testing/customer-dependencies.fixture';
 
 const CUSTOMER: ICustomer = {
@@ -97,6 +98,14 @@ describe('CustomerService.getSyncStatusCounts', () => {
 });
 
 describe('CustomerService.update', () => {
+  it('keeps primary contact fields managed by the directory', async () => {
+    const { service, customerRepository } = await createService();
+    await expect(
+      service.update(CUSTOMER.id, { phone: '+442071838750' }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(customerRepository.update).not.toHaveBeenCalled();
+  });
+
   it('does not check availability when the tax id is unchanged', async () => {
     const { service, customerRepository } = await createService();
 
@@ -148,6 +157,72 @@ describe('CustomerService.create', () => {
     customerType: CUSTOMER.customerType,
   };
 
+  afterEach(() => jest.restoreAllMocks());
+
+  it('links an existing directory contact while creating a customer', async () => {
+    const { service, customerRepository, dependencies } = await createService();
+    const contact = {
+      id: 'contact-existing',
+      name: 'איש קשר קיים',
+      phone: '+12025550123',
+      email: null,
+    };
+    jest
+      .spyOn(CustomerContact, 'findByPk')
+      .mockResolvedValueOnce(contact as CustomerContact);
+
+    await service.create(
+      {
+        ...input,
+        contactName: null,
+        phone: null,
+        email: null,
+        primaryContactId: contact.id,
+      },
+      'trusted-user',
+    );
+
+    expect(
+      dependencies.contacts.resolveDirectoryForImport,
+    ).not.toHaveBeenCalled();
+    expect(customerRepository.update).toHaveBeenCalledWith(
+      CUSTOMER.id,
+      {
+        primaryContactId: contact.id,
+      },
+      dependencies.transaction,
+    );
+  });
+
+  it('rejects a missing selected contact before reporting creation success', async () => {
+    const { service, customerRepository } = await createService();
+    jest.spyOn(CustomerContact, 'findByPk').mockResolvedValueOnce(null);
+    await expect(
+      service.create(
+        {
+          ...input,
+          contactName: null,
+          phone: null,
+          email: null,
+          primaryContactId: 'missing',
+        },
+        'trusted-user',
+      ),
+    ).rejects.toThrow(NotFoundException);
+    expect(customerRepository.findById).not.toHaveBeenCalled();
+  });
+
+  it('rejects mixing an existing contact with inline contact fields', async () => {
+    const { service, customerRepository } = await createService();
+    await expect(
+      service.create(
+        { ...input, primaryContactId: 'contact-existing' },
+        'trusted-user',
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(customerRepository.create).not.toHaveBeenCalled();
+  });
+
   it('persists only creation fields with the authenticated creator and returns the stored customer', async () => {
     const { service, customerRepository, dependencies } = await createService();
 
@@ -157,14 +232,18 @@ describe('CustomerService.create', () => {
     expect(customerRepository.create).toHaveBeenCalledWith(
       {
         ...input,
+        contactName: null,
+        phone: null,
+        email: null,
         paymentTerms: null,
         createdById: 'trusted-user',
       },
       dependencies.transaction,
     );
-    expect(dependencies.contacts.resolveForImport).toHaveBeenCalledWith(
+    expect(
+      dependencies.contacts.resolveDirectoryForImport,
+    ).toHaveBeenCalledWith(
       {
-        customerId: CUSTOMER.id,
         createdById: 'trusted-user',
         name: input.contactName,
         phone: input.phone,
@@ -173,15 +252,42 @@ describe('CustomerService.create', () => {
       },
       dependencies.transaction,
     );
+    expect(customerRepository.update).toHaveBeenCalledWith(
+      CUSTOMER.id,
+      { primaryContactId: 'contact-1' },
+      dependencies.transaction,
+    );
     expect(customerRepository.findById).toHaveBeenCalledWith(CUSTOMER.id);
   });
 
   it('propagates initial-contact failure to roll back customer creation', async () => {
     const { service, customerRepository, dependencies } = await createService();
     const failure = new Error('contact failed');
-    dependencies.contacts.resolveForImport.mockRejectedValueOnce(failure);
+    dependencies.contacts.resolveDirectoryForImport.mockRejectedValueOnce(
+      failure,
+    );
     await expect(service.create(input, 'trusted-user')).rejects.toBe(failure);
     expect(customerRepository.findById).not.toHaveBeenCalled();
+  });
+
+  it('creates a customer without a primary contact or placeholder values', async () => {
+    const { service, customerRepository, dependencies } = await createService();
+    const withoutContact = {
+      ...input,
+      contactName: null,
+      phone: null,
+      email: null,
+    };
+    await expect(
+      service.create(withoutContact, 'trusted-user'),
+    ).resolves.toEqual(CUSTOMER);
+    expect(customerRepository.create).toHaveBeenCalledWith(
+      { ...withoutContact, createdById: 'trusted-user', paymentTerms: null },
+      dependencies.transaction,
+    );
+    expect(
+      dependencies.contacts.resolveDirectoryForImport,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects an existing registration number before writing', async () => {

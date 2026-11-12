@@ -6,7 +6,6 @@ import {
   DataType,
   BelongsTo,
   CreatedAt,
-  UpdatedAt,
   ForeignKey,
   PrimaryKey,
 } from 'sequelize-typescript';
@@ -28,6 +27,7 @@ import { ProjectStage } from '@Modules/project-stage/entities/project-stage.enti
 
 @Table({
   tableName: 'project_stage_transitions',
+  updatedAt: false,
   indexes: [
     {
       fields: ['project_id', 'created_at'],
@@ -71,9 +71,6 @@ export class ProjectStageTransition
 
   @CreatedAt
   declare createdAt: Date;
-
-  @UpdatedAt
-  declare updatedAt: Date;
 
   @BelongsTo(() => ProjectStage, 'fromStageId')
   declare fromStage?: ProjectStage;

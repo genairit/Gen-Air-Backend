@@ -7,9 +7,11 @@ import { UserModule } from '@Modules/user/user.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AddressModule } from '@Modules/address/address.module';
 import { ProjectModule } from '@Modules/project/project.module';
+import { MaterialModule } from '@Modules/material/material.module';
 import { CustomerModule } from '@Modules/customer/customer.module';
 import { QuotationModule } from '@Modules/quotation/quotation.module';
 import { DatabaseModule } from './providers/database/database.module';
+import { ProjectBoqModule } from '@Modules/project-boq/project-boq.module';
 import { ProjectTypeModule } from '@Modules/project-type/project-type.module';
 import { ProjectDriveModule } from '@Modules/project-drive/project-drive.module';
 import { ProjectStageModule } from '@Modules/project-stage/project-stage.module';
@@ -24,6 +26,7 @@ import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-emai
 @Module({
   imports: [
     DatabaseModule,
+    MaterialModule,
     QuotationModule,
     QuotationExecutionEmailModule,
     EventEmitterModule.forRoot(),
@@ -33,6 +36,7 @@ import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-emai
     CustomerContactModule,
     DriveTemplateFolderModule,
     ProjectModule,
+    ProjectBoqModule,
     ProjectDriveModule,
     ProjectMemberModule,
     ProjectStageModule,
