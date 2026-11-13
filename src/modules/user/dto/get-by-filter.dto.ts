@@ -1,6 +1,6 @@
 import {
-  USER_ROLE_VALUES,
   type UserRoleType,
+  ASSIGNABLE_USER_ROLE_VALUES,
 } from '@Constants/user-role.constant';
 
 import { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
@@ -14,6 +14,6 @@ export class GetUsersByFilterDto extends CursorPaginationDto {
   declare search?: string;
 
   @IsOptional()
-  @IsIn(USER_ROLE_VALUES)
+  @IsIn(ASSIGNABLE_USER_ROLE_VALUES)
   declare role?: UserRoleType;
 }

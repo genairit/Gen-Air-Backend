@@ -76,7 +76,7 @@ const createService = (
   users.findById.mockResolvedValue(
     mock<IUser>({
       id: salesAgentId,
-      assignedRoles: [USER_ROLES.SALES_AGENT],
+      assignedRoles: [USER_ROLES.ENGINEER],
       deletedAt: null,
     }),
   );
@@ -100,30 +100,59 @@ const createService = (
 };
 
 describe('eligible quotation sales agents', () => {
-  test('returns active users assigned the sales-agent role', async () => {
+  test('returns active engineers and administrators once each', async () => {
     const { service, users, userRoles } = createService(approvedQuotation());
-    userRoles.findUserIdsByRole.mockResolvedValue(['sales-agent']);
+    userRoles.findUserIdsByRole
+      .mockResolvedValueOnce(['engineer', 'both'])
+      .mockResolvedValueOnce(['admin', 'both']);
     users.findByIds.mockResolvedValue([
       mock<IUser>({
-        id: 'sales-agent',
-        firstName: 'Sales',
-        lastName: 'Agent',
+        id: 'engineer',
+        firstName: 'Engineering',
+        lastName: 'Employee',
         employeeNumber: '101',
+      }),
+      mock<IUser>({
+        id: 'admin',
+        firstName: 'Admin',
+        lastName: 'Employee',
+        employeeNumber: '102',
+      }),
+      mock<IUser>({
+        id: 'both',
+        firstName: 'Both',
+        lastName: 'Roles',
+        employeeNumber: '103',
       }),
     ]);
 
     await expect(service.salesAgents()).resolves.toEqual([
       {
-        id: 'sales-agent',
-        firstName: 'Sales',
-        lastName: 'Agent',
+        id: 'engineer',
+        firstName: 'Engineering',
+        lastName: 'Employee',
         employeeNumber: '101',
+      },
+      {
+        id: 'admin',
+        firstName: 'Admin',
+        lastName: 'Employee',
+        employeeNumber: '102',
+      },
+      {
+        id: 'both',
+        firstName: 'Both',
+        lastName: 'Roles',
+        employeeNumber: '103',
       },
     ]);
     expect(userRoles.findUserIdsByRole.mock.calls).toEqual([
-      [USER_ROLES.SALES_AGENT],
+      [USER_ROLES.ENGINEER],
+      [USER_ROLES.SYSTEM_ADMIN],
     ]);
-    expect(users.findByIds.mock.calls).toEqual([[['sales-agent']]]);
+    expect(users.findByIds.mock.calls).toEqual([
+      [['engineer', 'both', 'admin']],
+    ]);
   });
 
   test('returns an empty list when no eligible role assignments exist', async () => {
@@ -259,26 +288,29 @@ describe('approved quotation sales-agent updates', () => {
     expect(transactions.run.mock.calls).toHaveLength(1);
   });
 
-  test('rejects an employee without a sales-agent role', async () => {
-    const quotation = approvedQuotation();
-    const { service, repository, transactions, users } =
-      createService(quotation);
-    users.findById.mockResolvedValue(
-      mock<IUser>({
-        id: salesAgentId,
-        assignedRoles: [USER_ROLES.SECRETARY],
-        deletedAt: null,
-      }),
-    );
+  test.each([USER_ROLES.SECRETARY, USER_ROLES.SALES_AGENT])(
+    'rejects an employee with only the %s role',
+    async (role) => {
+      const quotation = approvedQuotation();
+      const { service, repository, transactions, users } =
+        createService(quotation);
+      users.findById.mockResolvedValue(
+        mock<IUser>({
+          id: salesAgentId,
+          assignedRoles: [role],
+          deletedAt: null,
+        }),
+      );
 
-    await expect(
-      service.updateSalesAgent(
-        quotationId,
-        { version: quotation.version, salesAgentId },
-        actorWithEmployeeRead,
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(transactions.run.mock.calls).toHaveLength(1);
-    expect(repository.update.mock.calls).toHaveLength(0);
-  });
+      await expect(
+        service.updateSalesAgent(
+          quotationId,
+          { version: quotation.version, salesAgentId },
+          actorWithEmployeeRead,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(transactions.run.mock.calls).toHaveLength(1);
+      expect(repository.update.mock.calls).toHaveLength(0);
+    },
+  );
 });

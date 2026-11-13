@@ -13,6 +13,9 @@ export type UserRoleType = (typeof USER_ROLES)[keyof typeof USER_ROLES];
 
 export const USER_ROLE_VALUES: UserRoleType[] = Object.values(USER_ROLES);
 
+export const ASSIGNABLE_USER_ROLE_VALUES: UserRoleType[] =
+  USER_ROLE_VALUES.filter((role) => role !== USER_ROLES.SALES_AGENT);
+
 export const PROJECT_MEMBER_ROLES = [
   USER_ROLES.ENGINEER,
   USER_ROLES.SECRETARY,

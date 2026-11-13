@@ -504,6 +504,42 @@ describe('UserService role membership integrity', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('rejects new assignments of the retired sales role', async () => {
+    const { service, userRepository } = await createService();
+
+    await expect(
+      service.update(
+        USER.id,
+        { assignedRoles: [USER_ROLES.SALES_AGENT] },
+        roleAdministrator,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(userRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('allows a non-role edit to preserve an existing retired role', async () => {
+    const { service, userRepository, userRoleService } = await createService();
+    userRepository.findById.mockResolvedValue({
+      ...USER,
+      role: USER_ROLES.SALES_AGENT,
+    });
+    userRoleService.getAssignedRolesByUserIds.mockResolvedValue(
+      new Map([[USER.id, [USER_ROLES.SALES_AGENT]]]),
+    );
+
+    await expect(
+      service.update(USER.id, { firstName: 'Updated' }, roleAdministrator),
+    ).resolves.toBeTruthy();
+    expect(userRepository.update).toHaveBeenCalledWith(
+      USER.id,
+      expect.objectContaining({
+        firstName: 'Updated',
+        role: USER_ROLES.SALES_AGENT,
+      }),
+      expect.anything(),
+    );
+  });
+
   it('switches only to a currently assigned role and records the active-role snapshot', async () => {
     const {
       service,
@@ -549,6 +585,19 @@ describe('UserService role membership integrity', () => {
     ).rejects.toThrow(BadRequestException);
     expect(userRepository.update).not.toHaveBeenCalled();
     expect(userRoleAuditService.record).not.toHaveBeenCalled();
+  });
+
+  it('rejects switching into the retired sales role even when assigned historically', async () => {
+    const { service, userRepository } = await createService();
+
+    await expect(
+      service.switchActiveRole(
+        USER.id,
+        USER_ROLES.SALES_AGENT,
+        roleAdministrator,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(userRepository.update).not.toHaveBeenCalled();
   });
 
   it('switches into purchasing and execution only after that account role is assigned', async () => {

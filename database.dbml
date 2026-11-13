@@ -17,7 +17,7 @@ Enum user_role {
   finance         [note: 'מחלקת כספים']
   installer       [note: 'מתקין / טכנאי שטח']
   purchasing_execution_manager [note: 'מנהל רכש וביצוע; company-wide account role, never a project slot']
-  sales_agent     [note: 'סוכן מכירות; company-wide account role, no implicit quotation grants']
+  sales_agent     [note: 'Historical value only; new account assignments use engineer or system_admin']
 }
 
 Table users {
@@ -476,7 +476,7 @@ Table quotations {
   id uuid [pk, note: 'Internal quotation identifier referenced by its sections']
   number varchar(40) [not null, note: 'Human-facing quotation number YYMM-000001; the prefix comes from the month the quotation was created, the sequence is allocated under a monthly lock, and editing date afterwards never renumbers it']
   customer_id uuid [not null, note: 'The customer the offer is made to; its payment terms seed this quotation once']
-  sales_agent_id uuid [note: 'Optional employee with the sales_agent role at assignment time; historical association survives role changes or deactivation']
+  sales_agent_id uuid [note: 'Optional engineer or system administrator; historical association survives role changes or deactivation']
   status varchar(20) [not null, note: 'draft, review, approved (shown as הזמנה), or cancelled; chk_quotations_status']
   cancelled_from_status varchar(20) [note: 'Status immediately before cancellation; null unless status is cancelled; chk_quotations_cancelled_from_status']
   cancellation_history jsonb [not null, default: `[]`, note: 'Cancellation and restoration history, including source status, required reason, actor ID and name snapshot, time and cancellation kind; chk_quotations_cancellation_history_array']
