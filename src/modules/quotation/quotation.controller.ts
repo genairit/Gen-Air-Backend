@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Header,
   HttpCode,
   HttpStatus,
   Controller,
@@ -103,6 +104,7 @@ export class QuotationController {
     return this.service.getForActor(id, user);
   }
   @Post(':id/pdf')
+  @Header('Access-Control-Expose-Headers', 'Content-Disposition')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(PERMISSIONS.QUOTATIONS_EXPORT, PERMISSIONS.PROJECTS_READ)
   async exportPdf(
