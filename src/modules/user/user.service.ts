@@ -26,6 +26,7 @@ import {
   USER_ROLES,
   UserRoleType,
   USER_ROLE_VALUES,
+  ASSIGNABLE_USER_ROLE_VALUES,
 } from '@Constants/user-role.constant';
 
 import { Transaction } from 'sequelize';
@@ -284,7 +285,9 @@ export class UserService {
         ? user.role
         : this.firstAssignedRole(nextRoles);
 
-      this.assertValidAssignments(nextRole, nextRoles);
+      if (changes.assignedRoles) {
+        this.assertValidAssignments(nextRole, nextRoles);
+      }
       await this.assertSystemAdministratorRemains(
         user.id,
         currentRoles,
@@ -333,6 +336,12 @@ export class UserService {
     nextRole: UserRoleType,
     actor: IAuthorizedUser,
   ): Promise<IUser> {
+    if (!ASSIGNABLE_USER_ROLE_VALUES.includes(nextRole)) {
+      throw new BadRequestException(
+        'This employee role is no longer assignable',
+      );
+    }
+
     return this.transactions
       .run(async (transaction) => {
         await this.transactions.lockKey(
@@ -534,7 +543,7 @@ export class UserService {
   ): void {
     const hasUniqueRoles = new Set(assignedRoles).size === assignedRoles.length;
     const hasOnlyKnownRoles = assignedRoles.every((role) =>
-      USER_ROLE_VALUES.includes(role),
+      ASSIGNABLE_USER_ROLE_VALUES.includes(role),
     );
 
     if (assignedRoles.length === 0 || !hasUniqueRoles || !hasOnlyKnownRoles) {

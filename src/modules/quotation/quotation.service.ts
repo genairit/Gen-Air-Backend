@@ -56,6 +56,7 @@ import {
   WARNING_SCOPE_VERSION,
   type TQuotationStatus,
   QUOTATION_CANCELLATION_KIND,
+  QUOTATION_AGENT_ELIGIBLE_ROLES,
   type TQuotationCancellationKind,
   MAX_QUOTATION_CANCELLATION_REASON_LENGTH,
 } from '@Modules/quotation/constants/quotation.constant';
@@ -143,9 +144,12 @@ export class QuotationService {
     return this.repository.statusCounts(query.search ?? '');
   }
   async salesAgents(): Promise<IQuotationSalesAgent[]> {
-    const eligibleUserIds = await this.userRoles.findUserIdsByRole(
-      USER_ROLES.SALES_AGENT,
+    const idsByRole = await Promise.all(
+      QUOTATION_AGENT_ELIGIBLE_ROLES.map((role) =>
+        this.userRoles.findUserIdsByRole(role),
+      ),
     );
+    const eligibleUserIds = [...new Set(idsByRole.flat())];
     const eligibleUsers = await this.users.findByIds(eligibleUserIds);
 
     return eligibleUsers.map(({ id, firstName, lastName, employeeNumber }) => ({
@@ -1152,12 +1156,12 @@ export class QuotationService {
     assertPermissions(actor, PERMISSIONS.EMPLOYEES_READ);
 
     const salesAgent = await this.users.findById(salesAgentId);
-    const hasEligibleRole = salesAgent?.assignedRoles?.includes(
-      USER_ROLES.SALES_AGENT,
+    const hasEligibleRole = QUOTATION_AGENT_ELIGIBLE_ROLES.some((role) =>
+      salesAgent?.assignedRoles?.includes(role),
     );
 
     if (!salesAgent || !hasEligibleRole) {
-      throw new BadRequestException('יש לבחור עובד פעיל בתפקיד סוכן מכירות');
+      throw new BadRequestException('יש לבחור עובד הנדסה או מנהל מערכת פעיל');
     }
   }
 }
