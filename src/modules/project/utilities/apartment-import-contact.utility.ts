@@ -4,8 +4,8 @@ import {
 } from '../constants/apartment-import.constant';
 
 import { isEmail } from 'class-validator';
+import { toDialablePhone } from '@Utilities/phone.utility';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
-import { FIELD_VALIDATION_REGEX } from '@Constants/field-validation.constant';
 
 export const validateApartmentImportContacts = (
   cells: readonly string[],
@@ -18,7 +18,7 @@ export const validateApartmentImportContacts = (
 
     if (
       validation === APARTMENT_IMPORT_VALIDATION.PHONE &&
-      !FIELD_VALIDATION_REGEX.ISRAELI_PHONE.test(value)
+      !toDialablePhone(value)
     ) {
       return [`${header}: מספר טלפון לא תקין`];
     }

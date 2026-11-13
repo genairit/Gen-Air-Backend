@@ -9,6 +9,8 @@ const BUILDING = {
   address: 'דרך נמיר 94, תל אביב-יפו',
   addressCity: 'תל אביב-יפו',
   addressPlaceId: 'ChIJ-building',
+  hasGeneralLightingCeilingLowering: true,
+  generalLightingCeilingLoweringHeight: 25,
 };
 
 const APARTMENT = {
@@ -17,6 +19,9 @@ const APARTMENT = {
   address: null,
   addressCity: null,
   addressPlaceId: null,
+  hasOwnLighting: false,
+  hasGeneralLightingCeilingLowering: false,
+  generalLightingCeilingLoweringHeight: null,
 };
 
 describe('resolveApartment', () => {
@@ -37,6 +42,32 @@ describe('resolveApartment', () => {
   });
 });
 
+describe('resolveApartment lighting inheritance', () => {
+  it('reads the current building value while inherited', () => {
+    expect(resolveApartment(APARTMENT, BUILDING)).toMatchObject({
+      hasOwnLighting: false,
+      hasGeneralLightingCeilingLowering: true,
+      generalLightingCeilingLoweringHeight: 25,
+    });
+    expect(
+      resolveApartment(APARTMENT, {
+        ...BUILDING,
+        generalLightingCeilingLoweringHeight: 30,
+      }).generalLightingCeilingLoweringHeight,
+    ).toBe(30);
+  });
+
+  it('keeps a local off override when the building is enabled', () => {
+    expect(
+      resolveApartment({ ...APARTMENT, hasOwnLighting: true }, BUILDING),
+    ).toMatchObject({
+      hasOwnLighting: true,
+      hasGeneralLightingCeilingLowering: false,
+      generalLightingCeilingLoweringHeight: null,
+    });
+  });
+});
+
 const FIXTURE_DATE = new Date('2026-10-24T00:00:00.000Z');
 const BUILDING_MEMBER: IProjectMember = {
   id: 'building-member',
@@ -52,6 +83,12 @@ const APARTMENT_MEMBER: IProjectMember = {
   userId: 'engineer-2',
   projectId: APARTMENT.id,
 };
+const BUILDING_SECRETARY: IProjectMember = {
+  ...BUILDING_MEMBER,
+  id: 'building-secretary',
+  userId: 'secretary-1',
+  role: USER_ROLES.SECRETARY,
+};
 const LINKED_CUSTOMER: ICustomer = {
   id: 'apartment-customer',
   name: 'משפחת כהן',
@@ -60,6 +97,7 @@ const LINKED_CUSTOMER: ICustomer = {
   taxId: '123456789',
   address: 'תל אביב',
   contactName: 'דנה כהן',
+  primaryContact: { phone: '052-1112233' } as ICustomer['primaryContact'],
   customerType: PROJECT_DETAIL_FIELD_SETS.PRIVATE_CLIENT,
   createdById: 'user-1',
   createdAt: FIXTURE_DATE,
@@ -75,9 +113,9 @@ const LINKED_CUSTOMER: ICustomer = {
 describe('resolveApartment team inheritance', () => {
   it('inherits the current building team without storing it on the apartment', () => {
     const apartment = { ...APARTMENT, hasOwnTeam: false, members: [] };
-    const building = { ...BUILDING, members: [BUILDING_MEMBER] };
+    const building = { ...BUILDING, members: [BUILDING_SECRETARY] };
     expect(resolveApartment(apartment, building).members).toEqual([
-      BUILDING_MEMBER,
+      BUILDING_SECRETARY,
     ]);
     expect(apartment.members).toEqual([]);
   });
@@ -85,13 +123,32 @@ describe('resolveApartment team inheritance', () => {
   it('tracks later changes to the building team while inherited', () => {
     const apartment = { ...APARTMENT, hasOwnTeam: false };
     expect(
-      resolveApartment(apartment, { ...BUILDING, members: [BUILDING_MEMBER] })
-        .members,
-    ).toEqual([BUILDING_MEMBER]);
+      resolveApartment(apartment, {
+        ...BUILDING,
+        members: [BUILDING_SECRETARY],
+      }).members,
+    ).toEqual([BUILDING_SECRETARY]);
     expect(
       resolveApartment(apartment, { ...BUILDING, members: [APARTMENT_MEMBER] })
         .members,
-    ).toEqual([APARTMENT_MEMBER]);
+    ).toEqual([]);
+  });
+
+  it('keeps a local engineer while other roles inherit from the building', () => {
+    const apartment = {
+      ...APARTMENT,
+      hasOwnTeam: false,
+      members: [APARTMENT_MEMBER],
+    };
+    const building = {
+      ...BUILDING,
+      members: [BUILDING_SECRETARY, BUILDING_MEMBER],
+    };
+
+    expect(resolveApartment(apartment, building).members).toEqual([
+      BUILDING_SECRETARY,
+      APARTMENT_MEMBER,
+    ]);
   });
 
   it('preserves an apartment-only team instead of the building team', () => {
@@ -136,13 +193,13 @@ describe('resolveApartment customer and legacy details', () => {
     expect(resolveApartment(apartment, BUILDING)).toMatchObject({
       customerName: LINKED_CUSTOMER.name,
       customerPhone: LINKED_CUSTOMER.phone,
-      contactName: LINKED_CUSTOMER.contactName,
-      contactPhone: LINKED_CUSTOMER.phone,
+      contactName: null,
+      contactPhone: null,
       contactRole: null,
     });
   });
 
-  it('keeps stored free-text end-customer and contact details on a legacy apartment', () => {
+  it('keeps end-customer details but hides retired contact details on a legacy apartment', () => {
     const apartment = {
       ...APARTMENT,
       customerName: 'Legacy resident',
@@ -154,9 +211,9 @@ describe('resolveApartment customer and legacy details', () => {
     expect(resolveApartment(apartment, BUILDING)).toMatchObject({
       customerName: apartment.customerName,
       customerPhone: apartment.customerPhone,
-      contactName: apartment.contactName,
-      contactPhone: apartment.contactPhone,
-      contactRole: apartment.contactRole,
+      contactName: null,
+      contactPhone: null,
+      contactRole: null,
     });
   });
 

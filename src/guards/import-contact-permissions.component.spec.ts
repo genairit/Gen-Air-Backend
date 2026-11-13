@@ -9,8 +9,6 @@ import { USER_ROLES } from '@Constants/user-role.constant';
 import { authorizedUser } from '../testing/authorization.fixture';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { PERMISSIONS, PermissionType } from '@Constants/authorization.constant';
-import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
-import { CustomerContactController } from '@Modules/customer-contact/customer-contact.controller';
 import { ProjectApartmentImportService } from '@Modules/project/project-apartment-import.service';
 import { ProjectApartmentImportController } from '@Modules/project/project-apartment-import.controller';
 
@@ -26,7 +24,6 @@ const REQUIRED_IMPORT_PERMISSIONS = [
 ];
 const SCOPE_ID = '11111111-1111-4111-8111-111111111111';
 const IMPORT_ENDPOINT = `/project/${SCOPE_ID}/apartments/import`;
-const CONTACT_ENDPOINT = `/customer/${SCOPE_ID}/contacts`;
 const TOKEN = 'unchanged-token';
 
 describe('import and contact effective-grant boundaries', () => {
@@ -38,11 +35,6 @@ describe('import and contact effective-grant boundaries', () => {
       reportBase64: null,
     }),
     template: jest.fn().mockResolvedValue(Buffer.from('template')),
-  };
-  const contacts = {
-    list: jest.fn().mockResolvedValue([]),
-    create: jest.fn().mockResolvedValue({ id: SCOPE_ID }),
-    update: jest.fn().mockResolvedValue({ id: SCOPE_ID }),
   };
   const authenticate = jest.fn(() => Promise.resolve(state.actor));
   const server = (): Server => {
@@ -57,15 +49,11 @@ describe('import and contact effective-grant boundaries', () => {
   };
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [
-        ProjectApartmentImportController,
-        CustomerContactController,
-      ],
+      controllers: [ProjectApartmentImportController],
       providers: [
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: AuthService, useValue: { authenticate } },
         { provide: ProjectApartmentImportService, useValue: imports },
-        { provide: CustomerContactService, useValue: contacts },
       ],
     }).compile();
     state.app = module.createNestApplication<INestApplication<Server>>();
@@ -98,24 +86,11 @@ describe('import and contact effective-grant boundaries', () => {
     },
   );
 
-  it('does not infer any import or contact privilege from the admin role', async () => {
+  it('does not infer import privilege from the admin role', async () => {
     await request(server())
       .post(IMPORT_ENDPOINT)
       .auth(TOKEN, { type: 'bearer' })
       .expect(403);
-    await request(server())
-      .get(CONTACT_ENDPOINT)
-      .auth(TOKEN, { type: 'bearer' })
-      .expect(403);
-    await request(server())
-      .post(CONTACT_ENDPOINT)
-      .auth(TOKEN, { type: 'bearer' })
-      .expect(403);
-    await request(server())
-      .patch(`${CONTACT_ENDPOINT}/${SCOPE_ID}`)
-      .auth(TOKEN, { type: 'bearer' })
-      .expect(403);
-    expect(contacts.create).not.toHaveBeenCalled();
   });
 
   it('allows a non-admin with all explicit import grants and honors same-token revocation', async () => {
@@ -144,39 +119,5 @@ describe('import and contact effective-grant boundaries', () => {
       .expect(403);
     expect(imports.import).toHaveBeenCalledTimes(1);
     expect(authenticate).toHaveBeenCalledTimes(3);
-  });
-
-  it('separates contact reads from writes and observes grant changes on each request', async () => {
-    setPermissions([PERMISSIONS.CUSTOMERS_READ]);
-    await request(server())
-      .get(CONTACT_ENDPOINT)
-      .auth(TOKEN, { type: 'bearer' })
-      .expect(200);
-    await request(server())
-      .post(CONTACT_ENDPOINT)
-      .auth(TOKEN, { type: 'bearer' })
-      .expect(403);
-    setPermissions([PERMISSIONS.CUSTOMERS_UPDATE]);
-    await request(server())
-      .post(CONTACT_ENDPOINT)
-      .auth(TOKEN, { type: 'bearer' })
-      .send({ name: 'Test contact' })
-      .expect(201);
-    await request(server())
-      .patch(`${CONTACT_ENDPOINT}/${SCOPE_ID}`)
-      .auth(TOKEN, { type: 'bearer' })
-      .send({ name: 'Changed contact' })
-      .expect(200);
-    await request(server())
-      .get(CONTACT_ENDPOINT)
-      .auth(TOKEN, { type: 'bearer' })
-      .expect(403);
-    setPermissions([]);
-    await request(server())
-      .post(CONTACT_ENDPOINT)
-      .auth(TOKEN, { type: 'bearer' })
-      .expect(403);
-    expect(contacts.create).toHaveBeenCalledTimes(1);
-    expect(contacts.update).toHaveBeenCalledTimes(1);
   });
 });

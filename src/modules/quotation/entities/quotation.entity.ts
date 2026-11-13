@@ -10,8 +10,12 @@ import {
   PrimaryKey,
 } from 'sequelize-typescript';
 
+import type {
+  TQuotationStatus,
+  TQuotationRestorableStatus,
+} from '../constants/quotation.constant';
+
 import type { IQuotation } from '../interfaces/quotation.interface';
-import type { TQuotationStatus } from '../constants/quotation.constant';
 import type { PaymentTermsType } from '@Constants/payment-terms.constant';
 import type { IPaymentStage } from '../interfaces/quotation-document.interface';
 import type { IQuotationRule } from '@Modules/quotation-rule/interfaces/quotation-rule.interface';
@@ -33,13 +37,21 @@ export class Quotation
   @Column({ type: DataType.UUID, allowNull: false })
   declare customerId: string;
   @Column({ type: DataType.UUID, allowNull: true })
-  declare projectId: string | null;
+  declare salesAgentId: string | null;
   @Column({ type: DataType.STRING(20), allowNull: false })
   declare status: TQuotationStatus;
+  @Column({ type: DataType.STRING(20), allowNull: true })
+  declare cancelledFromStatus: TQuotationRestorableStatus | null;
+  @Column({ type: DataType.JSONB, allowNull: false, defaultValue: [] })
+  declare cancellationHistory: IQuotation['cancellationHistory'];
   @Column({ type: DataType.DATEONLY, allowNull: false })
   declare date: string;
   @Column({ type: DataType.STRING(100), allowNull: false })
   declare brand: string;
+  @Column({ type: DataType.JSONB, allowNull: false })
+  declare brands: string[];
+  @Column({ type: DataType.SMALLINT, allowNull: false })
+  declare warningScopeVersion: number;
   @Column({ type: DataType.STRING(40), allowNull: true })
   declare paymentTerms: PaymentTermsType | null;
   @Column({ type: DataType.STRING(1000), allowNull: false })
@@ -60,6 +72,8 @@ export class Quotation
   declare acknowledgedWarnings: string[];
   @Column({ type: DataType.UUID, allowNull: false })
   declare createdById: string;
+  @Column({ type: DataType.STRING(160), allowNull: false })
+  declare issuerName: string;
   @Column({ type: DataType.UUID, allowNull: false })
   declare updatedById: string;
   @Column({ type: DataType.UUID, allowNull: true })
@@ -68,8 +82,6 @@ export class Quotation
   declare approvedAt: Date | null;
   @Column({ type: DataType.JSONB, allowNull: false })
   declare ruleConfiguration: IQuotationRule[];
-  @Column({ type: DataType.STRING(64), allowNull: false })
-  declare ruleConfigFingerprint: string;
   @Column(DataType.VIRTUAL)
   declare customerName: string;
   @Column(DataType.VIRTUAL)

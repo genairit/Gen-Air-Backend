@@ -5,13 +5,13 @@ export interface ICustomerContact {
   name: string;
   createdAt: Date;
   updatedAt: Date;
-  customerId: string;
   createdById: string;
   role: string | null;
   phone: string | null;
   email: string | null;
   customer?: ICustomer;
   deletedAt: Date | null;
+  customerId: string | null;
 }
 
 export interface ICustomerContactValues {
@@ -21,9 +21,7 @@ export interface ICustomerContactValues {
   email: string | null;
 }
 
-export interface ICustomerContactImport extends ICustomerContactValues {
-  customerId: string;
+export type TCustomerContactCreation = ICustomerContactValues & {
   createdById: string;
-}
-
-export type TCustomerContactCreation = ICustomerContactImport;
+  customerId: string | null;
+};

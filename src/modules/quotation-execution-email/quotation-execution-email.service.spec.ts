@@ -64,7 +64,7 @@ const setup = async () => {
     }),
   };
   const contacts = {
-    list: jest.fn().mockResolvedValue([
+    listForProject: jest.fn().mockResolvedValue([
       {
         id: input.architectContactId,
         name: 'Architect',

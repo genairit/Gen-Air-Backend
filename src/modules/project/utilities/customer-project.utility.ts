@@ -3,6 +3,7 @@ import {
   ICustomerProjectSource,
 } from '../interfaces/customer-project.interface';
 
+import { USER_ROLES } from '@Constants/user-role.constant';
 import { CUSTOMER_PROJECT_KINDS } from '../constants/customer-project.constant';
 
 export const toCustomerProjectItem = (
@@ -13,7 +14,16 @@ export const toCustomerProjectItem = (
     !isApartment && Boolean(project.projectType?.canHaveApartments);
   const parent = project.parentProject ?? null;
   const members =
-    isApartment && !project.hasOwnTeam ? parent?.members : project.members;
+    isApartment && !project.hasOwnTeam
+      ? [
+          ...(parent?.members ?? []).filter(
+            (member) => member.role !== USER_ROLES.ENGINEER,
+          ),
+          ...(project.members ?? []).filter(
+            (member) => member.role === USER_ROLES.ENGINEER,
+          ),
+        ]
+      : project.members;
   const kind = isApartment
     ? CUSTOMER_PROJECT_KINDS.APARTMENT
     : CUSTOMER_PROJECT_KINDS.PROJECT;

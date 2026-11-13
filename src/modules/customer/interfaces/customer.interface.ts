@@ -7,21 +7,22 @@ import { ICustomerContact } from '@Modules/customer-contact/interfaces/customer-
 export interface ICustomer {
   id: string;
   name: string;
-  phone: string;
-  email: string;
   taxId: string;
   address: string;
   createdAt: Date;
   updatedAt: Date;
   createdBy?: IUser;
-  contactName: string;
   createdById: string;
+  phone: string | null;
+  email: string | null;
   deletedAt: Date | null;
   priorityId: string | null;
+  contactName: string | null;
   prioritySyncAttempts: number;
-  contacts?: ICustomerContact[];
   prioritySyncedAt: Date | null;
+  primaryContactId?: string | null;
   prioritySyncError: string | null;
+  primaryContact?: ICustomerContact;
   paymentTerms?: PaymentTermsType | null;
   customerType: ProjectDetailFieldSetType;
   prioritySyncStatus: PrioritySyncStatusType;
@@ -52,8 +53,9 @@ type TCustomerEditableField =
 export type TCustomerCreationAttributes = Pick<
   ICustomer,
   TCustomerEditableField | 'createdById'
->;
+> &
+  Partial<Pick<ICustomer, 'primaryContactId'>>;
 
 export type TCustomerUpdateAttributes = Partial<
-  Pick<ICustomer, TCustomerEditableField>
+  Pick<ICustomer, TCustomerEditableField | 'primaryContactId'>
 >;

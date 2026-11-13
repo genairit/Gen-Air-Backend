@@ -16,6 +16,31 @@ const customer = {
 };
 
 describe('customer import transaction boundary', () => {
+  it('rejects contact details without a contact name before insertion', async () => {
+    const transaction = new Transaction(
+      new Sequelize({ dialect: 'postgres', logging: false }),
+      {},
+    );
+    const repository = { create: jest.fn() };
+    const module = await Test.createTestingModule({
+      providers: [
+        CustomerService,
+        ...createCustomerDependencyFixtures().providers,
+        { provide: CustomerRepository, useValue: repository },
+      ],
+    }).compile();
+    const service = module.get(CustomerService);
+    await expect(
+      service.createForImport(
+        { ...customer, contactName: null },
+        'creator',
+        transaction,
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(repository.create).not.toHaveBeenCalled();
+    await module.close();
+  });
+
   it('passes the caller transaction through identity lookup and customer insertion', async () => {
     const transaction = new Transaction(
       new Sequelize({ dialect: 'postgres', logging: false }),
@@ -23,14 +48,16 @@ describe('customer import transaction boundary', () => {
     );
     const repository = {
       findByTaxId: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue(true),
       create: jest
         .fn()
         .mockResolvedValue({ ...customer, id: 'created-customer' }),
     };
+    const dependencies = createCustomerDependencyFixtures();
     const module = await Test.createTestingModule({
       providers: [
         CustomerService,
-        ...createCustomerDependencyFixtures().providers,
+        ...dependencies.providers,
         { provide: CustomerRepository, useValue: repository },
       ],
     }).compile();
@@ -44,7 +71,27 @@ describe('customer import transaction boundary', () => {
       transaction,
     );
     expect(repository.create).toHaveBeenCalledWith(
-      { ...customer, paymentTerms: null, createdById: 'creator' },
+      {
+        ...customer,
+        phone: null,
+        email: null,
+        contactName: null,
+        paymentTerms: null,
+        createdById: 'creator',
+      },
+      transaction,
+    );
+    expect(
+      dependencies.contacts.resolveDirectoryForImport,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: customer.contactName,
+      }),
+      transaction,
+    );
+    expect(repository.update).toHaveBeenCalledWith(
+      'created-customer',
+      { primaryContactId: 'contact-1' },
       transaction,
     );
     await module.close();

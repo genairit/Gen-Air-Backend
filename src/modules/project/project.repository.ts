@@ -37,6 +37,7 @@ import { ProjectType } from '@Modules/project-type/entities/project-type.entity'
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
 import { BUILDING_INHERITANCE_ATTRIBUTES } from './constants/project-inheritance.constant';
+import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { buildCustomerReferenceInclude } from '@Modules/customer/constants/customer-reference.constant';
 
 @Injectable()
@@ -79,7 +80,11 @@ export class ProjectRepository {
       transaction,
       include: [
         ...this.buildCardIncludes(),
-        { model: Customer, paranoid: false },
+        {
+          model: Customer,
+          paranoid: false,
+          include: [{ model: CustomerContact, as: 'primaryContact' }],
+        },
         { model: User, as: 'createdBy', paranoid: false },
         {
           model: Project,
@@ -111,6 +116,26 @@ export class ProjectRepository {
     });
   }
 
+  async findLiveApartments(
+    buildingId: string,
+    transaction?: Transaction,
+  ): Promise<IProject[]> {
+    const apartments = await Project.findAll({
+      transaction,
+      where: { parentProjectId: buildingId },
+      include: [
+        {
+          model: Customer,
+          paranoid: false,
+          attributes: ['id', 'name'],
+          include: [{ model: CustomerContact, as: 'primaryContact' }],
+        },
+      ],
+    });
+
+    return apartments.map((apartment) => apartment.get({ plain: true }));
+  }
+
   countLiveApartments(buildingId: string): Promise<number> {
     return Project.count({ where: { parentProjectId: buildingId } });
   }
@@ -132,7 +157,11 @@ export class ProjectRepository {
   ): Promise<ICursorPage<IProject>> {
     const direction = batch.direction ?? CURSOR_DIRECTIONS.NEWEST_FIRST;
     const customerInclude: Includeable = filter.parentProjectId
-      ? { model: Customer, paranoid: false }
+      ? {
+          model: Customer,
+          paranoid: false,
+          include: [{ model: CustomerContact, as: 'primaryContact' }],
+        }
       : CUSTOMER_SEARCH_INCLUDE;
     const rows = await Project.findAll({
       where: {

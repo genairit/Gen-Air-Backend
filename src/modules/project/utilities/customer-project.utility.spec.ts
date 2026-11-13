@@ -65,23 +65,30 @@ describe('customer project row projection', () => {
     expect(item.building).not.toHaveProperty('customerId');
   });
 
-  it('uses the parent team for an inheriting apartment, not stale stored apartment memberships', () => {
-    const inherited = member();
-    const stale = {
+  it('combines inherited non-engineering team with the apartment engineer', () => {
+    const inherited = { ...member(), role: USER_ROLES.SECRETARY };
+    const apartmentEngineer = {
       ...member(),
-      user: { ...makeCustomerProjectUser(), firstName: 'ישן' },
+      user: { ...makeCustomerProjectUser(), firstName: 'מהנדס' },
     };
     const parent = makeCustomerProjectParent({ members: [inherited] });
     const item = toCustomerProjectItem(
       makeCustomerProjectSource({
         parentProjectId: parent.id,
         parentProject: parent,
-        members: [stale],
+        members: [apartmentEngineer],
         hasOwnTeam: false,
       }),
     );
     expect(item.members).toEqual([
       { user: { id: inherited.userId, firstName: 'אורי', lastName: 'כהן' } },
+      {
+        user: {
+          id: apartmentEngineer.userId,
+          firstName: 'מהנדס',
+          lastName: 'כהן',
+        },
+      },
     ]);
     expect(item.members[0].user).not.toHaveProperty('passwordHash');
     expect(item.members[0].user).not.toHaveProperty('phone');

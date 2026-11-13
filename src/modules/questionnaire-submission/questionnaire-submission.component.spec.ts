@@ -66,7 +66,6 @@ describe('Public questionnaire HTTP boundary', () => {
         ...input,
         id: randomUUID(),
         createdAt: new Date(),
-        updatedAt: new Date(),
       };
       return Promise.resolve(state.stored);
     }),

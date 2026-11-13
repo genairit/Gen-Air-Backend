@@ -4,7 +4,12 @@ export const QUOTATION_STATUS = {
   DRAFT: 'draft',
   REVIEW: 'review',
   APPROVED: 'approved',
+  CANCELLED: 'cancelled',
 } as const;
+export const QUOTATION_CANCELLATION_KIND = {
+  MANUAL: 'manual',
+} as const;
+export const WARNING_SCOPE_VERSION = { LEGACY: 1, PER_SYSTEM: 2 } as const;
 export const SYSTEM_TYPE = {
   VRF: 'VRF',
   MULTI: 'MULTI',
@@ -37,14 +42,37 @@ export const CATALOGUE_PREFERENCE = {
   NEUTRAL: '',
 } as const;
 export const QUOTATION_STATUSES = Object.values(QUOTATION_STATUS);
+export const QUOTATION_BRANDS = [
+  'אלקטרה',
+  'תדיראן',
+  'טורנדו',
+  'סמסונג',
+  'LG',
+  'דייקין',
+  'מיצובישי אלקטריק',
+  'מיצובישי HEAVY',
+  'טושיבה',
+  'הייסנס',
+  'אמקור',
+  'אוקס',
+  'אופיט',
+  "פוג'יסטו",
+] as const;
 export type TQuotationStatus =
   (typeof QUOTATION_STATUS)[keyof typeof QUOTATION_STATUS];
+export type TQuotationRestorableStatus = Exclude<
+  TQuotationStatus,
+  typeof QUOTATION_STATUS.CANCELLED
+>;
+export type TQuotationCancellationKind =
+  (typeof QUOTATION_CANCELLATION_KIND)[keyof typeof QUOTATION_CANCELLATION_KIND];
 export const SYSTEM_TYPES = Object.values(SYSTEM_TYPE);
 export type TSystemType = (typeof SYSTEM_TYPE)[keyof typeof SYSTEM_TYPE];
 export const EQUIPMENT_ROLES = Object.values(EQUIPMENT_ROLE);
 export const CATALOGUE_STATUSES = Object.values(CATALOGUE_STATUS);
 export const MAX_SECTIONS = 50;
 export const MAX_ITEMS_PER_SECTION = 200;
+export const MAX_QUOTATION_CANCELLATION_REASON_LENGTH = 1000;
 export const DEFAULT_VAT_RATE = '18';
 export const QUOTATION_DECIMAL = Decimal.clone({
   precision: 50,

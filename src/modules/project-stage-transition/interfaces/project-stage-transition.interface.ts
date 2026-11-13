@@ -5,7 +5,6 @@ import { IProjectStage } from '@Modules/project-stage/interfaces/project-stage.i
 export interface IProjectStageTransition {
   id: string;
   createdAt: Date;
-  updatedAt: Date;
   projectId: string;
   changedBy?: IUser;
   toStageId: string;
@@ -24,6 +23,18 @@ export interface IStageChange {
   note: string | null;
   fromStageId: string | null;
 }
+
+export interface ITargetStageNoteQuery {
+  projectIds: string[];
+  toStageIds: readonly string[];
+}
+
+export type TProjectStageTransitionNote = Pick<
+  IProjectStageTransition,
+  'projectId' | 'note'
+>;
+
+export type TNoteByProjectId = Map<string, string | null>;
 
 export type TProjectStageTransitionCreationAttributes = Pick<
   IProjectStageTransition,

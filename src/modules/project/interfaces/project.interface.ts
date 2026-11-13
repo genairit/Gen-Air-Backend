@@ -71,6 +71,7 @@ export interface IProject
   stage?: IProjectStage;
   projectTypeId: string;
   deletedAt: Date | null;
+  hasOwnLighting: boolean;
   parentProject?: IProject;
   customerId: string | null;
   priorityId: string | null;
@@ -83,6 +84,12 @@ export interface IProject
   sharedDocumentFileId: string | null;
   apartmentOwnership: ApartmentOwnershipType | null;
 }
+
+export interface IProjectWaitingReason {
+  waitingReason: string | null;
+}
+
+export type TProjectRead = IProject & IProjectWaitingReason;
 
 export interface IProjectFilter {
   search: string | null;
@@ -105,6 +112,7 @@ export type TProjectCreationAttributes = IProjectCustomerDetails &
       | 'customerId'
       | 'parentProjectId'
       | 'hasOwnTeam'
+      | 'hasOwnLighting'
       | 'notes'
       | 'apartmentCredit'
       | 'apartmentOwnership'
@@ -122,6 +130,7 @@ export type TProjectUpdateAttributes = Partial<IProjectLighting> &
         | 'stageId'
         | 'customerId'
         | 'hasOwnTeam'
+        | 'hasOwnLighting'
         | 'apartmentCredit'
         | 'apartmentOwnership'
         | 'notes'
@@ -140,7 +149,7 @@ export type TInheritedProjectField = keyof Pick<
 
 export type TBuildingInheritance = Pick<
   IProject,
-  TInheritedProjectField | 'notes' | 'members'
+  TInheritedProjectField | 'notes' | 'members' | keyof IProjectLighting
 >;
 
 export interface IApartmentInheritance {
@@ -151,7 +160,11 @@ export interface IApartmentInheritance {
 
 export type TApartmentInheritanceInput = Pick<
   IProject,
-  TInheritedProjectField | 'hasOwnTeam' | 'members'
+  | TInheritedProjectField
+  | 'hasOwnTeam'
+  | 'members'
+  | 'hasOwnLighting'
+  | keyof IProjectLighting
 > &
   Partial<Pick<IProject, 'customer'>>;
 
@@ -160,6 +173,9 @@ export type TResolvedApartment = IProject & IApartmentInheritance;
 export interface IApartmentPage extends ICursorPage<TResolvedApartment> {
   total: number;
 }
+
+export type TApartmentReadPage = Omit<IApartmentPage, 'items'> &
+  ICursorPage<TResolvedApartment & IProjectWaitingReason>;
 
 export interface IProjectStageChangeRequest {
   changedBy: IUser;

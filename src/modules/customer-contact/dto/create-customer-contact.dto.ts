@@ -1,6 +1,5 @@
 import {
   IsEmail,
-  Matches,
   IsString,
   MinLength,
   MaxLength,
@@ -10,7 +9,8 @@ import {
 
 import { Trim } from '@Decorators/trim.decorator';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
-import { FIELD_VALIDATION_REGEX } from '@Constants/field-validation.constant';
+import { NullIfBlank } from '@Decorators/null-if-blank.decorator';
+import { IsDialablePhone } from '@Decorators/is-dialable-phone.decorator';
 
 export class CreateCustomerContactDto {
   @Trim()
@@ -21,9 +21,9 @@ export class CreateCustomerContactDto {
   declare name: string;
 
   @Trim()
+  @NullIfBlank()
   @IsOptional()
-  @IsString()
-  @Matches(FIELD_VALIDATION_REGEX.ISRAELI_PHONE)
+  @IsDialablePhone()
   @MaxLength(FIELD_LENGTHS.PHONE)
   declare phone?: string | null;
 

@@ -17,7 +17,6 @@ import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { getHttpErrorPayload } from '@Utilities/http-error-payload.utility';
 import { ProjectApartmentImportService } from './project-apartment-import.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
-import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-sync-status.constant';
@@ -45,15 +44,20 @@ const setup = async () => {
     createForImport: jest.fn().mockResolvedValue(IMPORT_CUSTOMER),
   };
   const contacts = {
-    resolveForImport: jest.fn().mockResolvedValue({ id: 'contact' }),
+    resolveDirectoryForImport: jest.fn().mockImplementation(({ phone }) =>
+      Promise.resolve({
+        id:
+          phone === IMPORT_CUSTOMER.phone
+            ? 'customer-contact'
+            : 'secondary-contact',
+      }),
+    ),
+    linkDirectoryContactToProject: jest.fn().mockResolvedValue(null),
   };
   const apartments = {
     resolveNewApartment: jest.fn().mockResolvedValue({ name: 'דירה1' }),
   };
   const transitions = { record: jest.fn().mockResolvedValue(null) };
-  const taskInitialization = {
-    ensureForProject: jest.fn().mockResolvedValue(null),
-  };
   const events = { emitAsync: jest.fn().mockResolvedValue([]) };
   const transactions = {
     run: jest.fn((work: (value: Transaction) => Promise<unknown>) =>
@@ -64,10 +68,6 @@ const setup = async () => {
   const module = await Test.createTestingModule({
     providers: [
       ProjectApartmentImportService,
-      {
-        provide: ProjectTaskInitializationService,
-        useValue: taskInitialization,
-      },
       { provide: ProjectRepository, useValue: projects },
       { provide: CustomerService, useValue: customers },
       { provide: CustomerContactService, useValue: contacts },
@@ -77,7 +77,7 @@ const setup = async () => {
         useValue: {
           getInitialStage: jest
             .fn()
-            .mockResolvedValue({ id: PROJECT_STATUS_IDS.DRAFT }),
+            .mockResolvedValue({ id: PROJECT_STATUS_IDS.NOT_STARTED }),
         },
       },
       { provide: ProjectStageTransitionService, useValue: transitions },
@@ -92,7 +92,6 @@ const setup = async () => {
     contacts,
     apartments,
     transitions,
-    taskInitialization,
     transactions,
     events,
     transaction,
@@ -122,17 +121,8 @@ describe('transactional apartment importer orchestration', () => {
       expect.any(Object),
       state.transaction,
     );
-    expect(state.contacts.resolveForImport).toHaveBeenNthCalledWith(
+    expect(state.contacts.resolveDirectoryForImport).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({
-        name: IMPORT_CUSTOMER.name,
-        phone: IMPORT_CUSTOMER.phone,
-        email: IMPORT_CUSTOMER.email,
-      }),
-      state.transaction,
-    );
-    expect(state.contacts.resolveForImport).toHaveBeenNthCalledWith(
-      2,
       expect.objectContaining({
         name: IMPORT_ROW.contactName,
         phone: IMPORT_ROW.contactPhone,
@@ -140,36 +130,29 @@ describe('transactional apartment importer orchestration', () => {
       }),
       state.transaction,
     );
+    expect(state.contacts.linkDirectoryContactToProject).toHaveBeenCalledTimes(
+      2,
+    );
+    expect(state.contacts.linkDirectoryContactToProject).toHaveBeenCalledWith(
+      'created',
+      'customer-contact',
+      state.transaction,
+    );
+    expect(state.contacts.linkDirectoryContactToProject).toHaveBeenCalledWith(
+      'created',
+      'secondary-contact',
+      state.transaction,
+    );
     expect(state.transitions.record).toHaveBeenCalledWith(
       expect.any(Object),
       state.transaction,
     );
-    expect(state.taskInitialization.ensureForProject).toHaveBeenCalledWith(
-      { id: 'created', name: 'דירה1' },
-      IMPORT_CREATOR,
-      state.transaction,
-    );
     expect(state.transitions.record).toHaveBeenCalledWith(
-      expect.objectContaining({ toStageId: PROJECT_STATUS_IDS.DRAFT }),
+      expect.objectContaining({ toStageId: PROJECT_STATUS_IDS.NOT_STARTED }),
       state.transaction,
     );
     expect(state.events.emitAsync).toHaveBeenCalledTimes(1);
   });
-  it('reports a failed row and does not publish an apartment when mandatory task creation fails', async () => {
-    const state = await setup();
-    state.taskInitialization.ensureForProject.mockRejectedValue(
-      new Error('mandatory task failed'),
-    );
-    const result = await state.service.import(
-      'building',
-      await makeImportFile([IMPORT_ROW]),
-      IMPORT_CREATOR,
-    );
-    expect(result.counts.created).toBe(0);
-    expect(result.counts.error).toBe(1);
-    expect(state.events.emitAsync).not.toHaveBeenCalled();
-  });
-
   it('keeps all building and apartment reads on the transaction and uses refreshed building data', async () => {
     const state = await setup();
     state.projects.findById
@@ -292,7 +275,7 @@ describe('transactional apartment importer orchestration', () => {
         .existing,
     ).toBe(1);
     expect(state.projects.create).toHaveBeenCalledTimes(1);
-    expect(state.contacts.resolveForImport).toHaveBeenCalledTimes(2);
+    expect(state.contacts.resolveDirectoryForImport).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a missing upload or missing initial building without writes', async () => {
@@ -338,6 +321,18 @@ describe('transactional apartment importer orchestration', () => {
     expect(state.projects.create).not.toHaveBeenCalled();
   });
 
+  it('rejects new customer phone details without a named contact', async () => {
+    const state = await setup();
+    const result = await state.service.import(
+      'building',
+      await makeImportFile([{ ...IMPORT_ROW, contactName: '' }]),
+      IMPORT_CREATOR,
+    );
+    expect(result.counts.error).toBe(1);
+    expect(result.rows[0].reason).toContain('נדרש שם');
+    expect(state.customers.createForImport).not.toHaveBeenCalled();
+  });
+
   it('allows an omitted secondary contact for an existing customer', async () => {
     const state = await setup();
     state.customers.findByTaxId.mockResolvedValue(IMPORT_CUSTOMER);
@@ -349,7 +344,62 @@ describe('transactional apartment importer orchestration', () => {
       IMPORT_CREATOR,
     );
     expect(result.counts.created).toBe(1);
-    expect(state.contacts.resolveForImport).toHaveBeenCalledTimes(1);
+    expect(state.contacts.resolveDirectoryForImport).not.toHaveBeenCalled();
+  });
+
+  it('does not invent a contact when an imported customer has no primary contact', async () => {
+    const state = await setup();
+    state.customers.createForImport.mockResolvedValue({
+      ...IMPORT_CUSTOMER,
+      contactName: null,
+      phone: null,
+      email: null,
+      primaryContactId: null,
+    });
+    const row = {
+      ...IMPORT_ROW,
+      customerPhone: '',
+      customerEmail: '',
+      contactName: '',
+      contactPhone: '',
+      contactEmail: '',
+    };
+    const result = await state.service.import(
+      'building',
+      await makeImportFile([row]),
+      IMPORT_CREATOR,
+    );
+    expect(result.counts.created).toBe(1);
+    expect(state.contacts.resolveDirectoryForImport).not.toHaveBeenCalled();
+    expect(state.contacts.linkDirectoryContactToProject).not.toHaveBeenCalled();
+  });
+
+  it('links the selected customer primary without creating a duplicate contact', async () => {
+    const state = await setup();
+    state.customers.createForImport.mockResolvedValue({
+      ...IMPORT_CUSTOMER,
+      primaryContactId: 'selected-primary',
+    });
+    const row = {
+      ...IMPORT_ROW,
+      customerPhone: '',
+      customerEmail: '',
+      contactName: '',
+      contactPhone: '',
+      contactEmail: '',
+    };
+    const result = await state.service.import(
+      'building',
+      await makeImportFile([row]),
+      IMPORT_CREATOR,
+    );
+    expect(result.counts.created).toBe(1);
+    expect(state.contacts.resolveDirectoryForImport).not.toHaveBeenCalled();
+    expect(state.contacts.linkDirectoryContactToProject).toHaveBeenCalledWith(
+      'created',
+      'selected-primary',
+      state.transaction,
+    );
   });
 
   it('reuses matching customer without creating or updating it', async () => {
@@ -373,7 +423,7 @@ describe('transactional apartment importer orchestration', () => {
     );
     expect(result.counts.error).toBe(1);
     expect(state.projects.create).not.toHaveBeenCalled();
-    expect(state.contacts.resolveForImport).not.toHaveBeenCalled();
+    expect(state.contacts.resolveDirectoryForImport).not.toHaveBeenCalled();
   });
   it('skips an existing apartment without writing any customer or contact', async () => {
     const state = await setup();
@@ -387,7 +437,7 @@ describe('transactional apartment importer orchestration', () => {
     );
     expect(result.counts.existing).toBe(1);
     expect(state.customers.createForImport).not.toHaveBeenCalled();
-    expect(state.contacts.resolveForImport).not.toHaveBeenCalled();
+    expect(state.contacts.resolveDirectoryForImport).not.toHaveBeenCalled();
   });
   it('uses first occurrence and reports later duplicate without another transaction', async () => {
     const state = await setup();
@@ -406,7 +456,7 @@ describe('transactional apartment importer orchestration', () => {
   });
   it('continues after a failing row transaction and does not emit success for it', async () => {
     const state = await setup();
-    state.contacts.resolveForImport.mockRejectedValueOnce(
+    state.contacts.resolveDirectoryForImport.mockRejectedValueOnce(
       new Error('private database failure'),
     );
     const result = await state.service.import(
@@ -425,7 +475,7 @@ describe('transactional apartment importer orchestration', () => {
   });
   it('localizes known contact errors in row reports without exposing English API messages', async () => {
     const state = await setup();
-    state.contacts.resolveForImport.mockRejectedValueOnce(
+    state.contacts.resolveDirectoryForImport.mockRejectedValueOnce(
       new BadRequestException(
         getHttpErrorPayload(HTTP_ERROR_CODES.INVALID_CUSTOMER_CONTACT),
       ),
@@ -463,15 +513,14 @@ describe('transactional apartment importer orchestration', () => {
     );
     expect(result.rows[0].status).toBe('error');
     expect(state.projects.create).toHaveBeenCalledTimes(1);
-    expect(state.contacts.resolveForImport).not.toHaveBeenCalled();
+    expect(state.contacts.resolveDirectoryForImport).not.toHaveBeenCalled();
     expect(state.transitions.record).not.toHaveBeenCalled();
-    expect(state.taskInitialization.ensureForProject).not.toHaveBeenCalled();
     expect(state.events.emitAsync).not.toHaveBeenCalled();
   });
 
   it('does not expose arbitrary exception messages in row reports', async () => {
     const state = await setup();
-    state.contacts.resolveForImport.mockRejectedValueOnce(
+    state.contacts.resolveDirectoryForImport.mockRejectedValueOnce(
       new BadRequestException('private submitted data'),
     );
     const result = await state.service.import(

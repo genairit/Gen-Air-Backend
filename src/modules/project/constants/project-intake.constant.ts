@@ -11,10 +11,6 @@ export const EMPTY_CONTACT: IProjectContact = {
   contactPhone: null,
 };
 
-export const CONTACT_FIELDS = Object.keys(EMPTY_CONTACT).filter(
-  (key): key is keyof IProjectContact => key in EMPTY_CONTACT,
-);
-
 export const ADDRESS_CITY_REQUIRED_BY_FIELD_SET: Record<
   ProjectDetailFieldSetType,
   boolean

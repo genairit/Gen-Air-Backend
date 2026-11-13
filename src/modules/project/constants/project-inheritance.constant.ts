@@ -12,5 +12,7 @@ export const BUILDING_INHERITANCE_ATTRIBUTES = [
   'name',
   'notes',
   'customerId',
+  'hasGeneralLightingCeilingLowering',
+  'generalLightingCeilingLoweringHeight',
   ...ADDRESS_INHERITED_FIELDS,
 ];

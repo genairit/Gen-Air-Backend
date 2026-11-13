@@ -31,6 +31,12 @@ export const IMPORT_CUSTOMER = {
   email: 'customer@example.com',
   address: 'רחוב לדוגמה 1',
   contactName: 'איש קשר',
+  primaryContactId: 'customer-contact',
+  primaryContact: {
+    name: 'איש קשר',
+    phone: '0501234567',
+    email: 'customer@example.com',
+  },
   prioritySyncStatus: PRIORITY_SYNC_STATUSES.PENDING,
 };
 export const IMPORT_ROW = {

@@ -4,6 +4,7 @@ import { DRIVE_TEMPLATE_TAGS } from '@Constants/drive-template.constant';
 import { MulterOptions } from '@nestjs/platform-express/multer/interfaces/multer-options.interface';
 
 export const PROJECT_ROOT_FOLDER_NAME = DRIVE_TEMPLATE_TAGS.PROJECT_NAME;
+export const APARTMENTS_FOLDER_NAME = 'דיירים';
 
 export const MAX_FOLDER_DEPTH = 10;
 
@@ -29,5 +30,6 @@ export type FolderContentStatusType =
 
 export const PROJECT_DRIVE_ERROR_CODES = {
   NOT_PROVISIONED: 'PROJECT_DRIVE_NOT_PROVISIONED',
+  APARTMENT_REPAIR_REQUIRED: 'APARTMENT_DRIVE_REPAIR_REQUIRED',
   AUTHENTICATION_FAILED: 'DRIVE_AUTHENTICATION_FAILED',
 } as const;

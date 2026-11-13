@@ -1,9 +1,14 @@
-import { Transaction } from 'sequelize';
+import {
+  ITargetStageNoteQuery,
+  TProjectStageTransitionNote,
+  TProjectStageTransitionCreationAttributes,
+} from './interfaces/project-stage-transition.interface';
+
+import { Op, Transaction } from 'sequelize';
 import { Injectable } from '@nestjs/common';
 import { User } from '@Modules/user/entities/user.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
 import { ProjectStageTransition } from './entities/project-stage-transition.entity';
-import { TProjectStageTransitionCreationAttributes } from './interfaces/project-stage-transition.interface';
 
 @Injectable()
 export class ProjectStageTransitionRepository {
@@ -16,6 +21,21 @@ export class ProjectStageTransitionRepository {
         { model: User, as: 'changedBy', paranoid: false },
       ],
       order: [['createdAt', 'DESC']],
+    });
+  }
+
+  findNotesByTargetStages({
+    projectIds,
+    toStageIds,
+  }: ITargetStageNoteQuery): Promise<TProjectStageTransitionNote[]> {
+    return ProjectStageTransition.findAll({
+      attributes: ['projectId', 'note'],
+      where: {
+        toStageId: { [Op.in]: toStageIds },
+        projectId: { [Op.in]: projectIds },
+      },
+      order: [['createdAt', 'ASC']],
+      raw: true,
     });
   }
 

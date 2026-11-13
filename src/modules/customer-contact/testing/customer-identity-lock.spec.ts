@@ -2,6 +2,7 @@ import { Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { Customer } from '@Modules/customer/entities/customer.entity';
 import { CustomerRepository } from '@Modules/customer/customer.repository';
+import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 
 describe('transactional customer identity comparison lock', () => {
   afterEach(() => jest.restoreAllMocks());
@@ -13,8 +14,9 @@ describe('transactional customer identity comparison lock', () => {
     await repository.findByTaxId('514287937', transaction);
     expect(query).toHaveBeenLastCalledWith({
       where: { taxId: '514287937' },
+      include: [{ model: CustomerContact, as: 'primaryContact' }],
       transaction,
-      lock: true,
+      lock: { level: transaction.LOCK.UPDATE, of: Customer },
     });
     await repository.findByTaxId('514287937');
     expect(query).toHaveBeenLastCalledWith(

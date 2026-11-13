@@ -31,7 +31,7 @@ const projectAttributes = (
   code: randomUUID().slice(0, 8),
   customerId: environment.customer.id,
   projectTypeId: environment.legacyProject.projectTypeId,
-  stageId: PROJECT_STATUS_IDS.WAITING,
+  stageId: PROJECT_STATUS_IDS.NOT_STARTED,
   createdById: environment.creator.id,
 });
 

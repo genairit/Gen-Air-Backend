@@ -43,7 +43,6 @@ import { ICustomer } from '@Modules/customer/interfaces/customer.interface';
 import { ApartmentImportRowError } from './errors/apartment-import-row.error';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { prepareApartmentImportRow } from './utilities/apartment-import-row.utility';
-import { ProjectTaskInitializationService } from './project-task-initialization.service';
 import { buildApartmentImportResult } from './utilities/apartment-import-result.utility';
 import { APARTMENT_IMPORT_ROW_STATUS } from './constants/apartment-import-result.constant';
 import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
@@ -64,7 +63,6 @@ export class ProjectApartmentImportService {
     private readonly transitions: ProjectStageTransitionService,
     private readonly transactions: DatabaseTransactionService,
     private readonly events: EventEmitter2,
-    private readonly taskInitialization: ProjectTaskInitializationService,
   ) {}
 
   async template(buildingId: string): Promise<Buffer> {
@@ -211,7 +209,13 @@ export class ProjectApartmentImportService {
           apartment: { ...apartment, customerId: customer.id },
         });
         const created = await this.projects.create(attributes, transaction);
-        await this.resolveContacts(row.cells, customer, creator, transaction);
+        await this.resolveContacts(
+          row.cells,
+          customer,
+          created.id,
+          creator,
+          transaction,
+        );
         await this.transitions.record(
           {
             projectId: created.id,
@@ -220,11 +224,6 @@ export class ProjectApartmentImportService {
             note: null,
             changedBy: creator,
           },
-          transaction,
-        );
-        await this.taskInitialization.ensureForProject(
-          { id: created.id, name: attributes.name },
-          creator,
           transaction,
         );
         return created.id;
@@ -293,29 +292,26 @@ export class ProjectApartmentImportService {
   private async resolveContacts(
     cells: readonly string[],
     customer: ICustomer,
+    projectId: string,
     creator: IUser,
     transaction: Transaction,
   ): Promise<void> {
-    await this.contacts.resolveForImport(
-      {
-        customerId: customer.id,
-        name: customer.name,
-        phone: customer.phone,
-        email: customer.email,
-        role: null,
-        createdById: creator.id,
-      },
-      transaction,
-    );
+    const customerContactId = customer.primaryContactId;
+    if (customerContactId) {
+      await this.contacts.linkDirectoryContactToProject(
+        projectId,
+        customerContactId,
+        transaction,
+      );
+    }
     const name = readApartmentImportField(cells, 'contactName');
     const phone = readApartmentImportField(cells, 'contactPhone');
     const email = readApartmentImportField(cells, 'contactEmail');
     if (!name && !phone && !email) {
       return;
     }
-    await this.contacts.resolveForImport(
+    const contact = await this.contacts.resolveDirectoryForImport(
       {
-        customerId: customer.id,
         name,
         phone: phone || null,
         email: email || null,
@@ -324,6 +320,13 @@ export class ProjectApartmentImportService {
       },
       transaction,
     );
+    if (contact.id !== customerContactId) {
+      await this.contacts.linkDirectoryContactToProject(
+        projectId,
+        contact.id,
+        transaction,
+      );
+    }
   }
 
   private async publishCreated(projectId: string): Promise<void> {

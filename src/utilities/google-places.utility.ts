@@ -50,6 +50,25 @@ const readArray = (value: unknown): unknown[] => {
   return value;
 };
 
+const readLocation = (value: unknown): IPlaceAddress['location'] | null => {
+  if (!isObject(value)) {
+    return null;
+  }
+
+  const { latitude, longitude } = value;
+
+  if (
+    typeof latitude !== 'number' ||
+    typeof longitude !== 'number' ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude)
+  ) {
+    return null;
+  }
+
+  return { latitude, longitude };
+};
+
 const toPlaceSuggestion = (suggestion: unknown): IPlaceSuggestion | null => {
   if (!isObject(suggestion) || !isObject(suggestion.placePrediction)) {
     return null;
@@ -127,6 +146,7 @@ export const toPlaceAddress = (place: unknown): IPlaceAddress | null => {
   const placeId = readString(place.id);
   const formattedAddress = readString(place.formattedAddress);
   const components = readArray(place.addressComponents);
+  const location = readLocation(place.location);
 
   if (!placeId || !formattedAddress) {
     return null;
@@ -135,6 +155,7 @@ export const toPlaceAddress = (place: unknown): IPlaceAddress | null => {
   return {
     placeId,
     formattedAddress,
+    ...(location ? { location } : {}),
     city: findComponentText(components, {
       text: 'longText',
       type: GOOGLE_PLACES_COMPONENT_TYPES.CITY,
