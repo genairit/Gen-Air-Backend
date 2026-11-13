@@ -24,7 +24,7 @@ tables and `has_table_privilege`, `has_sequence_privilege`, and
 new temporary object of each kind. Supabase's Database
 Security Advisor should no longer report `rls_disabled_in_public` for those
 tables. Backend-only tables with RLS and no policy are expected. Verify Nest
-login, CRM reads and writes, and questionnaire submission through the backend.
+login and CRM reads and writes through the backend.
 
 Disable the Supabase Data API in project settings as an additional boundary
 after confirming no external integration uses it. Restricting Data API grants

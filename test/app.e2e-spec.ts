@@ -5,12 +5,12 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from '@Guards/auth.guard';
 import { TIME_UNITS } from '@Constants/time.constant';
 import { AuthService } from '@Modules/auth/auth.service';
+import { COOKIE_KEYS } from '@Constants/storage.constant';
 import { AuthController } from '@Modules/auth/auth.controller';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { ANONYMOUS_CLIENT_COOKIE } from '@Utilities/anonymous-client.utility';
 
 describe('Auth HTTP boundary (e2e)', () => {
-  const previousClientSecret = process.env.QUESTIONNAIRE_CLIENT_SECRET ?? null;
+  const previousClientSecret = process.env.AUTH_CLIENT_SECRET ?? null;
   const state: { app: INestApplication<App> | null } = { app: null };
   const login = jest.fn().mockResolvedValue({
     user: { id: 'employee-id' },
@@ -28,7 +28,7 @@ describe('Auth HTTP boundary (e2e)', () => {
   };
 
   beforeAll(async () => {
-    process.env.QUESTIONNAIRE_CLIENT_SECRET =
+    process.env.AUTH_CLIENT_SECRET =
       'auth-e2e-test-secret-at-least-32-characters';
     const module = await Test.createTestingModule({
       controllers: [AuthController],
@@ -53,9 +53,9 @@ describe('Auth HTTP boundary (e2e)', () => {
   afterAll(async () => {
     await state.app?.close();
     if (previousClientSecret === null) {
-      delete process.env.QUESTIONNAIRE_CLIENT_SECRET;
+      delete process.env.AUTH_CLIENT_SECRET;
     } else {
-      process.env.QUESTIONNAIRE_CLIENT_SECRET = previousClientSecret;
+      process.env.AUTH_CLIENT_SECRET = previousClientSecret;
     }
   });
 
@@ -72,7 +72,7 @@ describe('Auth HTTP boundary (e2e)', () => {
     const cookieLifetimeSeconds = TIME_UNITS.DAY_MS / TIME_UNITS.SECOND_MS;
     expect(response.headers['set-cookie']?.[0]).toMatch(
       new RegExp(
-        `^${ANONYMOUS_CLIENT_COOKIE}=[0-9a-f]{32}\\.[0-9a-f]{64}; Path=/; Max-Age=${cookieLifetimeSeconds}; HttpOnly; Secure; SameSite=Strict$`,
+        `^${COOKIE_KEYS.ANONYMOUS_CLIENT}=[0-9a-f]{32}\\.[0-9a-f]{64}; Path=/; Max-Age=${cookieLifetimeSeconds}; HttpOnly; Secure; SameSite=Strict$`,
       ),
     );
     expect(login).toHaveBeenCalledWith(credentials, expect.any(String));

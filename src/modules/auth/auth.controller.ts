@@ -41,7 +41,7 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<ILoginResponse> {
-    const secret = EnvironmentManager.get('QUESTIONNAIRE_CLIENT_SECRET', {
+    const secret = EnvironmentManager.get('AUTH_CLIENT_SECRET', {
       errorOnMissing: true,
     });
     const supplied = readAnonymousClientCookie(request.headers.cookie ?? null);

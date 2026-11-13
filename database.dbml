@@ -615,39 +615,6 @@ Table quotation_rules {
 }
 
 
-Table questionnaires {
-  id uuid [pk, default: `gen_random_uuid()`, note: 'Identifier of this questionnaire version']
-  slug varchar(120) [not null, note: 'Stable public name of the questionnaire, shared by all its versions and used in the form URL']
-  version integer [not null, note: 'Positive; immutable with the complete definition']
-  title text [not null, note: 'Heading shown at the top of the form']
-  introduction text [not null, note: 'Explanatory text shown above the questions']
-  definition jsonb [not null, note: 'Array of version-specific field definitions; immutable']
-  accepting_responses boolean [not null, default: false, note: 'Whether this version is the one currently open for submissions; at most one version per slug may be open']
-  created_at timestamptz(3) [not null, default: `now()`, note: 'When the version was published']
-  updated_at timestamptz(3) [not null, default: `now()`, note: 'When accepting_responses was last toggled']
-  indexes {
-    (slug, version) [unique, name: 'uq_questionnaires_slug_version']
-    slug [name: 'uq_questionnaires_accepting_slug', note: 'Unique partial index WHERE accepting_responses']
-  }
-  Note: 'A published version of an internal questionnaire form, with its questions frozen in definition. Versions cannot be deleted. Only accepting_responses and updated_at may change. RLS enabled, no public Data API grants.'
-}
-
-Table questionnaire_submissions {
-  id uuid [pk, default: `gen_random_uuid()`, note: 'Identifier of the submission']
-  questionnaire_id uuid [not null, note: 'The exact questionnaire version that was filled in']
-  request_id uuid [not null, unique, note: 'Client-supplied idempotency key, so a retried submit is stored once']
-  full_name varchar(200) [not null, note: 'Self-reported, nonblank; original text preserved']
-  role varchar(200) [not null, note: 'Self-reported, nonblank']
-  department varchar(200) [not null, note: 'Self-reported, nonblank']
-  answers jsonb [not null, note: 'Array of questionKey/value pairs; each version-specific question appears once; at least one nonblank answer']
-  created_at timestamptz(3) [not null, default: `now()`, note: 'When the form was submitted']
-  indexes {
-    questionnaire_id [name: 'idx_questionnaire_submissions_questionnaire_id']
-  }
-  Note: 'One filled-in questionnaire response, tied to the exact version that was answered. Append-only. Trigger validates answer identity, uniqueness, types and per-question length against the immutable questionnaire. RLS enabled, no public Data API grants.'
-}
-Ref: questionnaire_submissions.questionnaire_id > questionnaires.id [delete: restrict]
-
 Table project_boqs {
   id uuid [pk, default: `gen_random_uuid()`]
   project_id uuid [not null, unique]
