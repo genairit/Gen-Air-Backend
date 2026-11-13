@@ -22,6 +22,7 @@ import defaultTerms from './constants/quotation-pdf-terms.json';
 import { ProjectService } from '@Modules/project/project.service';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { quotationView } from './utilities/quotation-calculation.utility';
+import { quotationFilename } from './utilities/quotation-filename.utility';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 
@@ -166,7 +167,14 @@ export class QuotationPdfService {
       );
     }
 
-    const filename = `${payload.title} ${quotation.number}.pdf`;
+    const filename = quotationFilename({
+      title: payload.title,
+      number: quotation.number,
+      customerName: payload.recipient.name,
+      projectCode: project?.code ?? null,
+      apartmentNumber: project?.customerApartment ?? null,
+      brands: quotation.brands,
+    });
     if (project) {
       await this.drive.uploadQuotationPdf(project.id, filename, pdf);
     }
