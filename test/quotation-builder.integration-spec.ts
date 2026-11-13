@@ -37,7 +37,6 @@ import { CatalogueItemUsageService } from '@Modules/catalogue-item-usage/catalog
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
 import { CatalogueItemUsageRepository } from '@Modules/catalogue-item-usage/catalogue-item-usage.repository';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
-import { QuestionnaireSubmission } from '@Modules/questionnaire-submission/entities/questionnaire-submission.entity';
 
 const actor = randomUUID(),
   otherActor = randomUUID(),
@@ -241,6 +240,7 @@ beforeAll(async () => {
     ),
   );
   for (const migration of [
+    'migrations/20261113084752_remove_gen_air_questionnaire.sql',
     'migrations/2026-11-09-quotation-brand-tabs.sql',
     'migrations/2026-11-09-quotation-project-links.sql',
     'migrations/2026-11-10-quotation-cancellation.sql',
@@ -268,14 +268,7 @@ describe('Normalized append-only tables on real PostgreSQL', () => {
         ProjectStageTransition.prototype,
       ),
     ).toMatchObject({ updatedAt: false });
-    expect(
-      Reflect.getMetadata(
-        'sequelize:options',
-        QuestionnaireSubmission.prototype,
-      ),
-    ).toMatchObject({ updatedAt: false });
     const stageId = randomUUID();
-    const questionnaireId = randomUUID();
     const [stages] = await sequelize.query(
       `INSERT INTO project_stage_transitions
        (id,project_id,to_stage_id,changed_by_id,changed_by_role)
@@ -283,15 +276,7 @@ describe('Normalized append-only tables on real PostgreSQL', () => {
        RETURNING created_at`,
       { bind: { projectId: randomUUID(), stageId, actor } },
     );
-    const [submissions] = await sequelize.query(
-      `INSERT INTO questionnaire_submissions
-       (id,questionnaire_id,request_id,full_name,role,department,answers)
-       VALUES (gen_random_uuid(),$questionnaireId,gen_random_uuid(),'Name','Role','Dept','[]')
-       RETURNING created_at`,
-      { bind: { questionnaireId } },
-    );
     expect(stages).toHaveLength(1);
-    expect(submissions).toHaveLength(1);
   });
 });
 
@@ -1078,7 +1063,7 @@ describe('Quotation deletion on real PostgreSQL', () => {
     );
     expect(permissions).toEqual([{ key: 'quotations.delete' }]);
     const [removed] = await sequelize.query(
-      "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND (table_name, column_name) IN (('permissions','feature'),('permissions','action'),('quotations','rule_config_fingerprint'),('project_stage_transitions','updated_at'),('questionnaire_submissions','updated_at'))",
+      "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND (table_name, column_name) IN (('permissions','feature'),('permissions','action'),('quotations','rule_config_fingerprint'),('project_stage_transitions','updated_at'))",
     );
     expect(removed).toEqual([]);
     const [grants] = await sequelize.query(

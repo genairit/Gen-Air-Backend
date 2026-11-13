@@ -22,8 +22,7 @@
     "create-admin": "node dist/scripts/create-admin.js",
     "rotate-legacy-password": "node dist/scripts/rotate-legacy-password.js",
     "typecheck:iac": "tsc --noEmit --strict --skipLibCheck --module nodenext --moduleResolution nodenext --types jest .railway/railway.ts .railway/railway.spec.ts",
-    "test:iac": "jest --rootDir .railway",
-    "test:questionnaire-migration": "node --test test/questionnaire-migration.mjs"
+    "test:iac": "jest --rootDir .railway"
   },
   "dependencies": {
     "@googleapis/drive": "^26.0.2",

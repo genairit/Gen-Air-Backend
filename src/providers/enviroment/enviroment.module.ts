@@ -8,7 +8,7 @@ const environmentSchema = Joi.object({
   DB_PASS: Joi.string().required(),
   DB_PORT: Joi.number().default(5432),
   JWT_SECRET: Joi.string().required(),
-  QUESTIONNAIRE_CLIENT_SECRET: Joi.string().min(32).required(),
+  AUTH_CLIENT_SECRET: Joi.string().min(32).required(),
   WORKER_URL: Joi.string().uri().optional(),
   WORKER_API_TOKEN: Joi.string().min(32).optional(),
   GOOGLE_DRIVE_ROOT_FOLDER_ID: Joi.string().optional(),
