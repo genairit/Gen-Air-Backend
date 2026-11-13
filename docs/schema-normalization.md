@@ -11,7 +11,6 @@ that the referenced row can no longer supply.
 | `permissions.feature`, `permissions.action` | The `feature.action` permission key                                 |
 | `quotations.rule_config_fingerprint`        | SHA-256 of the stored `rule_configuration`, computed by the backend |
 | `project_stage_transitions.updated_at`      | `created_at`; transition rows are append-only                       |
-| `questionnaire_submissions.updated_at`      | `created_at`; submissions are append-only                           |
 
 The quotation API still returns `ruleConfigFingerprint` so callers can detect a
 rule change without a stored second copy.
@@ -30,7 +29,6 @@ rule change without a stored second copy.
 | Project and task status beside their transition tables; active user role beside `user_roles`                 | The parent stores current state. Transition and audit rows preserve earlier states; `user_roles` lists roles the user may choose, while `users.role` is the one currently active.                                                       |
 | Email recipient IDs beside resolved addresses; catalogue usage counters beside quotation lines               | Recipient addresses preserve where an email was actually sent. Usage counts record each user's selections, including reselections, which current quotation lines cannot reconstruct.                                                    |
 | Customer main contact beside `customer_contacts`; customer billing address beside project site address       | The main contact and additional contacts may be different people. Billing and site addresses serve different purposes.                                                                                                                  |
-| Questionnaire versions                                                                                       | These preserve the exact form answered by a submission.                                                                                                                                                                                 |
 
 Historical migrations remain immutable; the dated migration removes the redundant
 columns from existing databases.
@@ -48,8 +46,8 @@ separate `project_status_change_snapshots` table remains available for the
 
 This is a coordinated maintenance-window change. Stop all old backend replicas
 and pause writes, take a database backup, apply the migration, deploy the matching
-backend revision, verify quotation creation and reads plus project transitions and
-questionnaire submissions, then resume traffic. Old code writes the removed
+backend revision, verify quotation creation and reads plus project transitions,
+then resume traffic. Old code writes the removed
 columns; new code cannot create a quotation while the old non-null fingerprint
 column still exists. Do not serve old and new replicas together.
 
