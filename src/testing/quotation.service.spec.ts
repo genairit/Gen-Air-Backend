@@ -100,10 +100,11 @@ const createService = (
 };
 
 describe('eligible quotation sales agents', () => {
-  test('returns active engineers and administrators once each', async () => {
+  test('returns engineers, engineering leads and administrators once each', async () => {
     const { service, users, userRoles } = createService(approvedQuotation());
     userRoles.findUserIdsByRole
       .mockResolvedValueOnce(['engineer', 'both'])
+      .mockResolvedValueOnce(['lead', 'both'])
       .mockResolvedValueOnce(['admin', 'both']);
     users.findByIds.mockResolvedValue([
       mock<IUser>({
@@ -111,6 +112,12 @@ describe('eligible quotation sales agents', () => {
         firstName: 'Engineering',
         lastName: 'Employee',
         employeeNumber: '101',
+      }),
+      mock<IUser>({
+        id: 'lead',
+        firstName: 'Engineering',
+        lastName: 'Lead',
+        employeeNumber: '104',
       }),
       mock<IUser>({
         id: 'admin',
@@ -134,6 +141,12 @@ describe('eligible quotation sales agents', () => {
         employeeNumber: '101',
       },
       {
+        id: 'lead',
+        firstName: 'Engineering',
+        lastName: 'Lead',
+        employeeNumber: '104',
+      },
+      {
         id: 'admin',
         firstName: 'Admin',
         lastName: 'Employee',
@@ -148,10 +161,11 @@ describe('eligible quotation sales agents', () => {
     ]);
     expect(userRoles.findUserIdsByRole.mock.calls).toEqual([
       [USER_ROLES.ENGINEER],
+      [USER_ROLES.ENGINEERING_LEAD],
       [USER_ROLES.SYSTEM_ADMIN],
     ]);
     expect(users.findByIds.mock.calls).toEqual([
-      [['engineer', 'both', 'admin']],
+      [['engineer', 'both', 'lead', 'admin']],
     ]);
   });
 
@@ -166,6 +180,26 @@ describe('eligible quotation sales agents', () => {
 });
 
 describe('approved quotation sales-agent updates', () => {
+  test('accepts an engineering lead as a quotation agent', async () => {
+    const quotation = approvedQuotation();
+    const { service, repository, users } = createService(quotation);
+    users.findById.mockResolvedValue(
+      mock<IUser>({
+        id: salesAgentId,
+        assignedRoles: [USER_ROLES.ENGINEERING_LEAD],
+        deletedAt: null,
+      }),
+    );
+
+    await service.updateSalesAgent(
+      quotationId,
+      { version: quotation.version, salesAgentId },
+      actorWithEmployeeRead,
+    );
+
+    expect(repository.update).toHaveBeenCalled();
+  });
+
   test('rejects changes to cancelled quotations before looking up an employee', async () => {
     const quotation = approvedQuotation({ status: QUOTATION_STATUS.CANCELLED });
     const { service, repository, users } = createService(quotation);

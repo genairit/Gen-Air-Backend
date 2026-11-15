@@ -132,8 +132,16 @@ export class UserService {
 
   async getByFilter(filter: GetUsersByFilterDto): Promise<ICursorPage<IUser>> {
     const role = filter.role ?? null;
-    const roleUserIds =
-      role === null ? null : await this.userRoleService.findUserIdsByRole(role);
+    const matchingRoles = [
+      ...(role === null ? [] : [role]),
+      ...(role === USER_ROLES.ENGINEER ? [USER_ROLES.ENGINEERING_LEAD] : []),
+    ];
+    const matchingIds = await Promise.all(
+      matchingRoles.map((matchingRole) =>
+        this.userRoleService.findUserIdsByRole(matchingRole),
+      ),
+    );
+    const roleUserIds = role === null ? null : [...new Set(matchingIds.flat())];
     const page = await this.userRepository.findByFilter(
       { search: filter.search ?? null },
       toCursorBatch(filter),

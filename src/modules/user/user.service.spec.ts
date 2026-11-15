@@ -277,13 +277,22 @@ describe('UserService.getRoleCounts', () => {
 
   it('filters users by assigned membership instead of their active role', async () => {
     const { service, userRepository, userRoleService } = await createService();
-    const roleMemberIds = ['multi-role-user'];
-    userRoleService.findUserIdsByRole.mockResolvedValue(roleMemberIds);
+    const roleMemberIds = ['multi-role-user', 'lead-user'];
+    userRoleService.findUserIdsByRole.mockImplementation((role: string) =>
+      Promise.resolve(
+        role === USER_ROLES.ENGINEER
+          ? ['multi-role-user']
+          : ['lead-user', 'multi-role-user'],
+      ),
+    );
 
     await service.getByFilter({ role: USER_ROLES.ENGINEER });
 
     expect(userRoleService.findUserIdsByRole).toHaveBeenCalledWith(
       USER_ROLES.ENGINEER,
+    );
+    expect(userRoleService.findUserIdsByRole).toHaveBeenCalledWith(
+      USER_ROLES.ENGINEERING_LEAD,
     );
     expect(userRepository.findByFilter).toHaveBeenCalledWith(
       { search: null },

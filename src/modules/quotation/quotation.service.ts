@@ -22,6 +22,11 @@ import {
 } from '@Utilities/permission.utility';
 
 import {
+  USER_ROLES,
+  ENGINEERING_USER_ROLES,
+} from '@Constants/user-role.constant';
+
+import {
   decodeQuotationCursor,
   encodeQuotationCursor,
 } from './utilities/quotation-cursor.utility';
@@ -71,7 +76,6 @@ import { Transaction } from 'sequelize';
 import { randomUUID } from 'node:crypto';
 import { Quotation } from './entities/quotation.entity';
 import { UserService } from '@Modules/user/user.service';
-import { USER_ROLES } from '@Constants/user-role.constant';
 import { QuotationRepository } from './quotation.repository';
 import { CloneQuotationDto } from './dto/clone-quotation.dto';
 import { PERMISSIONS } from '@Constants/authorization.constant';
@@ -1126,7 +1130,7 @@ export class QuotationService {
   }
   private assertCancellationManager(user: IUser): void {
     const canManageCancellation =
-      user.role === USER_ROLES.ENGINEER ||
+      ENGINEERING_USER_ROLES.some((role) => role === user.role) ||
       user.role === USER_ROLES.SYSTEM_ADMIN;
     if (!canManageCancellation) {
       throw new ForbiddenException('אין הרשאה לבטל או לשחזר הצעות מחיר');
