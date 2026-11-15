@@ -26,6 +26,7 @@ import {
   USER_ROLES,
   UserRoleType,
   USER_ROLE_VALUES,
+  ENGINEERING_USER_ROLES,
   ASSIGNABLE_USER_ROLE_VALUES,
 } from '@Constants/user-role.constant';
 
@@ -133,7 +134,7 @@ export class UserService {
   async getByFilter(filter: GetUsersByFilterDto): Promise<ICursorPage<IUser>> {
     const role = filter.role ?? null;
     const roleUserIds =
-      role === null ? null : await this.userRoleService.findUserIdsByRole(role);
+      role === null ? null : await this.findUserIdsMatchingRole(role);
     const page = await this.userRepository.findByFilter(
       { search: filter.search ?? null },
       toCursorBatch(filter),
@@ -147,8 +148,7 @@ export class UserService {
     const [roleCounts, total] = await Promise.all([
       Promise.all(
         USER_ROLE_VALUES.map(async (role) => {
-          const roleUserIds =
-            await this.userRoleService.findUserIdsByRole(role);
+          const roleUserIds = await this.findUserIdsMatchingRole(role);
           const count = await this.userRepository.countActiveByIds(roleUserIds);
 
           return { role, count };
@@ -164,6 +164,18 @@ export class UserService {
       ),
       total,
     };
+  }
+
+  private async findUserIdsMatchingRole(role: UserRoleType): Promise<string[]> {
+    const matchingRoles =
+      role === USER_ROLES.ENGINEER ? ENGINEERING_USER_ROLES : [role];
+    const idsByRole = await Promise.all(
+      matchingRoles.map((matchingRole) =>
+        this.userRoleService.findUserIdsByRole(matchingRole),
+      ),
+    );
+
+    return [...new Set(idsByRole.flat())];
   }
 
   createForActor(input: CreateUserDto, actor: IAuthorizedUser): Promise<IUser> {
