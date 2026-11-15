@@ -275,6 +275,27 @@ describe('UserService.getRoleCounts', () => {
     });
   });
 
+  it('counts engineering leads in the engineer tab without double counting dual-role users', async () => {
+    const { service, userRepository, userRoleService } = await createService();
+    const userIdsByRole: Record<string, string[]> = {
+      [USER_ROLES.ENGINEER]: ['engineer', 'dual-role'],
+      [USER_ROLES.ENGINEERING_LEAD]: ['lead', 'dual-role'],
+    };
+    userRoleService.findUserIdsByRole.mockImplementation((role: string) =>
+      Promise.resolve(userIdsByRole[role] ?? []),
+    );
+
+    const counts = await service.getRoleCounts();
+
+    expect(counts[USER_ROLES.ENGINEER]).toBe(3);
+    expect(counts[USER_ROLES.ENGINEERING_LEAD]).toBe(2);
+    expect(userRepository.countActiveByIds).toHaveBeenCalledWith([
+      'engineer',
+      'dual-role',
+      'lead',
+    ]);
+  });
+
   it('filters users by assigned membership instead of their active role', async () => {
     const { service, userRepository, userRoleService } = await createService();
     const roleMemberIds = ['multi-role-user', 'lead-user'];
