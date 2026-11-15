@@ -1,6 +1,7 @@
 export const USER_ROLES = {
   FINANCE: 'finance',
   ENGINEER: 'engineer',
+  ENGINEERING_LEAD: 'engineering_lead',
   INSTALLER: 'installer',
   SALES_AGENT: 'sales_agent',
   SECRETARY: 'secretary',

@@ -20,6 +20,7 @@ import { CustomerContactModule } from '@Modules/customer-contact/customer-contac
 import { DriveTemplateFolderModule } from '@Modules/drive-template-folder/drive-template-folder.module';
 import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/project-stage-transition.module';
 import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-email/quotation-execution-email.module';
+import { ExecutionPlanModule } from '@Modules/execution-plan/execution-plan.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-emai
     MaterialModule,
     QuotationModule,
     QuotationExecutionEmailModule,
+    ExecutionPlanModule,
     EventEmitterModule.forRoot(),
     AddressModule,
     AuthModule,
