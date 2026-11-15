@@ -264,6 +264,7 @@ describe('UserService.getRoleCounts', () => {
     await expect(service.getRoleCounts()).resolves.toEqual({
       [USER_ROLES.FINANCE]: 0,
       [USER_ROLES.ENGINEER]: 0,
+      [USER_ROLES.ENGINEERING_LEAD]: 0,
       [USER_ROLES.INSTALLER]: 0,
       [USER_ROLES.SALES_AGENT]: 0,
       [USER_ROLES.SECRETARY]: 2,

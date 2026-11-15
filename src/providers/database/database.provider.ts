@@ -33,6 +33,8 @@ import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/dri
 import { CatalogueItemMaterialRevision } from '@Modules/material/entities/catalogue-item-material-revision.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
 import { QuotationExecutionEmail } from '@Modules/quotation-execution-email/entities/quotation-execution-email.entity';
+import { ExecutionPlanTemplate } from '@Modules/execution-plan/entities/execution-plan-template.entity';
+import { ExecutionPlanSubmission } from '@Modules/execution-plan/entities/execution-plan-submission.entity';
 
 const logger = new TypedLogger('DatabaseProvider');
 
@@ -105,6 +107,8 @@ export const DatabaseProvider: Provider = {
       Task,
       TaskStatusTransition,
       QuotationExecutionEmail,
+      ExecutionPlanTemplate,
+      ExecutionPlanSubmission,
       User,
       UserRole,
       UserRoleAudit,

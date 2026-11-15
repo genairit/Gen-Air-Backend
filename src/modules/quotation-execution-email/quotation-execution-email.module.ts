@@ -9,6 +9,7 @@ import { QuotationExecutionEmailService } from './quotation-execution-email.serv
 import { CustomerContactModule } from '@Modules/customer-contact/customer-contact.module';
 import { QuotationExecutionEmailController } from './quotation-execution-email.controller';
 import { QuotationExecutionEmailRepository } from './quotation-execution-email.repository';
+import { ExecutionPlanModule } from '@Modules/execution-plan/execution-plan.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { QuotationExecutionEmailRepository } from './quotation-execution-email.r
     ProjectModule,
     CustomerContactModule,
     ProjectDriveModule,
+    ExecutionPlanModule,
     DatabaseModule,
   ],
   controllers: [QuotationExecutionEmailController],

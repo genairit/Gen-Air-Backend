@@ -457,6 +457,18 @@ export class ProjectDriveService {
     }
   }
 
+  async getProjectFileVersion(
+    projectId: string,
+    fileId: string,
+  ): Promise<{ id: string; name: string; version: string }> {
+    const rootId = await this.resolveProjectFolder(projectId, {});
+    const file = await this.requireProjectFile(fileId, rootId);
+    if (!file.version) {
+      throw new BadGatewayException('Drive did not return a file version');
+    }
+    return { id: file.id, name: file.name ?? file.id, version: file.version };
+  }
+
   private async requireProjectFile(
     fileId: string,
     rootId: string,

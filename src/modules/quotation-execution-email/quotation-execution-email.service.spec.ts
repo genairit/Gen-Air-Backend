@@ -14,6 +14,7 @@ import { TASK_STATUSES } from '@Modules/task/constants/task-status.constant';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
 import { QuotationExecutionEmailService } from './quotation-execution-email.service';
+import { ExecutionPlanService } from '@Modules/execution-plan/execution-plan.service';
 import { QUOTATION_EMAIL_STATUS } from './constants/quotation-execution-email.constant';
 import { QuotationExecutionEmailRepository } from './quotation-execution-email.repository';
 import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
@@ -21,6 +22,7 @@ import { DatabaseTransactionService } from '@Providers/database/database-transac
 import type { SendQuotationExecutionEmailDto } from './dto/send-quotation-execution-email.dto';
 
 const input: SendQuotationExecutionEmailDto = {
+  quotationId: '2f5cb196-4271-49b9-878c-9ab58b6a73d5',
   requestId: 'f29c0715-5a7a-45f9-841a-845d4f1f4627',
   recipientContactIds: ['fa7626f2-f6ae-42fa-a901-2f184bd4ffeb'],
   architectContactId: 'fa7626f2-f6ae-42fa-a901-2f184bd4ffeb',
@@ -114,6 +116,12 @@ const setup = async () => {
     loadLogo: jest.fn().mockResolvedValue(Buffer.from('logo')),
     send: jest.fn().mockResolvedValue('<sent@example.test>'),
   };
+  const plans = {
+    assertApprovedForFile: jest.fn().mockResolvedValue({
+      id: 'approved-plan-id',
+      planVersion: input.planVersion,
+    }),
+  };
   const module = await Test.createTestingModule({
     providers: [
       QuotationExecutionEmailService,
@@ -125,6 +133,7 @@ const setup = async () => {
       { provide: DatabaseTransactionService, useValue: transactions },
       { provide: QuotationExecutionEmailRepository, useValue: records },
       { provide: QuotationEmailTransport, useValue: transport },
+      { provide: ExecutionPlanService, useValue: plans },
     ],
   }).compile();
   const service = module.get(QuotationExecutionEmailService);
@@ -134,6 +143,7 @@ const setup = async () => {
     task,
     drive,
     transport,
+    plans,
     records,
     getRecord: () => state.record,
     setRecord: (value: Record<string, unknown>) => {
