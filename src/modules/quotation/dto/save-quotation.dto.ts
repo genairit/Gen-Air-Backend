@@ -152,10 +152,17 @@ export class QuotationTransitionDto {
   ])
   declare status: 'draft' | 'review' | 'approved';
 }
-export class QuotationCancellationDto {
+export class QuotationVersionDto {
   @IsInt()
   @Min(1)
   declare version: number;
+}
+export class QuotationCancellationDto extends QuotationVersionDto {}
+export class RejectQuotationDto extends QuotationVersionDto {
+  @IsString()
+  @MaxLength(MAX_QUOTATION_CANCELLATION_REASON_LENGTH)
+  @Matches(/\S/u)
+  declare reason: string;
 }
 export class CancelQuotationDto extends QuotationCancellationDto {
   @IsString()

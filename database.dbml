@@ -480,6 +480,7 @@ Table quotations {
   status varchar(20) [not null, note: 'draft, review, approved (shown as הזמנה), or cancelled; chk_quotations_status']
   cancelled_from_status varchar(20) [note: 'Status immediately before cancellation; null unless status is cancelled; chk_quotations_cancelled_from_status']
   cancellation_history jsonb [not null, default: `[]`, note: 'Cancellation and restoration history, including source status, required reason, actor ID and name snapshot, time and cancellation kind; chk_quotations_cancellation_history_array']
+  rejection_history jsonb [not null, default: `[]`, note: 'Review rejection reason and actor snapshot; pending entry is closed when engineering resubmits; chk_quotations_rejection_history_array']
   date date [not null, note: 'Date shown on the offer; the number prefix is set from the creation month and does not change when this date is edited']
   brand varchar(100) [not null, note: 'First manufacturer for compatibility with older clients; empty when no brand tab exists']
   brands jsonb [not null, note: 'Ordered list of manufacturer tabs; the General tab is always available and is not stored here']
