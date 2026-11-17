@@ -181,6 +181,12 @@ export class ProjectBoqService {
         ...proposal.lines,
         ...manual.map((line) => this.lineData(line)),
       ].map((line, displayOrder) => ({ ...line, boqId: boq.id, displayOrder }));
+      await this.validatePurchaseAllocations(
+        projectId,
+        next,
+        existing,
+        transaction,
+      );
       await this.repository.replaceLines(boq.id, next, transaction);
       await this.repository.update(
         boq,
@@ -222,6 +228,19 @@ export class ProjectBoqService {
         throw new NotFoundException('שורת חומר לא נמצאה בפרויקט');
       }
       this.validateEdit(input);
+      await this.validatePurchaseAllocations(
+        projectId,
+        lines.map((candidate) =>
+          candidate.id === lineId
+            ? {
+                ...this.lineData(candidate),
+                requiredQuantity: input.requiredQuantity,
+              }
+            : this.lineData(candidate),
+        ),
+        lines,
+        transaction,
+      );
       await this.repository.updateLine(
         line,
         {
@@ -515,6 +534,78 @@ export class ProjectBoqService {
       sourceSnapshot: line.sourceSnapshot,
       displayOrder: line.displayOrder,
     };
+  }
+
+  private async validatePurchaseAllocations(
+    projectId: string,
+    next: {
+      sourceKey: string;
+      materialUnit: string;
+      requiredQuantity: string | null;
+    }[],
+    previous: {
+      sourceKey: string;
+      materialUnit: string;
+      requiredQuantity: string | null;
+    }[],
+    transaction: import('sequelize').Transaction,
+  ): Promise<void> {
+    const ledger = await this.repository.activePurchaseLedger(
+      projectId,
+      transaction,
+    );
+    const corrected = new Map<string, Decimal>();
+    for (const correction of ledger.corrections) {
+      corrected.set(
+        correction.recordLineId,
+        (corrected.get(correction.recordLineId) ?? new Decimal(0)).plus(
+          correction.quantity,
+        ),
+      );
+    }
+    const totals = new Map<string, { unit: string; quantity: Decimal }>();
+    for (const line of ledger.lines) {
+      const active = new Decimal(line.quantity).minus(
+        corrected.get(line.id) ?? 0,
+      );
+      if (active.lte(0)) {
+        continue;
+      }
+      const current = totals.get(line.boqSourceKey);
+      if (current && current.unit !== line.materialUnit) {
+        throw new ConflictException('יחידות היסטוריות סותרות ביומן הרכש');
+      }
+      totals.set(line.boqSourceKey, {
+        unit: line.materialUnit,
+        quantity: (current?.quantity ?? new Decimal(0)).plus(active),
+      });
+    }
+    for (const [sourceKey, allocation] of totals) {
+      const nextLine = next.find((line) => line.sourceKey === sourceKey);
+      const priorLine = previous.find((line) => line.sourceKey === sourceKey);
+      if (
+        !nextLine ||
+        nextLine.materialUnit !== allocation.unit ||
+        nextLine.requiredQuantity === null
+      ) {
+        throw new ConflictException(
+          'אי אפשר להסיר חומר או לשנות יחידה כשיש בקשות או הזמנות פעילות',
+        );
+      }
+      const nextRequired = new Decimal(nextLine.requiredQuantity);
+      const priorRequired =
+        priorLine?.requiredQuantity === null || !priorLine
+          ? new Decimal(0)
+          : new Decimal(priorLine.requiredQuantity);
+      if (
+        nextRequired.lt(allocation.quantity) &&
+        nextRequired.lt(priorRequired)
+      ) {
+        throw new ConflictException(
+          'הכמות החדשה קטנה מכמות שמורה או מוזמנת; יש לתקן את הרכש תחילה',
+        );
+      }
+    }
   }
 
   private comparable(line: IProposedLine | ProjectBoqLine): object {
