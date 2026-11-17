@@ -1,10 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const purchaseMigration = readFileSync(new URL('../migrations/2026-11-17-purchase-record-ledger.sql', import.meta.url), 'utf8');
-const agreementMigration = readFileSync(new URL('../migrations/2026-11-17-project-supplier-agreements.sql', import.meta.url), 'utf8');
+const agreementMigration = readFileSync(new URL('../migrations/2026-11-17-supplier-agreements.sql', import.meta.url), 'utf8');
+
+test('supplier agreement migration loads after its purchase ledger dependency', () => {
+  const files = readdirSync(new URL('../migrations/', import.meta.url)).sort();
+  assert.ok(files.indexOf('2026-11-17-purchase-record-ledger.sql') < files.indexOf('2026-11-17-supplier-agreements.sql'));
+});
 
 test('supplier agreements constrain project, unit price, dates and immutable revisions', async () => {
   const db = new PGlite();
