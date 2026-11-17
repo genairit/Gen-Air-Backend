@@ -23,6 +23,7 @@ import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constan
 import type { CatalogueMaterialService } from '@Modules/material/catalogue-material.service';
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
 import type { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import type { PurchaseRecordLine } from '@Modules/purchase-record/entities/purchase-record-line.entity';
 
 const projectId = randomUUID();
 const quoteId = randomUUID();
@@ -89,6 +90,10 @@ describe('ProjectBoqService', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     repository.find.mockResolvedValue(null);
+    repository.activePurchaseLedger.mockResolvedValue({
+      lines: [],
+      corrections: [],
+    });
     quotations.document.mockResolvedValue(quotation);
     breakdowns.getCurrent.mockResolvedValue({
       catalogueItemId: itemId,
@@ -250,5 +255,47 @@ describe('ProjectBoqService', () => {
       }),
       transaction,
     ]);
+  });
+
+  it('rejects reducing a BOQ line below an active purchasing hold', async () => {
+    const boq = mock<ProjectBoq>({ id: randomUUID(), projectId, revision: 1 });
+    const line = mock<ProjectBoqLine>({
+      id: randomUUID(),
+      sourceKey: 'material:one',
+      materialUnit: 'm',
+      requiredQuantity: '10',
+      reviewState: PROJECT_BOQ_REVIEW.CONFIRMED,
+      estimatedUnitCost: null,
+      notes: '',
+      sourceSnapshot: {},
+    });
+    repository.find.mockResolvedValue(boq);
+    repository.lines.mockResolvedValue([line]);
+    repository.activePurchaseLedger.mockResolvedValue({
+      lines: [
+        mock<PurchaseRecordLine>({
+          id: randomUUID(),
+          boqSourceKey: 'material:one',
+          materialUnit: 'm',
+          quantity: '7',
+        }),
+      ],
+      corrections: [],
+    });
+    await expect(
+      service.updateLine(
+        projectId,
+        line.id,
+        {
+          expectedRevision: 1,
+          requiredQuantity: '6',
+          estimatedUnitCost: null,
+          reviewState: PROJECT_BOQ_REVIEW.CONFIRMED,
+          notes: '',
+        },
+        actorId,
+      ),
+    ).rejects.toThrow('הכמות החדשה קטנה');
+    expect(repository.updateLine.mock.calls).toHaveLength(0);
   });
 });

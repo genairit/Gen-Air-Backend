@@ -5,10 +5,53 @@ import { ProjectBoqLine } from './entities/project-boq-line.entity';
 import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { ProjectBoqRevision } from './entities/project-boq-revision.entity';
 import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
+import { PurchaseRecord } from '@Modules/purchase-record/entities/purchase-record.entity';
 import { QuotationProject } from '@Modules/quotation-project/entities/quotation-project.entity';
+import { PurchaseRecordLine } from '@Modules/purchase-record/entities/purchase-record-line.entity';
+import { PURCHASE_RECORD_STATUS } from '@Modules/purchase-record/constants/purchase-record.constant';
+import { PurchaseRecordCorrection } from '@Modules/purchase-record/entities/purchase-record-correction.entity';
 
 @Injectable()
 export class ProjectBoqRepository {
+  async activePurchaseLedger(
+    projectId: string,
+    transaction: Transaction,
+  ): Promise<{
+    lines: PurchaseRecordLine[];
+    corrections: PurchaseRecordCorrection[];
+  }> {
+    const records = await PurchaseRecord.findAll({
+      where: {
+        projectId,
+        status: {
+          [Op.in]: [
+            PURCHASE_RECORD_STATUS.REQUESTED,
+            PURCHASE_RECORD_STATUS.REVIEWED,
+            PURCHASE_RECORD_STATUS.APPROVED,
+            PURCHASE_RECORD_STATUS.ORDERED,
+          ],
+        },
+      },
+      transaction,
+    });
+    const lines =
+      records.length === 0
+        ? []
+        : await PurchaseRecordLine.findAll({
+            where: {
+              recordId: { [Op.in]: records.map((record) => record.id) },
+            },
+            transaction,
+          });
+    const corrections =
+      lines.length === 0
+        ? []
+        : await PurchaseRecordCorrection.findAll({
+            where: { recordLineId: { [Op.in]: lines.map((line) => line.id) } },
+            transaction,
+          });
+    return { lines, corrections };
+  }
   find(
     projectId: string,
     transaction?: Transaction,
