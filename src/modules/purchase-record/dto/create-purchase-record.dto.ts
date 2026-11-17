@@ -1,4 +1,6 @@
 import {
+  Min,
+  IsInt,
   IsUUID,
   IsArray,
   Matches,
@@ -23,6 +25,15 @@ export class PurchaseRecordLineDto {
   @IsOptional()
   @Matches(/^\d{1,12}(?:\.\d{1,4})?$/)
   declare unitCost?: string;
+
+  @IsOptional()
+  @IsUUID()
+  declare agreementId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  declare agreementVersion?: number;
 }
 
 export class CreatePurchaseRecordDto {
@@ -40,6 +51,10 @@ export class CreatePurchaseRecordDto {
   @IsString()
   @MaxLength(120)
   declare supplierName?: string;
+
+  @IsOptional()
+  @IsUUID()
+  declare supplierId?: string;
 
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)

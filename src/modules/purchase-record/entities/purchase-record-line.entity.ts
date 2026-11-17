@@ -32,6 +32,10 @@ export class PurchaseRecordLine extends Model {
   declare unitCost: string | null;
   @Column({ type: DataType.STRING(3), allowNull: false, defaultValue: 'ILS' })
   declare currencyCode: string;
+  @Column({ type: DataType.UUID, allowNull: true })
+  declare supplierAgreementId: string | null;
+  @Column({ type: DataType.INTEGER, allowNull: true })
+  declare supplierAgreementVersion: number | null;
   @CreatedAt
   declare createdAt: Date;
 }

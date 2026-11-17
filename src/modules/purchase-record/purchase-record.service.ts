@@ -32,8 +32,10 @@ import type { PurchaseRecordLine } from './entities/purchase-record-line.entity'
 import type { CorrectPurchaseRecordDto } from './dto/correct-purchase-record.dto';
 import type { PurchaseRecordEvent } from './entities/purchase-record-event.entity';
 import type { TransitionPurchaseRecordDto } from './dto/transition-purchase-record.dto';
+import type { PurchaseOrderLineTerm } from './entities/purchase-order-line-term.entity';
 import type { PurchaseRecordCorrection } from './entities/purchase-record-correction.entity';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { SupplierAgreementService } from '@Modules/supplier-agreement/supplier-agreement.service';
 
 type TPurchaseStatus =
   (typeof PURCHASE_RECORD_STATUS)[keyof typeof PURCHASE_RECORD_STATUS];
@@ -42,6 +44,7 @@ interface ILedger {
   records: PurchaseRecord[];
   lines: PurchaseRecordLine[];
   events: PurchaseRecordEvent[];
+  orderTerms: PurchaseOrderLineTerm[];
   corrections: PurchaseRecordCorrection[];
 }
 
@@ -50,6 +53,7 @@ export class PurchaseRecordService {
   constructor(
     private readonly repository: PurchaseRecordRepository,
     private readonly boq: ProjectBoqService,
+    private readonly supplierAgreements: SupplierAgreementService,
     private readonly transactions: DatabaseTransactionService,
   ) {}
 
@@ -149,6 +153,8 @@ export class PurchaseRecordService {
           status: input.status,
           reason: input.reason.trim(),
           supplierName: input.supplierName?.trim() ?? null,
+          supplierId: input.supplierId ?? null,
+          lines: input.lines ?? null,
           orderDate: input.orderDate ?? null,
         }),
       )
@@ -179,7 +185,10 @@ export class PurchaseRecordService {
       this.requireTransition(record.status, next, input.reason, user);
       if (
         next !== PURCHASE_RECORD_STATUS.ORDERED &&
-        (Reflect.has(input, 'supplierName') || Reflect.has(input, 'orderDate'))
+        (Reflect.has(input, 'supplierName') ||
+          Reflect.has(input, 'orderDate') ||
+          Reflect.has(input, 'supplierId') ||
+          Reflect.has(input, 'lines'))
       ) {
         throw new BadRequestException(
           'אפשר לעדכן ספק ותאריך רק בעת רישום הזמנה',
@@ -188,10 +197,127 @@ export class PurchaseRecordService {
       const supplierName = input.supplierName?.trim() || record.supplierName;
       const orderDate = input.orderDate ?? record.orderDate;
       if (
+        record.supplierId &&
+        input.supplierId &&
+        input.supplierId !== record.supplierId
+      ) {
+        throw new ConflictException(
+          'לא ניתן להחליף ספק בבקשה קיימת; יש ליצור בקשה חדשה',
+        );
+      }
+      if (
+        record.supplierId &&
+        input.supplierName &&
+        input.supplierName.trim() !== record.supplierName
+      ) {
+        throw new ConflictException(
+          'לא ניתן להחליף ספק בבקשה קיימת; יש ליצור בקשה חדשה',
+        );
+      }
+      if (
         next === PURCHASE_RECORD_STATUS.ORDERED &&
-        (!supplierName || !orderDate)
+        (!(supplierName || input.supplierId) || !orderDate)
       ) {
         throw new BadRequestException('יש לציין ספק ותאריך לפני רישום הזמנה');
+      }
+      const ownLines = await this.repository.lines([recordId], transaction);
+      const lateSelection =
+        next === PURCHASE_RECORD_STATUS.ORDERED &&
+        !record.supplierId &&
+        input.supplierId
+          ? (input.lines ?? [])
+          : [];
+      if (
+        lateSelection.length > 0 &&
+        (lateSelection.length !== ownLines.length ||
+          new Set(lateSelection.map((line) => line.recordLineId)).size !==
+            ownLines.length ||
+          ownLines.some(
+            (line) =>
+              !lateSelection.some(
+                (selected) => selected.recordLineId === line.id,
+              ),
+          ))
+      ) {
+        throw new BadRequestException('יש לבחור הסכם לכל שורת בקשה');
+      }
+      if (
+        next === PURCHASE_RECORD_STATUS.ORDERED &&
+        !record.supplierId &&
+        input.supplierId &&
+        lateSelection.length === 0
+      ) {
+        throw new BadRequestException('יש לבחור הסכם לכל שורת בקשה');
+      }
+      if (input.lines && lateSelection.length === 0) {
+        throw new BadRequestException(
+          'אפשר לבחור הסכמים רק בעת רישום הזמנה עם ספק חדש',
+        );
+      }
+      const selectionLines = record.supplierId
+        ? ownLines.map((line) => ({
+            agreementId: line.supplierAgreementId ?? '',
+            agreementVersion: line.supplierAgreementVersion,
+            boqSourceKey: line.boqSourceKey,
+            materialId: line.materialId,
+            materialUnit: line.materialUnit,
+            unitCost: line.unitCost,
+          }))
+        : ownLines.map((line) => {
+            const selected = lateSelection.find(
+              (item) => item.recordLineId === line.id,
+            );
+            return {
+              agreementId: selected?.agreementId ?? '',
+              agreementVersion: selected?.agreementVersion ?? null,
+              boqSourceKey: line.boqSourceKey,
+              materialId: line.materialId,
+              materialUnit: line.materialUnit,
+              unitCost: selected?.unitCost ?? null,
+            };
+          });
+      const selection =
+        next === PURCHASE_RECORD_STATUS.ORDERED &&
+        (record.supplierId || input.supplierId)
+          ? await this.supplierAgreements.resolveSelection(
+              projectId,
+              record.supplierId ?? input.supplierId ?? '',
+              selectionLines,
+              orderDate,
+              transaction,
+            )
+          : null;
+      if (
+        selection &&
+        record.supplierId &&
+        ownLines.some(
+          (line) =>
+            selection.agreements.get(line.boqSourceKey)?.version !==
+            line.supplierAgreementVersion,
+        )
+      ) {
+        throw new ConflictException(
+          'הסכם הספק השתנה מאז הבקשה; יש ליצור בקשה חדשה',
+        );
+      }
+      if (selection && lateSelection.length > 0) {
+        await this.repository.createOrderTerms(
+          ownLines.map((line) => {
+            const agreement = selection.agreements.get(line.boqSourceKey);
+            if (!agreement) {
+              throw new ConflictException('לא נמצא הסכם תואם לשורת בקשה');
+            }
+            return {
+              recordLineId: line.id,
+              supplierAgreementId: agreement.id,
+              supplierAgreementVersion: agreement.version,
+              unitCost: agreement.unitPrice,
+              currencyCode: agreement.currencyCode,
+              actorId: user.id,
+            };
+          }),
+          transaction,
+        );
       }
       if (
         next === PURCHASE_RECORD_STATUS.REQUESTED ||
@@ -199,7 +325,6 @@ export class PurchaseRecordService {
       ) {
         const boq = await this.boq.get(projectId);
         const ledger = await this.ledger(projectId, transaction);
-        const ownLines = await this.repository.lines([recordId], transaction);
         this.validateAvailability(
           boq.lines,
           ledger,
@@ -211,7 +336,24 @@ export class PurchaseRecordService {
       }
       await this.repository.update(
         record,
-        { status: next, supplierName, orderDate, updatedById: user.id },
+        {
+          status: next,
+          supplierId: selection
+            ? (record.supplierId ?? input.supplierId ?? null)
+            : record.supplierId,
+          supplierName: selection?.selectedSupplier.name ?? supplierName,
+          supplierContactName: selection
+            ? selection.selectedSupplier.contactName
+            : record.supplierContactName,
+          supplierPhone: selection
+            ? selection.selectedSupplier.phone
+            : record.supplierPhone,
+          supplierEmail: selection
+            ? selection.selectedSupplier.email
+            : record.supplierEmail,
+          orderDate,
+          updatedById: user.id,
+        },
         transaction,
       );
       await this.repository.createEvent(
@@ -338,16 +480,18 @@ export class PurchaseRecordService {
       throw new ForbiddenException('אין הרשאה לפעולת רכש');
     }
     const supplierName = input.supplierName?.trim() || null;
+    const supplierId = input.supplierId ?? null;
     const orderDate = input.orderDate ?? null;
     if (
       status === PURCHASE_RECORD_STATUS.ORDERED &&
-      (!supplierName || !orderDate)
+      (!(supplierName || supplierId) || !orderDate)
     ) {
       throw new BadRequestException('יש לציין ספק ותאריך הזמנה');
     }
     const normalized = {
       status,
       supplierName,
+      supplierId,
       orderDate,
       onBehalfOf: input.onBehalfOf?.trim() || null,
       exceptionReason: input.exceptionReason?.trim() || null,
@@ -401,6 +545,8 @@ export class PurchaseRecordService {
           materialUnit: boqLine.materialUnit,
           quantity: quantity.toFixed(8),
           unitCost: inputLine.unitCost ?? null,
+          agreementId: inputLine.agreementId ?? null,
+          agreementVersion: inputLine.agreementVersion ?? null,
           currencyCode: PURCHASE_CURRENCY.ILS,
         };
       });
@@ -419,16 +565,67 @@ export class PurchaseRecordService {
           user,
         );
       }
+      if (
+        supplierId &&
+        lines.some(
+          (line) =>
+            !line.agreementId || !line.agreementVersion || !line.unitCost,
+        )
+      ) {
+        throw new BadRequestException('יש לבחור הסכם מתאים לכל חומר');
+      }
+      if (!supplierId && lines.some((line) => line.agreementId)) {
+        throw new BadRequestException('יש לבחור ספק עבור ההסכמים');
+      }
+      const selection = supplierId
+        ? await this.supplierAgreements.resolveSelection(
+            projectId,
+            supplierId,
+            lines.map((line) => ({
+              agreementId: line.agreementId ?? '',
+              agreementVersion: line.agreementVersion,
+              boqSourceKey: line.boqSourceKey,
+              materialId: line.materialId,
+              materialUnit: line.materialUnit,
+              unitCost: line.unitCost,
+            })),
+            orderDate,
+            transaction,
+          )
+        : null;
+      if (
+        selection &&
+        supplierName &&
+        supplierName !== selection.selectedSupplier.name
+      ) {
+        throw new ConflictException('שם הספק אינו תואם לספק שנבחר');
+      }
+      const purchaseLines = lines.map((line) => {
+        const agreement = selection?.agreements.get(line.boqSourceKey);
+        return {
+          ...line,
+          unitCost: agreement?.unitPrice ?? line.unitCost,
+          currencyCode: agreement?.currencyCode ?? line.currencyCode,
+          supplierAgreementId: agreement?.id ?? null,
+          supplierAgreementVersion: agreement?.version ?? null,
+        };
+      });
       const record = await this.repository.create(
         {
           projectId,
           status,
-          supplierName,
+          supplierName: selection?.selectedSupplier.name ?? supplierName,
+          supplierId,
+          supplierContactName: selection?.selectedSupplier.contactName ?? null,
+          supplierPhone: selection?.selectedSupplier.phone ?? null,
+          supplierEmail: selection?.selectedSupplier.email ?? null,
           orderDate,
           onBehalfOf: normalized.onBehalfOf,
           exceptionReason: normalized.exceptionReason,
           notes: normalized.notes,
-          materialSearch: lines.map((line) => line.materialName).join(' '),
+          materialSearch: purchaseLines
+            .map((line) => line.materialName)
+            .join(' '),
           createdById: user.id,
           updatedById: user.id,
           idempotencyKey: input.idempotencyKey,
@@ -437,7 +634,7 @@ export class PurchaseRecordService {
         transaction,
       );
       await this.repository.createLines(
-        lines.map((line) => ({ ...line, recordId: record.id })),
+        purchaseLines.map((line) => ({ ...line, recordId: record.id })),
         transaction,
       );
       await this.repository.createEvent(
@@ -477,11 +674,17 @@ export class PurchaseRecordService {
         ? this.repository.events(recordIds, transaction)
         : Promise.resolve([]),
     ]);
-    const corrections = await this.repository.corrections(
-      lines.map((line) => line.id),
-      transaction,
-    );
-    return { records, lines, events, corrections };
+    const [corrections, orderTerms] = await Promise.all([
+      this.repository.corrections(
+        lines.map((line) => line.id),
+        transaction,
+      ),
+      this.repository.orderTerms(
+        lines.map((line) => line.id),
+        transaction,
+      ),
+    ]);
+    return { records, lines, events, corrections, orderTerms };
   }
 
   private parseHistoryCursor(
@@ -680,10 +883,15 @@ export class PurchaseRecordService {
       orderDate: record.orderDate,
       onBehalfOf: record.onBehalfOf,
       supplierName: record.supplierName,
+      supplierId: record.supplierId,
+      supplierContactName: record.supplierContactName,
+      supplierPhone: record.supplierPhone,
+      supplierEmail: record.supplierEmail,
       exceptionReason: record.exceptionReason,
       lines: ledger.lines
         .filter((line) => line.recordId === record.id)
         .map((line) => ({
+          materialId: line.materialId,
           id: line.id,
           quantity: line.quantity,
           activeQuantity:
@@ -695,8 +903,18 @@ export class PurchaseRecordService {
           materialName: line.materialName,
           materialUnit: line.materialUnit,
           boqSourceKey: line.boqSourceKey,
-          unitCost: line.unitCost,
-          currencyCode: line.currencyCode,
+          unitCost:
+            ledger.orderTerms.find((term) => term.recordLineId === line.id)
+              ?.unitCost ?? line.unitCost,
+          currencyCode:
+            ledger.orderTerms.find((term) => term.recordLineId === line.id)
+              ?.currencyCode ?? line.currencyCode,
+          supplierAgreementId:
+            ledger.orderTerms.find((term) => term.recordLineId === line.id)
+              ?.supplierAgreementId ?? line.supplierAgreementId,
+          supplierAgreementVersion:
+            ledger.orderTerms.find((term) => term.recordLineId === line.id)
+              ?.supplierAgreementVersion ?? line.supplierAgreementVersion,
         })),
       events: ledger.events
         .filter((event) => event.recordId === record.id)
