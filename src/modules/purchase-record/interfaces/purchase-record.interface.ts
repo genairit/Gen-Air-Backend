@@ -14,12 +14,15 @@ export interface IPurchaseLine extends Omit<
 export interface IPurchaseHistoryLine {
   id: string;
   quantity: string;
+  materialId: string;
   materialName: string;
   materialUnit: string;
   boqSourceKey: string;
   currencyCode: string;
   activeQuantity: string;
   unitCost: string | null;
+  supplierAgreementId: string | null;
+  supplierAgreementVersion: number | null;
 }
 
 export interface IPurchaseHistoryEvent {
@@ -42,10 +45,14 @@ export interface IPurchaseHistory {
   updatedById: string;
   orderDate: string | null;
   onBehalfOf: string | null;
+  supplierId: string | null;
   supplierName: string | null;
+  supplierPhone: string | null;
+  supplierEmail: string | null;
   lines: IPurchaseHistoryLine[];
   exceptionReason: string | null;
   events: IPurchaseHistoryEvent[];
+  supplierContactName: string | null;
 }
 
 export interface IPurchaseWorkspace {

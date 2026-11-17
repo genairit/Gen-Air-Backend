@@ -4,6 +4,7 @@ import { PurchaseRecord } from './entities/purchase-record.entity';
 import { PurchaseRecordLine } from './entities/purchase-record-line.entity';
 import { PurchaseRecordEvent } from './entities/purchase-record-event.entity';
 import { PURCHASE_RECORD_STATUS } from './constants/purchase-record.constant';
+import { PurchaseOrderLineTerm } from './entities/purchase-order-line-term.entity';
 import { PurchaseRecordCorrection } from './entities/purchase-record-correction.entity';
 
 @Injectable()
@@ -124,6 +125,26 @@ export class PurchaseRecordRepository {
       order: [['createdAt', 'ASC']],
       transaction,
     });
+  }
+
+  orderTerms(
+    lineIds: string[],
+    transaction?: Transaction,
+  ): Promise<PurchaseOrderLineTerm[]> {
+    if (lineIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return PurchaseOrderLineTerm.findAll({
+      where: { recordLineId: { [Op.in]: lineIds } },
+      transaction,
+    });
+  }
+
+  createOrderTerms(
+    values: Partial<PurchaseOrderLineTerm>[],
+    transaction: Transaction,
+  ): Promise<PurchaseOrderLineTerm[]> {
+    return PurchaseOrderLineTerm.bulkCreate(values, { transaction });
   }
 
   eventByCommand(

@@ -14,6 +14,7 @@ import { PurchaseRecordService } from '@Modules/purchase-record/purchase-record.
 import { PurchaseRecord } from '@Modules/purchase-record/entities/purchase-record.entity';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { PurchaseRecordRepository } from '@Modules/purchase-record/purchase-record.repository';
+import { SupplierAgreementService } from '@Modules/supplier-agreement/supplier-agreement.service';
 import { PurchaseRecordLine } from '@Modules/purchase-record/entities/purchase-record-line.entity';
 import { PurchaseRecordEvent } from '@Modules/purchase-record/entities/purchase-record-event.entity';
 import type { CreatePurchaseRecordDto } from '@Modules/purchase-record/dto/create-purchase-record.dto';
@@ -52,6 +53,8 @@ const setup = () => {
     lines: [] as PurchaseRecordLine[],
     events: [] as PurchaseRecordEvent[],
     corrections: [] as PurchaseRecordCorrection[],
+    orderTerms:
+      [] as import('@Modules/purchase-record/entities/purchase-order-line-term.entity').PurchaseOrderLineTerm[],
   };
   const repository = mock<PurchaseRecordRepository>();
   repository.records.mockImplementation(() =>
@@ -96,6 +99,20 @@ const setup = () => {
       ),
     ),
   );
+  repository.orderTerms.mockImplementation((ids) =>
+    Promise.resolve(
+      state.orderTerms.filter((term) => ids.includes(term.recordLineId)),
+    ),
+  );
+  repository.createOrderTerms.mockImplementation((values) => {
+    const terms = values.map((value) =>
+      mock<
+        import('@Modules/purchase-record/entities/purchase-order-line-term.entity').PurchaseOrderLineTerm
+      >({ ...value }),
+    );
+    state.orderTerms.push(...terms);
+    return Promise.resolve(terms);
+  });
   repository.eventByCommand.mockImplementation((id, key) =>
     Promise.resolve(
       state.events.find(
@@ -163,12 +180,19 @@ const setup = () => {
   const transactions = mock<DatabaseTransactionService>();
   transactions.lockKey.mockResolvedValue();
   transactions.run.mockImplementation((work) => work(transaction));
+  const supplierAgreements = mock<SupplierAgreementService>();
   return {
     state,
     repository,
     boq,
     transactions,
-    service: new PurchaseRecordService(repository, boq, transactions),
+    supplierAgreements,
+    service: new PurchaseRecordService(
+      repository,
+      boq,
+      supplierAgreements,
+      transactions,
+    ),
   };
 };
 
@@ -236,6 +260,79 @@ describe('PurchaseRecordService', () => {
     expect(workspace.lines[0].requestedQuantity).toBe('0.00000000');
     expect(workspace.lines[0].orderedQuantity).toBe('4.00000000');
     expect(workspace.history[0].events).toHaveLength(4);
+  });
+
+  it('binds a supplier and immutable agreed prices when a held request becomes an order', async () => {
+    const { service, state, supplierAgreements } = setup();
+    const requested = await service.request(
+      projectId,
+      { idempotencyKey: randomUUID(), lines: [{ boqLineId, quantity: '4' }] },
+      fullUser,
+    );
+    const record = requested.history[0];
+    await service.transition(
+      projectId,
+      record.id,
+      { status: 'reviewed', reason: '', idempotencyKey: randomUUID() },
+      fullUser,
+    );
+    await service.transition(
+      projectId,
+      record.id,
+      { status: 'approved', reason: '', idempotencyKey: randomUUID() },
+      fullUser,
+    );
+    const supplierId = randomUUID();
+    const agreementId = randomUUID();
+    supplierAgreements.resolveSelection.mockResolvedValue({
+      selectedSupplier: {
+        id: supplierId,
+        name: 'ספק מוסכם',
+        contactName: 'דנה',
+        phone: '050-1234567',
+        email: 'orders@example.com',
+        notes: '',
+        active: true,
+        version: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      agreements: new Map([
+        [
+          'material:one',
+          {
+            id: agreementId,
+            version: 3,
+            unitPrice: '12.5000',
+            currencyCode: 'ILS',
+          },
+        ],
+      ]),
+    });
+    const command = {
+      status: 'ordered',
+      reason: '',
+      idempotencyKey: randomUUID(),
+      supplierId,
+      orderDate: '2026-11-17',
+      lines: [
+        {
+          recordLineId: record.lines[0].id,
+          agreementId,
+          agreementVersion: 3,
+          unitCost: '12.5000',
+        },
+      ],
+    };
+    await service.transition(projectId, record.id, command, fullUser);
+    await service.transition(projectId, record.id, command, fullUser);
+    const ordered = (await service.workspace(projectId)).history[0];
+    expect(ordered.supplierName).toBe('ספק מוסכם');
+    expect(ordered.supplierContactName).toBe('דנה');
+    expect(ordered.lines[0].unitCost).toBe('12.5000');
+    expect(ordered.lines[0].supplierAgreementVersion).toBe(3);
+    expect(state.lines[0].unitCost).toBeNull();
+    expect(state.orderTerms).toHaveLength(1);
   });
 
   it('rejects an invalid status jump and denies ordered cancellation to review-only users', async () => {

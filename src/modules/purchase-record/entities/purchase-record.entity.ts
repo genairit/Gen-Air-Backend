@@ -21,6 +21,14 @@ export class PurchaseRecord extends Model {
   declare status: string;
   @Column({ type: DataType.STRING(120), allowNull: true })
   declare supplierName: string | null;
+  @Column({ type: DataType.UUID, allowNull: true })
+  declare supplierId: string | null;
+  @Column({ type: DataType.STRING(120), allowNull: true })
+  declare supplierContactName: string | null;
+  @Column({ type: DataType.STRING(32), allowNull: true })
+  declare supplierPhone: string | null;
+  @Column({ type: DataType.STRING(254), allowNull: true })
+  declare supplierEmail: string | null;
   @Column({ type: DataType.DATEONLY, allowNull: true })
   declare orderDate: string | null;
   @Column({ type: DataType.STRING(200), allowNull: true })

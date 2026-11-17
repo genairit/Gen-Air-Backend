@@ -11,6 +11,7 @@ import { UserRole } from '@Modules/user-role/entities/user-role.entity';
 import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { Permission } from '@Modules/permission/entities/permission.entity';
 import { ProjectBoq } from '@Modules/project-boq/entities/project-boq.entity';
+import { Supplier } from '@Modules/supplier-agreement/entities/supplier.entity';
 import { EnvironmentManager } from '../../utilities/environment-manager.utility';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
@@ -33,12 +34,15 @@ import { ProjectContactLink } from '@Modules/project-contact/entities/project-co
 import { PurchaseRecordEvent } from '@Modules/purchase-record/entities/purchase-record-event.entity';
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
 import { ExecutionPlanTemplate } from '@Modules/execution-plan/entities/execution-plan-template.entity';
+import { PurchaseOrderLineTerm } from '@Modules/purchase-record/entities/purchase-order-line-term.entity';
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
 import { ExecutionPlanSubmission } from '@Modules/execution-plan/entities/execution-plan-submission.entity';
 import { PurchaseRecordCorrection } from '@Modules/purchase-record/entities/purchase-record-correction.entity';
+import { ProjectSupplierAgreement } from '@Modules/supplier-agreement/entities/project-supplier-agreement.entity';
 import { CatalogueItemMaterialRevision } from '@Modules/material/entities/catalogue-item-material-revision.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
 import { QuotationExecutionEmail } from '@Modules/quotation-execution-email/entities/quotation-execution-email.entity';
+import { ProjectSupplierAgreementRevision } from '@Modules/supplier-agreement/entities/project-supplier-agreement-revision.entity';
 
 const logger = new TypedLogger('DatabaseProvider');
 
@@ -122,8 +126,12 @@ export const DatabaseProvider: Provider = {
       ProjectBoqRevision,
       PurchaseRecord,
       PurchaseRecordLine,
+      PurchaseOrderLineTerm,
       PurchaseRecordEvent,
       PurchaseRecordCorrection,
+      Supplier,
+      ProjectSupplierAgreement,
+      ProjectSupplierAgreementRevision,
       Customer,
       CustomerContact,
       ProjectContactLink,
