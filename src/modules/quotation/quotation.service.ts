@@ -10,6 +10,8 @@ import {
   SaveQuotationDto,
   CreateQuotationDto,
   CancelQuotationDto,
+  RejectQuotationDto,
+  QuotationVersionDto,
   UpdateSalesAgentDto,
   QuotationTransitionDto,
   AcknowledgeWarningsDto,
@@ -371,6 +373,7 @@ export class QuotationService {
           status: QUOTATION_STATUS.DRAFT,
           cancelledFromStatus: null,
           cancellationHistory: [],
+          rejectionHistory: [],
           date,
           brand: '',
           brands: [],
@@ -559,6 +562,7 @@ export class QuotationService {
           status: QUOTATION_STATUS.DRAFT,
           cancelledFromStatus: null,
           cancellationHistory: [],
+          rejectionHistory: [],
           date,
           brand: targetBrand,
           brands: [targetBrand],
@@ -752,15 +756,21 @@ export class QuotationService {
       this.assertVersion(current, input.version);
       const allowed: Record<TQuotationStatus, TQuotationStatus[]> = {
         [QUOTATION_STATUS.DRAFT]: [QUOTATION_STATUS.REVIEW],
-        [QUOTATION_STATUS.REVIEW]: [
-          QUOTATION_STATUS.DRAFT,
-          QUOTATION_STATUS.APPROVED,
-        ],
+        [QUOTATION_STATUS.REVIEW]: [QUOTATION_STATUS.APPROVED],
         [QUOTATION_STATUS.APPROVED]: [QUOTATION_STATUS.DRAFT],
         [QUOTATION_STATUS.CANCELLED]: [],
       };
       if (!allowed[current.status].includes(input.status)) {
         throw new ConflictException('מעבר הסטטוס אינו תקין');
+      }
+      if (
+        current.status === QUOTATION_STATUS.DRAFT &&
+        current.rejectionHistory.at(-1)?.resubmittedAt === null &&
+        input.status === QUOTATION_STATUS.REVIEW
+      ) {
+        throw new ConflictException(
+          'יש לשלוח הצעה שהוחזרה לתיקון דרך פעולת שליחה לבדיקה',
+        );
       }
 
       const configuration = await this.rules.configuration(transaction);
@@ -813,6 +823,92 @@ export class QuotationService {
           approvedById: approved ? userId : null,
           approvedAt: approved ? new Date() : null,
           cancelledFromStatus: null,
+        },
+        transaction,
+      );
+    });
+    return this.getById(id);
+  }
+  async reject(
+    id: string,
+    input: RejectQuotationDto,
+    actor: IAuthorizedUser,
+  ): Promise<IQuotationDetailView> {
+    if (
+      !actor.assignedRoles.some(
+        (role) =>
+          role === USER_ROLES.SYSTEM_ADMIN ||
+          role === USER_ROLES.ENGINEERING_LEAD,
+      )
+    ) {
+      throw new ForbiddenException('אין הרשאה להחזיר הצעה לתיקון');
+    }
+    const reason = input.reason.trim();
+    if (!reason || reason.length > MAX_QUOTATION_CANCELLATION_REASON_LENGTH) {
+      throw new BadRequestException('יש להזין סיבת דחייה');
+    }
+    await this.transactions.run(async (transaction) => {
+      const current = await this.document(id, transaction);
+      this.assertVersion(current, input.version);
+      if (current.status !== QUOTATION_STATUS.REVIEW) {
+        throw new ConflictException('ניתן להחזיר לתיקון רק הצעה בבדיקה');
+      }
+      await this.repository.update(
+        id,
+        {
+          status: QUOTATION_STATUS.DRAFT,
+          version: current.version + 1,
+          updatedById: actor.id,
+          rejectionHistory: [
+            ...current.rejectionHistory,
+            {
+              reason,
+              rejectedAt: new Date().toISOString(),
+              rejectedById: actor.id,
+              rejectedByName: quotationActorName(actor),
+              resubmittedAt: null,
+              resubmittedById: null,
+            },
+          ],
+        },
+        transaction,
+      );
+    });
+    return this.getById(id);
+  }
+  async resubmit(
+    id: string,
+    input: QuotationVersionDto,
+    actor: IAuthorizedUser,
+  ): Promise<IQuotationDetailView> {
+    await this.transactions.run(async (transaction) => {
+      const current = await this.document(id, transaction);
+      this.assertVersion(current, input.version);
+      const latest = current.rejectionHistory.at(-1);
+      if (
+        current.status !== QUOTATION_STATUS.DRAFT ||
+        !latest ||
+        latest.resubmittedAt !== null
+      ) {
+        throw new ConflictException('ההצעה אינה ממתינה לשליחה מחדש');
+      }
+      if (!current.sections.some((section) => section.items.length)) {
+        throw new BadRequestException('יש להוסיף פריטים לפני בדיקה');
+      }
+      await this.repository.update(
+        id,
+        {
+          status: QUOTATION_STATUS.REVIEW,
+          version: current.version + 1,
+          updatedById: actor.id,
+          rejectionHistory: [
+            ...current.rejectionHistory.slice(0, -1),
+            {
+              ...latest,
+              resubmittedAt: new Date().toISOString(),
+              resubmittedById: actor.id,
+            },
+          ],
         },
         transaction,
       );

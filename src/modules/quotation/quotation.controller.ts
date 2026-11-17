@@ -17,6 +17,8 @@ import {
   SaveQuotationDto,
   CreateQuotationDto,
   CancelQuotationDto,
+  RejectQuotationDto,
+  QuotationVersionDto,
   UpdateSalesAgentDto,
   QuotationTransitionDto,
   AcknowledgeWarningsDto,
@@ -203,6 +205,26 @@ export class QuotationController {
     user: IAuthorizedUser,
   ): ReturnType<QuotationService['transition']> {
     const quotation = await this.service.transition(id, input, user.id);
+    return this.service.projectDetailsForActor(quotation, user);
+  }
+  @Post(':id/reject')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_APPROVE)
+  async reject(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: RejectQuotationDto,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ): ReturnType<QuotationService['reject']> {
+    const quotation = await this.service.reject(id, input, user);
+    return this.service.projectDetailsForActor(quotation, user);
+  }
+  @Post(':id/resubmit')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_UPDATE)
+  async resubmit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: QuotationVersionDto,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ): ReturnType<QuotationService['resubmit']> {
+    const quotation = await this.service.resubmit(id, input, user);
     return this.service.projectDetailsForActor(quotation, user);
   }
   @Post(':id/warnings')
