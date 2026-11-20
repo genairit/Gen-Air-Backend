@@ -44,6 +44,8 @@ export class Quotation
   declare cancelledFromStatus: TQuotationRestorableStatus | null;
   @Column({ type: DataType.JSONB, allowNull: false, defaultValue: [] })
   declare cancellationHistory: IQuotation['cancellationHistory'];
+  @Column({ type: DataType.JSONB, allowNull: false, defaultValue: [] })
+  declare rejectionHistory: IQuotation['rejectionHistory'];
   @Column({ type: DataType.DATEONLY, allowNull: false })
   declare date: string;
   @Column({ type: DataType.STRING(100), allowNull: false })

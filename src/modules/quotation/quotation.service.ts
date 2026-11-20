@@ -10,6 +10,8 @@ import {
   SaveQuotationDto,
   CreateQuotationDto,
   CancelQuotationDto,
+  RejectQuotationDto,
+  QuotationVersionDto,
   UpdateSalesAgentDto,
   QuotationTransitionDto,
   AcknowledgeWarningsDto,
@@ -20,6 +22,11 @@ import {
   hasPermission,
   assertPermissions,
 } from '@Utilities/permission.utility';
+
+import {
+  USER_ROLES,
+  ENGINEERING_USER_ROLES,
+} from '@Constants/user-role.constant';
 
 import {
   decodeQuotationCursor,
@@ -56,6 +63,7 @@ import {
   WARNING_SCOPE_VERSION,
   type TQuotationStatus,
   QUOTATION_CANCELLATION_KIND,
+  QUOTATION_AGENT_ELIGIBLE_ROLES,
   type TQuotationCancellationKind,
   MAX_QUOTATION_CANCELLATION_REASON_LENGTH,
 } from '@Modules/quotation/constants/quotation.constant';
@@ -70,7 +78,6 @@ import { Transaction } from 'sequelize';
 import { randomUUID } from 'node:crypto';
 import { Quotation } from './entities/quotation.entity';
 import { UserService } from '@Modules/user/user.service';
-import { USER_ROLES } from '@Constants/user-role.constant';
 import { QuotationRepository } from './quotation.repository';
 import { CloneQuotationDto } from './dto/clone-quotation.dto';
 import { PERMISSIONS } from '@Constants/authorization.constant';
@@ -143,9 +150,12 @@ export class QuotationService {
     return this.repository.statusCounts(query.search ?? '');
   }
   async salesAgents(): Promise<IQuotationSalesAgent[]> {
-    const eligibleUserIds = await this.userRoles.findUserIdsByRole(
-      USER_ROLES.SALES_AGENT,
+    const idsByRole = await Promise.all(
+      QUOTATION_AGENT_ELIGIBLE_ROLES.map((role) =>
+        this.userRoles.findUserIdsByRole(role),
+      ),
     );
+    const eligibleUserIds = [...new Set(idsByRole.flat())];
     const eligibleUsers = await this.users.findByIds(eligibleUserIds);
 
     return eligibleUsers.map(({ id, firstName, lastName, employeeNumber }) => ({
@@ -363,6 +373,7 @@ export class QuotationService {
           status: QUOTATION_STATUS.DRAFT,
           cancelledFromStatus: null,
           cancellationHistory: [],
+          rejectionHistory: [],
           date,
           brand: '',
           brands: [],
@@ -551,6 +562,7 @@ export class QuotationService {
           status: QUOTATION_STATUS.DRAFT,
           cancelledFromStatus: null,
           cancellationHistory: [],
+          rejectionHistory: [],
           date,
           brand: targetBrand,
           brands: [targetBrand],
@@ -744,15 +756,21 @@ export class QuotationService {
       this.assertVersion(current, input.version);
       const allowed: Record<TQuotationStatus, TQuotationStatus[]> = {
         [QUOTATION_STATUS.DRAFT]: [QUOTATION_STATUS.REVIEW],
-        [QUOTATION_STATUS.REVIEW]: [
-          QUOTATION_STATUS.DRAFT,
-          QUOTATION_STATUS.APPROVED,
-        ],
+        [QUOTATION_STATUS.REVIEW]: [QUOTATION_STATUS.APPROVED],
         [QUOTATION_STATUS.APPROVED]: [QUOTATION_STATUS.DRAFT],
         [QUOTATION_STATUS.CANCELLED]: [],
       };
       if (!allowed[current.status].includes(input.status)) {
         throw new ConflictException('מעבר הסטטוס אינו תקין');
+      }
+      if (
+        current.status === QUOTATION_STATUS.DRAFT &&
+        current.rejectionHistory.at(-1)?.resubmittedAt === null &&
+        input.status === QUOTATION_STATUS.REVIEW
+      ) {
+        throw new ConflictException(
+          'יש לשלוח הצעה שהוחזרה לתיקון דרך פעולת שליחה לבדיקה',
+        );
       }
 
       const configuration = await this.rules.configuration(transaction);
@@ -805,6 +823,92 @@ export class QuotationService {
           approvedById: approved ? userId : null,
           approvedAt: approved ? new Date() : null,
           cancelledFromStatus: null,
+        },
+        transaction,
+      );
+    });
+    return this.getById(id);
+  }
+  async reject(
+    id: string,
+    input: RejectQuotationDto,
+    actor: IAuthorizedUser,
+  ): Promise<IQuotationDetailView> {
+    if (
+      !actor.assignedRoles.some(
+        (role) =>
+          role === USER_ROLES.SYSTEM_ADMIN ||
+          role === USER_ROLES.ENGINEERING_LEAD,
+      )
+    ) {
+      throw new ForbiddenException('אין הרשאה להחזיר הצעה לתיקון');
+    }
+    const reason = input.reason.trim();
+    if (!reason || reason.length > MAX_QUOTATION_CANCELLATION_REASON_LENGTH) {
+      throw new BadRequestException('יש להזין סיבת דחייה');
+    }
+    await this.transactions.run(async (transaction) => {
+      const current = await this.document(id, transaction);
+      this.assertVersion(current, input.version);
+      if (current.status !== QUOTATION_STATUS.REVIEW) {
+        throw new ConflictException('ניתן להחזיר לתיקון רק הצעה בבדיקה');
+      }
+      await this.repository.update(
+        id,
+        {
+          status: QUOTATION_STATUS.DRAFT,
+          version: current.version + 1,
+          updatedById: actor.id,
+          rejectionHistory: [
+            ...current.rejectionHistory,
+            {
+              reason,
+              rejectedAt: new Date().toISOString(),
+              rejectedById: actor.id,
+              rejectedByName: quotationActorName(actor),
+              resubmittedAt: null,
+              resubmittedById: null,
+            },
+          ],
+        },
+        transaction,
+      );
+    });
+    return this.getById(id);
+  }
+  async resubmit(
+    id: string,
+    input: QuotationVersionDto,
+    actor: IAuthorizedUser,
+  ): Promise<IQuotationDetailView> {
+    await this.transactions.run(async (transaction) => {
+      const current = await this.document(id, transaction);
+      this.assertVersion(current, input.version);
+      const latest = current.rejectionHistory.at(-1);
+      if (
+        current.status !== QUOTATION_STATUS.DRAFT ||
+        !latest ||
+        latest.resubmittedAt !== null
+      ) {
+        throw new ConflictException('ההצעה אינה ממתינה לשליחה מחדש');
+      }
+      if (!current.sections.some((section) => section.items.length)) {
+        throw new BadRequestException('יש להוסיף פריטים לפני בדיקה');
+      }
+      await this.repository.update(
+        id,
+        {
+          status: QUOTATION_STATUS.REVIEW,
+          version: current.version + 1,
+          updatedById: actor.id,
+          rejectionHistory: [
+            ...current.rejectionHistory.slice(0, -1),
+            {
+              ...latest,
+              resubmittedAt: new Date().toISOString(),
+              resubmittedById: actor.id,
+            },
+          ],
         },
         transaction,
       );
@@ -1122,7 +1226,7 @@ export class QuotationService {
   }
   private assertCancellationManager(user: IUser): void {
     const canManageCancellation =
-      user.role === USER_ROLES.ENGINEER ||
+      ENGINEERING_USER_ROLES.some((role) => role === user.role) ||
       user.role === USER_ROLES.SYSTEM_ADMIN;
     if (!canManageCancellation) {
       throw new ForbiddenException('אין הרשאה לבטל או לשחזר הצעות מחיר');
@@ -1152,12 +1256,12 @@ export class QuotationService {
     assertPermissions(actor, PERMISSIONS.EMPLOYEES_READ);
 
     const salesAgent = await this.users.findById(salesAgentId);
-    const hasEligibleRole = salesAgent?.assignedRoles?.includes(
-      USER_ROLES.SALES_AGENT,
+    const hasEligibleRole = QUOTATION_AGENT_ELIGIBLE_ROLES.some((role) =>
+      salesAgent?.assignedRoles?.includes(role),
     );
 
     if (!salesAgent || !hasEligibleRole) {
-      throw new BadRequestException('יש לבחור עובד פעיל בתפקיד סוכן מכירות');
+      throw new BadRequestException('יש לבחור עובד הנדסה או מנהל מערכת פעיל');
     }
   }
 }

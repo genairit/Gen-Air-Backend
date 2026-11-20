@@ -159,6 +159,7 @@ export class GoogleDriveService {
         mimeType: data.mimeType,
         parents: data.parents ?? [],
         trashed: data.trashed ?? false,
+        ...(data.version ? { version: data.version } : {}),
       };
     } catch (error) {
       if (isDriveNotFoundError(error)) {

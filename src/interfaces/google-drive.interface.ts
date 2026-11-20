@@ -34,6 +34,7 @@ export interface IDriveFileMetadata {
   trashed: boolean;
   mimeType: string;
   parents: string[];
+  version?: string;
 }
 
 export interface IDriveFileMove {

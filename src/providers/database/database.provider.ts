@@ -11,6 +11,7 @@ import { UserRole } from '@Modules/user-role/entities/user-role.entity';
 import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { Permission } from '@Modules/permission/entities/permission.entity';
 import { ProjectBoq } from '@Modules/project-boq/entities/project-boq.entity';
+import { Supplier } from '@Modules/supplier-agreement/entities/supplier.entity';
 import { EnvironmentManager } from '../../utilities/environment-manager.utility';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
@@ -20,6 +21,7 @@ import { QuotationItem } from '@Modules/quotation-item/entities/quotation-item.e
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
 import { ProjectBoqLine } from '@Modules/project-boq/entities/project-boq-line.entity';
 import { UserRoleAudit } from '@Modules/user-role-audit/entities/user-role-audit.entity';
+import { PurchaseRecord } from '@Modules/purchase-record/entities/purchase-record.entity';
 import { RolePermission } from '@Modules/role-permission/entities/role-permission.entity';
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
@@ -27,12 +29,20 @@ import { ProjectBoqRevision } from '@Modules/project-boq/entities/project-boq-re
 import { QuotationSection } from '@Modules/quotation-section/entities/quotation-section.entity';
 import { QuotationProject } from '@Modules/quotation-project/entities/quotation-project.entity';
 import { CatalogueItemMaterial } from '@Modules/material/entities/catalogue-item-material.entity';
+import { PurchaseRecordLine } from '@Modules/purchase-record/entities/purchase-record-line.entity';
 import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
+import { PurchaseRecordEvent } from '@Modules/purchase-record/entities/purchase-record-event.entity';
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
+import { ExecutionPlanTemplate } from '@Modules/execution-plan/entities/execution-plan-template.entity';
+import { PurchaseOrderLineTerm } from '@Modules/purchase-record/entities/purchase-order-line-term.entity';
 import { DriveTemplateFolder } from '@Modules/drive-template-folder/entities/drive-template-folder.entity';
+import { ExecutionPlanSubmission } from '@Modules/execution-plan/entities/execution-plan-submission.entity';
+import { PurchaseRecordCorrection } from '@Modules/purchase-record/entities/purchase-record-correction.entity';
+import { ProjectSupplierAgreement } from '@Modules/supplier-agreement/entities/project-supplier-agreement.entity';
 import { CatalogueItemMaterialRevision } from '@Modules/material/entities/catalogue-item-material-revision.entity';
 import { ProjectStageTransition } from '@Modules/project-stage-transition/entities/project-stage-transition.entity';
 import { QuotationExecutionEmail } from '@Modules/quotation-execution-email/entities/quotation-execution-email.entity';
+import { ProjectSupplierAgreementRevision } from '@Modules/supplier-agreement/entities/project-supplier-agreement-revision.entity';
 
 const logger = new TypedLogger('DatabaseProvider');
 
@@ -105,6 +115,8 @@ export const DatabaseProvider: Provider = {
       Task,
       TaskStatusTransition,
       QuotationExecutionEmail,
+      ExecutionPlanTemplate,
+      ExecutionPlanSubmission,
       User,
       UserRole,
       UserRoleAudit,
@@ -112,6 +124,14 @@ export const DatabaseProvider: Provider = {
       ProjectBoq,
       ProjectBoqLine,
       ProjectBoqRevision,
+      PurchaseRecord,
+      PurchaseRecordLine,
+      PurchaseOrderLineTerm,
+      PurchaseRecordEvent,
+      PurchaseRecordCorrection,
+      Supplier,
+      ProjectSupplierAgreement,
+      ProjectSupplierAgreementRevision,
       Customer,
       CustomerContact,
       ProjectContactLink,

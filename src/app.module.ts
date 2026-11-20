@@ -16,7 +16,10 @@ import { ProjectTypeModule } from '@Modules/project-type/project-type.module';
 import { ProjectDriveModule } from '@Modules/project-drive/project-drive.module';
 import { ProjectStageModule } from '@Modules/project-stage/project-stage.module';
 import { ProjectMemberModule } from '@Modules/project-member/project-member.module';
+import { ExecutionPlanModule } from '@Modules/execution-plan/execution-plan.module';
+import { PurchaseRecordModule } from '@Modules/purchase-record/purchase-record.module';
 import { CustomerContactModule } from '@Modules/customer-contact/customer-contact.module';
+import { SupplierAgreementModule } from '@Modules/supplier-agreement/supplier-agreement.module';
 import { DriveTemplateFolderModule } from '@Modules/drive-template-folder/drive-template-folder.module';
 import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/project-stage-transition.module';
 import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-email/quotation-execution-email.module';
@@ -27,6 +30,7 @@ import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-emai
     MaterialModule,
     QuotationModule,
     QuotationExecutionEmailModule,
+    ExecutionPlanModule,
     EventEmitterModule.forRoot(),
     AddressModule,
     AuthModule,
@@ -35,6 +39,8 @@ import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-emai
     DriveTemplateFolderModule,
     ProjectModule,
     ProjectBoqModule,
+    PurchaseRecordModule,
+    SupplierAgreementModule,
     ProjectDriveModule,
     ProjectMemberModule,
     ProjectStageModule,

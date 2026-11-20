@@ -22,7 +22,9 @@ const customer = {
 const user = { firstName: 'דנה', lastName: 'כהן' };
 const project = {
   id: 'project-1',
+  code: 'P-204',
   name: 'פרויקט',
+  customerApartment: '12',
   address: 'רחוב 2',
   addressCity: 'תל אביב',
   customerName: null,
@@ -100,6 +102,9 @@ it('returns a downloadable PDF without a Drive upload when no project is linked'
 it('uploads a linked quotation before returning the same PDF bytes', async () => {
   document.projectId = project.id;
   const result = await exportPdf();
+  expect(result.filename).toBe(
+    'הצעת מחיר 2610-000001_לקוח_P-204_12_אלקטרה.pdf',
+  );
   expect(drive.uploadQuotationPdf).toHaveBeenCalledWith(
     project.id,
     result.filename,

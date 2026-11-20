@@ -15,6 +15,9 @@ import { QUOTATION_EMAIL_LIMITS } from '../constants/quotation-execution-email.c
 
 export class SendQuotationExecutionEmailDto {
   @IsUUID()
+  declare quotationId: string;
+
+  @IsUUID()
   declare requestId: string;
 
   @IsArray()

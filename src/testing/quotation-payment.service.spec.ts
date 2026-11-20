@@ -258,8 +258,8 @@ describe('QuotationService card100 payment ownership', () => {
         lastName: 'Engineer',
         email: 'sales@example.invalid',
         phone: '0500000000',
-        role: USER_ROLES.SALES_AGENT,
-        assignedRoles: [USER_ROLES.SALES_AGENT],
+        role: USER_ROLES.ENGINEER,
+        assignedRoles: [USER_ROLES.ENGINEER],
         employeeNumber: 'E-1',
         deletedAt: null,
         createdAt: new Date(),
@@ -287,7 +287,7 @@ describe('QuotationService card100 payment ownership', () => {
           { customerId: customer.id, salesAgentId: randomUUID() },
           actor,
         ),
-      ).rejects.toThrow('יש לבחור עובד פעיל בתפקיד סוכן מכירות');
+      ).rejects.toThrow('יש לבחור עובד הנדסה או מנהל מערכת פעיל');
 
       expect(repository.create.mock.calls).toHaveLength(0);
     });
@@ -609,8 +609,8 @@ describe('QuotationService card100 payment ownership', () => {
       lastName: 'Engineer',
       email: 'sales@example.invalid',
       phone: '0500000000',
-      role: USER_ROLES.SALES_AGENT,
-      assignedRoles: [USER_ROLES.SALES_AGENT],
+      role: USER_ROLES.SYSTEM_ADMIN,
+      assignedRoles: [USER_ROLES.SYSTEM_ADMIN],
       employeeNumber: 'E-1',
       deletedAt: null,
       createdAt: new Date(),

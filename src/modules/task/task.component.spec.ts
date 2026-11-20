@@ -56,6 +56,7 @@ const makeUser = (
 const users = {
   manager: makeUser(MANAGER_ID, USER_ROLES.SYSTEM_ADMIN),
   employee: makeUser(EMPLOYEE_ID, USER_ROLES.ENGINEER),
+  engineeringLead: makeUser(OTHER_ID, USER_ROLES.ENGINEERING_LEAD),
   other: makeUser(OTHER_ID, USER_ROLES.ENGINEER),
   secretary: makeUser(OTHER_ID, USER_ROLES.SECRETARY),
   finance: makeUser(OTHER_ID, USER_ROLES.FINANCE, [
@@ -363,6 +364,15 @@ describe('Task HTTP permission boundaries', () => {
       .expect(400);
     expect(repository.create).not.toHaveBeenCalled();
     expect(repository.update).not.toHaveBeenCalled();
+  });
+  it('allows assigning a task to an engineering lead', async () => {
+    userService.getById.mockResolvedValueOnce(users.engineeringLead);
+
+    await request(server())
+      .post('/task')
+      .auth('manager', { type: 'bearer' })
+      .send({ ...payload, assigneeId: OTHER_ID })
+      .expect(201);
   });
   it('denies management claiming a task', async () => {
     state.task.assigneeId = null;

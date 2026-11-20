@@ -11,8 +11,8 @@ import {
 } from 'class-validator';
 
 import {
-  USER_ROLE_VALUES,
   type UserRoleType,
+  ASSIGNABLE_USER_ROLE_VALUES,
 } from '@Constants/user-role.constant';
 
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
@@ -42,7 +42,7 @@ export class CreateUserDto {
   @IsArray()
   @ArrayNotEmpty()
   @ArrayUnique()
-  @IsIn(USER_ROLE_VALUES, { each: true })
+  @IsIn(ASSIGNABLE_USER_ROLE_VALUES, { each: true })
   declare assignedRoles: UserRoleType[];
 
   @IsNotEmpty()

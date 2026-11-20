@@ -36,8 +36,18 @@ export interface IQuotation {
   targetPretaxAmount: string | null;
   ruleConfiguration: IQuotationRule[];
   paymentTerms: PaymentTermsType | null;
+  rejectionHistory: IQuotationRejection[];
   cancellationHistory: IQuotationCancellation[];
   cancelledFromStatus: TQuotationRestorableStatus | null;
+}
+
+export interface IQuotationRejection {
+  reason: string;
+  rejectedAt: string;
+  rejectedById: string;
+  rejectedByName: string;
+  resubmittedAt: string | null;
+  resubmittedById: string | null;
 }
 
 export interface IQuotationCancellation {

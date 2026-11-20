@@ -11,5 +11,6 @@ import { QuotationModule } from '@Modules/quotation/quotation.module';
   imports: [DatabaseModule, ProjectModule, QuotationModule, MaterialModule],
   controllers: [ProjectBoqController],
   providers: [ProjectBoqService, ProjectBoqRepository],
+  exports: [ProjectBoqService],
 })
 export class ProjectBoqModule {}

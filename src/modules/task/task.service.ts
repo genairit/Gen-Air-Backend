@@ -21,12 +21,16 @@ import {
   resolveTaskCustomerId,
 } from './utilities/task-link.utility';
 
+import {
+  USER_ROLES,
+  ENGINEERING_USER_ROLES,
+} from '@Constants/user-role.constant';
+
 import { TaskRepository } from './task.repository';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { UserService } from '@Modules/user/user.service';
-import { USER_ROLES } from '@Constants/user-role.constant';
 import { GetTasksByFilterDto } from './dto/get-by-filter.dto';
 import { Transaction, UniqueConstraintError } from 'sequelize';
 import { isDueDateBeforeToday } from '@Utilities/date.utility';
@@ -427,7 +431,9 @@ export class TaskService {
     const assignee = await this.userService.getById(assigneeId);
 
     if (
-      !(assignee.assignedRoles ?? [assignee.role]).includes(USER_ROLES.ENGINEER)
+      !ENGINEERING_USER_ROLES.some((role) =>
+        (assignee.assignedRoles ?? [assignee.role]).includes(role),
+      )
     ) {
       throw new BadRequestException(
         'Tasks can be assigned only to engineering employees',

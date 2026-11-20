@@ -50,3 +50,9 @@ export const formatDate = (
 
 export const isDueDateBeforeToday = (value: string): boolean =>
   moment(value).tz(TIME_ZONE).isBefore(moment().tz(TIME_ZONE).startOf('day'));
+
+export const isValidDateOnly = (value: string): boolean =>
+  moment(value, DATE_FORMATS.XML_DATE, true).isValid();
+
+export const currentDateOnly = (): string =>
+  moment().tz(TIME_ZONE).format(DATE_FORMATS.XML_DATE);

@@ -26,6 +26,8 @@ import {
   USER_ROLES,
   UserRoleType,
   USER_ROLE_VALUES,
+  ENGINEERING_USER_ROLES,
+  ASSIGNABLE_USER_ROLE_VALUES,
 } from '@Constants/user-role.constant';
 
 import { Transaction } from 'sequelize';
@@ -132,7 +134,7 @@ export class UserService {
   async getByFilter(filter: GetUsersByFilterDto): Promise<ICursorPage<IUser>> {
     const role = filter.role ?? null;
     const roleUserIds =
-      role === null ? null : await this.userRoleService.findUserIdsByRole(role);
+      role === null ? null : await this.findUserIdsMatchingRole(role);
     const page = await this.userRepository.findByFilter(
       { search: filter.search ?? null },
       toCursorBatch(filter),
@@ -146,8 +148,7 @@ export class UserService {
     const [roleCounts, total] = await Promise.all([
       Promise.all(
         USER_ROLE_VALUES.map(async (role) => {
-          const roleUserIds =
-            await this.userRoleService.findUserIdsByRole(role);
+          const roleUserIds = await this.findUserIdsMatchingRole(role);
           const count = await this.userRepository.countActiveByIds(roleUserIds);
 
           return { role, count };
@@ -163,6 +164,18 @@ export class UserService {
       ),
       total,
     };
+  }
+
+  private async findUserIdsMatchingRole(role: UserRoleType): Promise<string[]> {
+    const matchingRoles =
+      role === USER_ROLES.ENGINEER ? ENGINEERING_USER_ROLES : [role];
+    const idsByRole = await Promise.all(
+      matchingRoles.map((matchingRole) =>
+        this.userRoleService.findUserIdsByRole(matchingRole),
+      ),
+    );
+
+    return [...new Set(idsByRole.flat())];
   }
 
   createForActor(input: CreateUserDto, actor: IAuthorizedUser): Promise<IUser> {
@@ -284,7 +297,9 @@ export class UserService {
         ? user.role
         : this.firstAssignedRole(nextRoles);
 
-      this.assertValidAssignments(nextRole, nextRoles);
+      if (changes.assignedRoles) {
+        this.assertValidAssignments(nextRole, nextRoles);
+      }
       await this.assertSystemAdministratorRemains(
         user.id,
         currentRoles,
@@ -333,6 +348,12 @@ export class UserService {
     nextRole: UserRoleType,
     actor: IAuthorizedUser,
   ): Promise<IUser> {
+    if (!ASSIGNABLE_USER_ROLE_VALUES.includes(nextRole)) {
+      throw new BadRequestException(
+        'This employee role is no longer assignable',
+      );
+    }
+
     return this.transactions
       .run(async (transaction) => {
         await this.transactions.lockKey(
@@ -534,7 +555,7 @@ export class UserService {
   ): void {
     const hasUniqueRoles = new Set(assignedRoles).size === assignedRoles.length;
     const hasOnlyKnownRoles = assignedRoles.every((role) =>
-      USER_ROLE_VALUES.includes(role),
+      ASSIGNABLE_USER_ROLE_VALUES.includes(role),
     );
 
     if (assignedRoles.length === 0 || !hasUniqueRoles || !hasOnlyKnownRoles) {
