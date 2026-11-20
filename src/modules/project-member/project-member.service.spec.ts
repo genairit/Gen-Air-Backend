@@ -7,6 +7,7 @@ import { ProjectMemberRepository } from './project-member.repository';
 
 const SECRETARY_ID = 'secretary-user';
 const INSTALLER_ID = 'installer-user';
+const LEAD_ID = 'engineering-lead-user';
 
 const createService = async () => {
   const userService = {
@@ -20,6 +21,11 @@ const createService = async () => {
         id: INSTALLER_ID,
         role: USER_ROLES.FINANCE,
         assignedRoles: [USER_ROLES.FINANCE, USER_ROLES.INSTALLER],
+      },
+      {
+        id: LEAD_ID,
+        role: USER_ROLES.ENGINEERING_LEAD,
+        assignedRoles: [USER_ROLES.ENGINEERING_LEAD],
       },
     ]),
   };
@@ -56,6 +62,16 @@ describe('ProjectMemberService.validateAssignments', () => {
         { userId: INSTALLER_ID, role: USER_ROLES.SECRETARY },
       ]),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('allows an engineering lead to fill the engineer project position', async () => {
+    const service = await createService();
+
+    await expect(
+      service.validateAssignments([
+        { userId: LEAD_ID, role: USER_ROLES.ENGINEER },
+      ]),
+    ).resolves.toBeUndefined();
   });
 
   it('rejects an employee assigned to a role they do not hold', async () => {

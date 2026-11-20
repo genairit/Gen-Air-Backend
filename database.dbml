@@ -17,7 +17,7 @@ Enum user_role {
   finance         [note: 'מחלקת כספים']
   installer       [note: 'מתקין / טכנאי שטח']
   purchasing_execution_manager [note: 'מנהל רכש וביצוע; company-wide account role, never a project slot']
-  sales_agent     [note: 'סוכן מכירות; company-wide account role, no implicit quotation grants']
+  sales_agent     [note: 'Historical value only; new account assignments use engineer or system_admin']
 }
 
 Table users {
@@ -476,10 +476,11 @@ Table quotations {
   id uuid [pk, note: 'Internal quotation identifier referenced by its sections']
   number varchar(40) [not null, note: 'Human-facing quotation number YYMM-000001; the prefix comes from the month the quotation was created, the sequence is allocated under a monthly lock, and editing date afterwards never renumbers it']
   customer_id uuid [not null, note: 'The customer the offer is made to; its payment terms seed this quotation once']
-  sales_agent_id uuid [note: 'Optional employee with the sales_agent role at assignment time; historical association survives role changes or deactivation']
+  sales_agent_id uuid [note: 'Optional engineer or system administrator; historical association survives role changes or deactivation']
   status varchar(20) [not null, note: 'draft, review, approved (shown as הזמנה), or cancelled; chk_quotations_status']
   cancelled_from_status varchar(20) [note: 'Status immediately before cancellation; null unless status is cancelled; chk_quotations_cancelled_from_status']
   cancellation_history jsonb [not null, default: `[]`, note: 'Cancellation and restoration history, including source status, required reason, actor ID and name snapshot, time and cancellation kind; chk_quotations_cancellation_history_array']
+  rejection_history jsonb [not null, default: `[]`, note: 'Review rejection reason and actor snapshot; pending entry is closed when engineering resubmits; chk_quotations_rejection_history_array']
   date date [not null, note: 'Date shown on the offer; the number prefix is set from the creation month and does not change when this date is edited']
   brand varchar(100) [not null, note: 'First manufacturer for compatibility with older clients; empty when no brand tab exists']
   brands jsonb [not null, note: 'Ordered list of manufacturer tabs; the General tab is always available and is not stored here']
@@ -668,6 +669,180 @@ Table project_boq_revisions {
     (boq_id, revision) [unique]
   }
 }
+
+Table suppliers {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(120) [not null]
+  contact_name varchar(120)
+  phone varchar(32)
+  email varchar(254)
+  notes varchar(1000) [not null, default: '']
+  active boolean [not null, default: true]
+  version integer [not null, default: 1]
+  created_by_id uuid [not null]
+  updated_by_id uuid [not null]
+  created_at timestamptz(3) [not null, default: `now()`]
+  updated_at timestamptz(3) [not null, default: `now()`]
+  indexes {
+    name [name: 'idx_suppliers_name']
+  }
+}
+
+Table project_supplier_agreements {
+  id uuid [pk, default: `gen_random_uuid()`]
+  project_id uuid [not null]
+  boq_source_key varchar(200) [not null]
+  material_id uuid [not null]
+  material_unit varchar(12) [not null]
+  supplier_id uuid [not null]
+  unit_price numeric(16,4) [not null]
+  currency_code varchar(3) [not null]
+  agreed_quantity numeric(16,8)
+  effective_from date
+  effective_through date
+  active boolean [not null, default: true]
+  version integer [not null, default: 1]
+  notes varchar(1000) [not null, default: '']
+  created_by_id uuid [not null]
+  updated_by_id uuid [not null]
+  created_at timestamptz(3) [not null, default: `now()`]
+  updated_at timestamptz(3) [not null, default: `now()`]
+  indexes {
+    (project_id, boq_source_key, supplier_id, material_id, material_unit) [unique, name: 'uq_project_supplier_agreement']
+    (project_id, boq_source_key) [name: 'idx_project_supplier_agreements_project']
+    supplier_id [name: 'idx_project_supplier_agreements_supplier']
+  }
+}
+
+Table project_supplier_agreement_revisions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  agreement_id uuid [not null]
+  version integer [not null]
+  snapshot jsonb [not null]
+  actor_id uuid [not null]
+  created_at timestamptz(3) [not null, default: `now()`]
+  indexes {
+    (agreement_id, version) [unique, name: 'uq_project_supplier_agreement_revision']
+  }
+  Note: 'Immutable audit snapshots of each agreement version.'
+}
+
+Table purchase_records {
+  id uuid [pk, default: `gen_random_uuid()`]
+  project_id uuid [not null]
+  status varchar(20) [not null, note: 'Draft does not reserve; requested, reviewed, approved reserve; ordered consumes; cancelled releases']
+  material_search text [not null, default: '']
+  supplier_name varchar(120)
+  supplier_id uuid
+  supplier_contact_name varchar(120)
+  supplier_phone varchar(32)
+  supplier_email varchar(254)
+  order_date date
+  on_behalf_of varchar(200)
+  exception_reason varchar(1000)
+  notes varchar(1000) [not null, default: '']
+  created_by_id uuid [not null]
+  updated_by_id uuid [not null]
+  idempotency_key uuid [not null]
+  payload_hash varchar(64) [not null]
+  created_at timestamptz(3) [not null, default: `now()`]
+  updated_at timestamptz(3) [not null, default: `now()`]
+  indexes {
+    (project_id, created_by_id, idempotency_key) [unique, name: 'uq_purchase_records_command']
+    (project_id, created_at) [name: 'idx_purchase_records_project_created']
+  }
+}
+
+Table purchase_record_lines {
+  id uuid [pk, default: `gen_random_uuid()`]
+  record_id uuid [not null]
+  boq_line_id uuid [not null, note: 'Snapshot reference; the BOQ may be regenerated']
+  boq_source_key varchar(200) [not null]
+  material_id uuid [not null]
+  material_name varchar(200) [not null]
+  material_unit varchar(12) [not null]
+  quantity numeric(16,8) [not null]
+  unit_cost numeric(16,4)
+  currency_code varchar(3) [not null, default: 'ILS']
+  supplier_agreement_id uuid
+  supplier_agreement_version integer
+  created_at timestamptz(3) [not null, default: `now()`]
+  indexes {
+    (record_id, boq_source_key) [unique, name: 'uq_purchase_record_line_source']
+    boq_source_key [name: 'idx_purchase_record_lines_source']
+    record_id [name: 'idx_purchase_record_lines_record']
+  }
+  Note: 'Immutable quantity, unit and commercial snapshots.'
+}
+
+Table purchase_order_line_terms {
+  record_line_id uuid [pk]
+  supplier_agreement_id uuid [not null]
+  supplier_agreement_version integer [not null]
+  unit_cost numeric(16,4) [not null]
+  currency_code varchar(3) [not null]
+  actor_id uuid [not null]
+  created_at timestamptz(3) [not null, default: `now()`]
+  Note: 'Immutable negotiated terms assigned when a reserved request becomes an order.'
+}
+
+Table purchase_record_events {
+  id uuid [pk, default: `gen_random_uuid()`]
+  record_id uuid [not null]
+  idempotency_key uuid [not null]
+  payload_hash varchar(64) [not null]
+  actor_id uuid [not null]
+  action varchar(20) [not null]
+  previous_status varchar(20)
+  next_status varchar(20) [not null]
+  reason varchar(1000) [not null, default: '']
+  created_at timestamptz(3) [not null, default: `now()`]
+  indexes {
+    (record_id, idempotency_key) [unique, name: 'uq_purchase_record_event_command']
+    (record_id, created_at) [name: 'idx_purchase_record_events_record_created']
+  }
+  Note: 'Append-only state and correction history.'
+}
+
+Table purchase_record_corrections {
+  id uuid [pk, default: `gen_random_uuid()`]
+  record_line_id uuid [not null]
+  idempotency_key uuid [not null]
+  quantity numeric(16,8) [not null]
+  actor_id uuid [not null]
+  reason varchar(1000) [not null]
+  created_at timestamptz(3) [not null, default: `now()`]
+  indexes {
+    (record_line_id, idempotency_key) [unique, name: 'uq_purchase_record_correction_command']
+    record_line_id [name: 'idx_purchase_record_corrections_line']
+  }
+  Note: 'Append-only reductions of recorded quantities; never deletes the original order line.'
+}
+
+Ref: purchase_records.project_id > projects.id [delete: restrict]
+Ref: purchase_records.supplier_id > suppliers.id [delete: restrict]
+Ref: purchase_records.created_by_id > users.id [delete: restrict]
+Ref: purchase_records.updated_by_id > users.id [delete: restrict]
+Ref: purchase_record_lines.record_id > purchase_records.id [delete: restrict]
+Ref: purchase_record_lines.material_id > materials.id [delete: restrict]
+Ref: purchase_record_lines.supplier_agreement_id > project_supplier_agreements.id [delete: restrict]
+Ref: purchase_order_line_terms.record_line_id > purchase_record_lines.id [delete: restrict]
+Ref: purchase_order_line_terms.supplier_agreement_id > project_supplier_agreements.id [delete: restrict]
+Ref: purchase_order_line_terms.actor_id > users.id [delete: restrict]
+Ref: purchase_record_events.record_id > purchase_records.id [delete: restrict]
+Ref: purchase_record_events.actor_id > users.id [delete: restrict]
+Ref: purchase_record_corrections.record_line_id > purchase_record_lines.id [delete: restrict]
+Ref: purchase_record_corrections.actor_id > users.id [delete: restrict]
+
+Ref: suppliers.created_by_id > users.id [delete: restrict]
+Ref: suppliers.updated_by_id > users.id [delete: restrict]
+Ref: project_supplier_agreements.project_id > projects.id [delete: restrict]
+Ref: project_supplier_agreements.material_id > materials.id [delete: restrict]
+Ref: project_supplier_agreements.supplier_id > suppliers.id [delete: restrict]
+Ref: project_supplier_agreements.created_by_id > users.id [delete: restrict]
+Ref: project_supplier_agreements.updated_by_id > users.id [delete: restrict]
+Ref: project_supplier_agreement_revisions.agreement_id > project_supplier_agreements.id [delete: restrict]
+Ref: project_supplier_agreement_revisions.actor_id > users.id [delete: restrict]
 
 Ref: project_boqs.project_id > projects.id [delete: restrict]
 Ref: project_boqs.source_quotation_id > quotations.id [delete: restrict]

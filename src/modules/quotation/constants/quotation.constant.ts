@@ -1,4 +1,14 @@
+import {
+  USER_ROLES,
+  ENGINEERING_USER_ROLES,
+} from '@Constants/user-role.constant';
+
 import Decimal from 'decimal.js';
+
+export const QUOTATION_AGENT_ELIGIBLE_ROLES = [
+  ...ENGINEERING_USER_ROLES,
+  USER_ROLES.SYSTEM_ADMIN,
+] as const;
 
 export const QUOTATION_STATUS = {
   DRAFT: 'draft',

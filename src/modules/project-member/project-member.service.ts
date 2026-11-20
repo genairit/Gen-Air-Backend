@@ -1,11 +1,16 @@
 import {
+  USER_ROLES,
+  UserRoleType,
+  ENGINEERING_USER_ROLES,
+} from '@Constants/user-role.constant';
+
+import {
   IProjectMember,
   IProjectMemberAssignment,
 } from './interfaces/project-member.interface';
 
 import { Transaction } from 'sequelize';
 import { UserService } from '@Modules/user/user.service';
-import { UserRoleType } from '@Constants/user-role.constant';
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ProjectMemberRepository } from './project-member.repository';
 
@@ -45,10 +50,15 @@ export class ProjectMemberService {
     const rolesByUserId = new Map(
       users.map((user) => [user.id, user.assignedRoles ?? [user.role]]),
     );
-    const mismatchedAssignments = assignments.filter(
-      (assignment) =>
-        !rolesByUserId.get(assignment.userId)?.includes(assignment.role),
-    );
+    const mismatchedAssignments = assignments.filter((assignment) => {
+      const assignedRoles = rolesByUserId.get(assignment.userId) ?? [];
+      const eligibleRoles =
+        assignment.role === USER_ROLES.ENGINEER
+          ? ENGINEERING_USER_ROLES
+          : [assignment.role];
+
+      return !eligibleRoles.some((role) => assignedRoles.includes(role));
+    });
 
     if (mismatchedAssignments.length > 0) {
       throw new BadRequestException({

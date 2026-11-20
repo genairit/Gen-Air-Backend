@@ -264,6 +264,7 @@ describe('UserService.getRoleCounts', () => {
     await expect(service.getRoleCounts()).resolves.toEqual({
       [USER_ROLES.FINANCE]: 0,
       [USER_ROLES.ENGINEER]: 0,
+      [USER_ROLES.ENGINEERING_LEAD]: 0,
       [USER_ROLES.INSTALLER]: 0,
       [USER_ROLES.SALES_AGENT]: 0,
       [USER_ROLES.SECRETARY]: 2,
@@ -274,15 +275,45 @@ describe('UserService.getRoleCounts', () => {
     });
   });
 
+  it('counts engineering leads in the engineer tab without double counting dual-role users', async () => {
+    const { service, userRepository, userRoleService } = await createService();
+    const userIdsByRole: Record<string, string[]> = {
+      [USER_ROLES.ENGINEER]: ['engineer', 'dual-role'],
+      [USER_ROLES.ENGINEERING_LEAD]: ['lead', 'dual-role'],
+    };
+    userRoleService.findUserIdsByRole.mockImplementation((role: string) =>
+      Promise.resolve(userIdsByRole[role] ?? []),
+    );
+
+    const counts = await service.getRoleCounts();
+
+    expect(counts[USER_ROLES.ENGINEER]).toBe(3);
+    expect(counts[USER_ROLES.ENGINEERING_LEAD]).toBe(2);
+    expect(userRepository.countActiveByIds).toHaveBeenCalledWith([
+      'engineer',
+      'dual-role',
+      'lead',
+    ]);
+  });
+
   it('filters users by assigned membership instead of their active role', async () => {
     const { service, userRepository, userRoleService } = await createService();
-    const roleMemberIds = ['multi-role-user'];
-    userRoleService.findUserIdsByRole.mockResolvedValue(roleMemberIds);
+    const roleMemberIds = ['multi-role-user', 'lead-user'];
+    userRoleService.findUserIdsByRole.mockImplementation((role: string) =>
+      Promise.resolve(
+        role === USER_ROLES.ENGINEER
+          ? ['multi-role-user']
+          : ['lead-user', 'multi-role-user'],
+      ),
+    );
 
     await service.getByFilter({ role: USER_ROLES.ENGINEER });
 
     expect(userRoleService.findUserIdsByRole).toHaveBeenCalledWith(
       USER_ROLES.ENGINEER,
+    );
+    expect(userRoleService.findUserIdsByRole).toHaveBeenCalledWith(
+      USER_ROLES.ENGINEERING_LEAD,
     );
     expect(userRepository.findByFilter).toHaveBeenCalledWith(
       { search: null },
@@ -504,6 +535,42 @@ describe('UserService role membership integrity', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('rejects new assignments of the retired sales role', async () => {
+    const { service, userRepository } = await createService();
+
+    await expect(
+      service.update(
+        USER.id,
+        { assignedRoles: [USER_ROLES.SALES_AGENT] },
+        roleAdministrator,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(userRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('allows a non-role edit to preserve an existing retired role', async () => {
+    const { service, userRepository, userRoleService } = await createService();
+    userRepository.findById.mockResolvedValue({
+      ...USER,
+      role: USER_ROLES.SALES_AGENT,
+    });
+    userRoleService.getAssignedRolesByUserIds.mockResolvedValue(
+      new Map([[USER.id, [USER_ROLES.SALES_AGENT]]]),
+    );
+
+    await expect(
+      service.update(USER.id, { firstName: 'Updated' }, roleAdministrator),
+    ).resolves.toBeTruthy();
+    expect(userRepository.update).toHaveBeenCalledWith(
+      USER.id,
+      expect.objectContaining({
+        firstName: 'Updated',
+        role: USER_ROLES.SALES_AGENT,
+      }),
+      expect.anything(),
+    );
+  });
+
   it('switches only to a currently assigned role and records the active-role snapshot', async () => {
     const {
       service,
@@ -549,6 +616,19 @@ describe('UserService role membership integrity', () => {
     ).rejects.toThrow(BadRequestException);
     expect(userRepository.update).not.toHaveBeenCalled();
     expect(userRoleAuditService.record).not.toHaveBeenCalled();
+  });
+
+  it('rejects switching into the retired sales role even when assigned historically', async () => {
+    const { service, userRepository } = await createService();
+
+    await expect(
+      service.switchActiveRole(
+        USER.id,
+        USER_ROLES.SALES_AGENT,
+        roleAdministrator,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(userRepository.update).not.toHaveBeenCalled();
   });
 
   it('switches into purchasing and execution only after that account role is assigned', async () => {

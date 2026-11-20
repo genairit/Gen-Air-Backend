@@ -5,6 +5,9 @@ export const PERMISSIONS = {
   QUOTATIONS_EXPORT: 'quotations.export',
   QUOTATIONS_DELETE: 'quotations.delete',
   QUOTATIONS_APPROVE: 'quotations.approve',
+  EXECUTION_PLANS_READ: 'execution_plans.read',
+  EXECUTION_PLANS_SUBMIT: 'execution_plans.submit',
+  EXECUTION_PLANS_APPROVE: 'execution_plans.approve',
   CATALOGUE_MANAGE: 'catalogue.manage',
 
   PROJECTS_READ: 'projects.read',

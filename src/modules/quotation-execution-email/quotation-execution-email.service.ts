@@ -26,6 +26,7 @@ import { TASK_STATUSES } from '@Modules/task/constants/task-status.constant';
 import { resolveTaskCustomerId } from '@Modules/task/utilities/task-link.utility';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
 import { QuotationExecutionEmail } from './entities/quotation-execution-email.entity';
+import { ExecutionPlanService } from '@Modules/execution-plan/execution-plan.service';
 import { SendQuotationExecutionEmailDto } from './dto/send-quotation-execution-email.dto';
 import { QuotationExecutionEmailRepository } from './quotation-execution-email.repository';
 import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
@@ -47,6 +48,7 @@ export class QuotationExecutionEmailService {
     private readonly transactions: DatabaseTransactionService,
     private readonly records: QuotationExecutionEmailRepository,
     private readonly transport: QuotationEmailTransport,
+    private readonly plans: ExecutionPlanService,
   ) {}
 
   async getContext(taskId: string) {
@@ -160,6 +162,14 @@ export class QuotationExecutionEmailService {
         'Plan version and sender name are required',
       );
     }
+    const approvedPlan = await this.plans.assertApprovedForFile(
+      input.quotationId,
+      context.projectId,
+      input.planFileId,
+    );
+    if (approvedPlan.planVersion !== version) {
+      throw new ConflictException('Select the approved plan version');
+    }
     const template = renderQuotationExecutionEmail({
       projectName: context.projectName,
       apartmentNumber: context.apartmentNumber,
@@ -246,6 +256,23 @@ export class QuotationExecutionEmailService {
       });
       throw error;
     });
+
+    try {
+      const currentApproval = await this.plans.assertApprovedForFile(
+        input.quotationId,
+        context.projectId,
+        input.planFileId,
+      );
+      if (currentApproval.id !== approvedPlan.id) {
+        throw new ConflictException('Plan approval changed during preparation');
+      }
+    } catch (error) {
+      await this.records.updateIfRequest(taskId, input.requestId, {
+        status: QUOTATION_EMAIL_STATUS.FAILED,
+        errorCode: 'PLAN_APPROVAL_CHANGED',
+      });
+      throw error;
+    }
 
     await this.transactions.run(async (transaction) => {
       await this.transactions.lockKey(`quotation-email:${taskId}`, transaction);
