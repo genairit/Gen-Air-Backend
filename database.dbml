@@ -868,3 +868,15 @@ Table task_quotation_links {
     quotation_id
   }
 }
+
+Table quotation_clone_commands {
+  actor_id uuid [not null, ref: > users.id]
+  idempotency_key uuid [not null]
+  payload_hash varchar(64) [not null]
+  quotation_id uuid [not null, ref: > quotations.id]
+  created_at timestamptz(3) [not null, default: `now()`]
+  indexes {
+    (actor_id, idempotency_key) [pk, name: 'uq_quotation_clone_commands_actor_key']
+    quotation_id [name: 'idx_quotation_clone_commands_quotation']
+  }
+}

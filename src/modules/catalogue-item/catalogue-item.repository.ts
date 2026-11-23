@@ -45,14 +45,33 @@ export class CatalogueItemRepository {
   findByIds(ids: string[], transaction: Transaction): Promise<CatalogueItem[]> {
     return CatalogueItem.findAll({
       where: { id: { [Op.in]: [...new Set(ids)] } },
+      order: [['id', 'ASC']],
       transaction,
       lock: transaction.LOCK.SHARE,
     });
   }
-  async search(
+  search(query: CatalogueQueryDto, userId: string): Promise<CatalogueItem[]> {
+    return this.rankedSearch({ query, userId, exactBrand: null });
+  }
+  recommended(
     query: CatalogueQueryDto,
     userId: string,
+    transaction: Transaction,
   ): Promise<CatalogueItem[]> {
+    return this.rankedSearch({
+      query: { ...query, limit: 1 },
+      userId,
+      transaction,
+      exactBrand: query.brand ?? null,
+    });
+  }
+  private async rankedSearch(request: {
+    userId: string;
+    query: CatalogueQueryDto;
+    exactBrand: string | null;
+    transaction?: Transaction;
+  }): Promise<CatalogueItem[]> {
+    const { query, userId, transaction, exactBrand } = request;
     const database = CatalogueItem.sequelize;
     if (!database) {
       throw new Error('Catalogue database unavailable');
@@ -63,12 +82,14 @@ export class CatalogueItemRepository {
       .filter(Boolean)
       .map(toContainsPattern);
     return database.query(
-      `SELECT c.* FROM catalogue_items c LEFT JOIN catalogue_item_usage u ON u.catalogue_item_id=c.id AND u.user_id=$userId AND u.deleted_at IS NULL WHERE c.deleted_at IS NULL AND c.status=$active AND ($brand::text IS NULL OR c.brand IN ($brand,'')) AND ($role::text IS NULL OR c.equipment_role=$role) AND ($types::jsonb IS NULL OR c.equipment_types @> $types::jsonb) AND ($system::text IS NULL OR $system=$general OR c.system_type IS NULL OR c.system_type=$system) AND ($capacity::integer IS NULL OR c.capacity_btu>0) AND NOT EXISTS(SELECT 1 FROM unnest($terms::text[]) AS term WHERE concat_ws(' ',c.sku,c.description) NOT ILIKE term) ORDER BY CASE WHEN $capacity::integer IS NULL THEN 0 ELSE abs(c.capacity_btu-$capacity::integer) END,COALESCE(u.selection_count,0) DESC,(c.preference=$used) DESC,c.sku,c.id LIMIT $limit`,
+      `SELECT c.* FROM catalogue_items c LEFT JOIN catalogue_item_usage u ON u.catalogue_item_id=c.id AND u.user_id=$userId AND u.deleted_at IS NULL WHERE c.deleted_at IS NULL AND c.status=$active AND ($brand::text IS NULL OR c.brand IN ($brand,'')) AND ($exactBrand::text IS NULL OR c.brand=$exactBrand) AND ($role::text IS NULL OR c.equipment_role=$role) AND ($types::jsonb IS NULL OR c.equipment_types @> $types::jsonb) AND ($system::text IS NULL OR $system=$general OR c.system_type IS NULL OR c.system_type=$system) AND ($capacity::integer IS NULL OR c.capacity_btu>0) AND NOT EXISTS(SELECT 1 FROM unnest($terms::text[]) AS term WHERE concat_ws(' ',c.sku,c.description) NOT ILIKE term) ORDER BY CASE WHEN $capacity::integer IS NULL THEN 0 ELSE abs(c.capacity_btu-$capacity::integer) END,COALESCE(u.selection_count,0) DESC,(c.preference=$used) DESC,c.sku,c.id LIMIT $limit`,
       {
         model: CatalogueItem,
         mapToModel: true,
+        transaction,
         bind: {
           userId,
+          exactBrand,
           active: CATALOGUE_STATUS.ACTIVE,
           brand: query.brand ?? null,
           role: query.equipmentRole ?? null,

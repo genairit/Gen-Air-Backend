@@ -40,6 +40,7 @@ import { GetProjectQuotationsDto } from './dto/get-project-quotations.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
+import { RecommendedCloneQuotationDto } from './dto/recommended-clone-quotation.dto';
 
 @Controller('quotation')
 export class QuotationController {
@@ -128,6 +129,19 @@ export class QuotationController {
   ): ReturnType<QuotationService['create']> {
     const quotation = await this.service.create(input, user);
     return this.service.projectDetailsForActor(quotation, user);
+  }
+  @Post(':id/clone-recommended')
+  @RequirePermissions(
+    PERMISSIONS.QUOTATIONS_READ,
+    PERMISSIONS.QUOTATIONS_CREATE,
+    PERMISSIONS.PROJECTS_READ,
+  )
+  cloneRecommended(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: RecommendedCloneQuotationDto,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ): ReturnType<QuotationService['cloneRecommended']> {
+    return this.service.cloneRecommended(id, input, user);
   }
   @Post(':id/clone')
   @RequirePermissions(

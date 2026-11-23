@@ -4,6 +4,9 @@ import {
 } from './http-error-code.constant';
 
 export const HTTP_ERROR_MESSAGES = {
+  QUOTATION_CLONE_MAPPING_FAILED: 'לא ניתן ליצור הצעה לחברה שנבחרה',
+  QUOTATION_CLONE_SOURCE_CHANGED: 'הצעת המקור עודכנה. יש לרענן ולנסות שוב',
+  QUOTATION_CLONE_COMMAND_CONFLICT: 'בקשת השכפול כבר שימשה לפעולה אחרת',
   [HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_LOCKED]:
     'Linked task quotation context cannot change',
   [HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_UNAVAILABLE]:
