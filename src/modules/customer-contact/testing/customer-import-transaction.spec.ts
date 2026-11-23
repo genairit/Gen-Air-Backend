@@ -78,6 +78,7 @@ describe('customer import transaction boundary', () => {
         email: null,
         contactName: null,
         paymentTerms: null,
+        paymentSchedule: [],
         createdById: 'creator',
       },
       transaction,

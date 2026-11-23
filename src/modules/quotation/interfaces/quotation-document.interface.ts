@@ -9,10 +9,6 @@ import type { QuotationProjectRoleType } from '../constants/quotation-sharing.co
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
 import type { IQuotationSection } from '@Modules/quotation-section/interfaces/quotation-section.interface';
 
-export interface IPaymentStage {
-  text: string;
-  percent: string;
-}
 export interface IQuotationSectionDocument extends IQuotationSection {
   items: IQuotationItem[];
 }

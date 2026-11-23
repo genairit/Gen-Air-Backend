@@ -32,6 +32,7 @@ import {
 import { User } from '@Modules/user/entities/user.entity';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import type { PaymentTermsType } from '@Constants/payment-terms.constant';
+import type { IPaymentStage } from '@Interfaces/payment-configuration.interface';
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 
 @Table({
@@ -131,6 +132,10 @@ export class Customer
 
   @Column({ type: DataType.STRING(40), allowNull: true })
   declare paymentTerms: PaymentTermsType | null;
+
+  @Default([])
+  @Column({ type: DataType.JSONB, allowNull: false })
+  declare paymentSchedule: IPaymentStage[];
 
   @CreatedAt
   declare createdAt: Date;

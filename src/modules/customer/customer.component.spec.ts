@@ -123,6 +123,7 @@ describe('CRM-only customer creation API', () => {
           phone: null,
           email: null,
           paymentTerms: null,
+          paymentSchedule: [],
           createdById: 'trusted-user',
         },
         dependencies.transaction,

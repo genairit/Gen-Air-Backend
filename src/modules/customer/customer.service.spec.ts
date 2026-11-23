@@ -10,12 +10,15 @@ import { CustomerService } from './customer.service';
 import { Customer } from './entities/customer.entity';
 import { CustomerRepository } from './customer.repository';
 import { ICustomer } from './interfaces/customer.interface';
+import { PAYMENT_TERMS } from '@Constants/payment-terms.constant';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { createCustomerDependencyFixtures } from '@Modules/customer-contact/testing/customer-dependencies.fixture';
 
 const CUSTOMER: ICustomer = {
   id: 'customer-1',
+  paymentTerms: null,
+  paymentSchedule: [],
   deletedAt: null,
   priorityId: null,
   taxId: '514123456',
@@ -37,6 +40,8 @@ const CUSTOMER: ICustomer = {
 const createService = async () => {
   const dependencies = createCustomerDependencyFixtures();
   const customer = mock<Customer>({ ...CUSTOMER });
+  customer.paymentSchedule = [];
+  customer.paymentTerms = null;
   customer.update.mockResolvedValue(customer);
   jest.spyOn(Customer, 'findByPk').mockResolvedValue(customer);
   const customerRepository = {
@@ -127,6 +132,69 @@ describe('CustomerService.update', () => {
     ).rejects.toMatchObject({ status: 400 });
     expect(jest.spyOn(customer, 'update')).not.toHaveBeenCalled();
     expect(dependencies.ownContact.setDetails).not.toHaveBeenCalled();
+  });
+
+  it('rejects a schedule-only PATCH conflicting with the stored preset before any write', async () => {
+    const { service, customer, dependencies } = await createService();
+    customer.paymentTerms = PAYMENT_TERMS.PREPAID;
+    await expect(
+      service.update(CUSTOMER.id, {
+        paymentSchedule: [{ percent: '100', text: 'במסירה' }],
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(jest.spyOn(customer, 'update')).not.toHaveBeenCalled();
+    expect(dependencies.ownContact.setDetails).not.toHaveBeenCalled();
+  });
+
+  it('rejects a preset-only PATCH conflicting with the stored custom schedule', async () => {
+    const { service, customer } = await createService();
+    customer.paymentSchedule = [{ percent: '100', text: 'במסירה' }];
+    await expect(
+      service.update(CUSTOMER.id, {
+        paymentTerms: PAYMENT_TERMS.PREPAID,
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(jest.spyOn(customer, 'update')).not.toHaveBeenCalled();
+  });
+
+  it('keeps legacy Other unchanged on an unrelated customer edit', async () => {
+    const { service, customer } = await createService();
+    customer.paymentTerms = PAYMENT_TERMS.OTHER;
+    await service.update(CUSTOMER.id, { address: 'כתובת חדשה' });
+    expect(jest.spyOn(customer, 'update')).toHaveBeenCalledWith(
+      expect.objectContaining({ address: 'כתובת חדשה' }),
+      expect.anything(),
+    );
+    expect(customer.paymentTerms).toBe(PAYMENT_TERMS.OTHER);
+    expect(customer.paymentSchedule).toEqual([]);
+  });
+
+  it('clears a custom default only through an explicit complete configuration', async () => {
+    const { service, customer, dependencies } = await createService();
+    customer.paymentSchedule = [{ percent: '100', text: 'במסירה' }];
+    await service.update(CUSTOMER.id, {
+      paymentTerms: null,
+      paymentSchedule: [],
+    });
+    expect(jest.spyOn(customer, 'update')).toHaveBeenCalledWith(
+      { paymentTerms: null, paymentSchedule: [] },
+      { transaction: dependencies.transaction },
+    );
+  });
+
+  it('preserves an existing custom schedule when payment fields are omitted', async () => {
+    const { service, customer, dependencies } = await createService();
+    const schedule = [{ percent: '100', text: 'במסירה' }];
+    customer.paymentSchedule = schedule;
+    await service.update(CUSTOMER.id, { address: 'כתובת חדשה' });
+    expect(jest.spyOn(customer, 'update')).toHaveBeenCalledWith(
+      { address: 'כתובת חדשה' },
+      { transaction: dependencies.transaction },
+    );
+    expect(customer.paymentSchedule).toBe(schedule);
+    expect(customer.paymentSchedule).toEqual([
+      { percent: '100', text: 'במסירה' },
+    ]);
   });
 
   it('does not check availability when the tax id is unchanged', async () => {
@@ -247,6 +315,7 @@ describe('CustomerService.create', () => {
         phone: null,
         email: null,
         paymentTerms: null,
+        paymentSchedule: [],
         createdById: 'trusted-user',
       },
       dependencies.transaction,
@@ -279,7 +348,12 @@ describe('CustomerService.create', () => {
       service.create(withoutContact, 'trusted-user'),
     ).resolves.toEqual(CUSTOMER);
     expect(customerRepository.create).toHaveBeenCalledWith(
-      { ...withoutContact, createdById: 'trusted-user', paymentTerms: null },
+      {
+        ...withoutContact,
+        createdById: 'trusted-user',
+        paymentTerms: null,
+        paymentSchedule: [],
+      },
       dependencies.transaction,
     );
     expect(dependencies.ownContact.setDetails).toHaveBeenCalledWith(
@@ -288,6 +362,38 @@ describe('CustomerService.create', () => {
       dependencies.transaction,
     );
   });
+
+  it('persists a configured custom schedule', async () => {
+    const { service, customerRepository } = await createService();
+    const paymentSchedule = [{ percent: '100', text: 'במסירה' }];
+    await service.create(
+      { ...input, paymentTerms: null, paymentSchedule },
+      'trusted-user',
+    );
+    expect(customerRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentTerms: null, paymentSchedule }),
+      expect.anything(),
+    );
+  });
+
+  it.each([
+    { paymentTerms: PAYMENT_TERMS.OTHER, paymentSchedule: [] },
+    {
+      paymentTerms: null,
+      paymentSchedule: [{ percent: '80', text: 'במסירה' }],
+    },
+  ])(
+    'rejects an unconfigured new default before creating any customer: %j',
+    async (configuration) => {
+      const { service, customerRepository, dependencies } =
+        await createService();
+      await expect(
+        service.create({ ...input, ...configuration }, 'trusted-user'),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(customerRepository.create).not.toHaveBeenCalled();
+      expect(dependencies.ownContact.setDetails).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects an existing registration number before writing', async () => {
     const { service, customerRepository } = await createService();

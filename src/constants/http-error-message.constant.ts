@@ -38,6 +38,8 @@ export const HTTP_ERROR_MESSAGES = {
     'Contact was not found for this customer',
   [HTTP_ERROR_CODES.INVALID_CUSTOMER_CONTACT]:
     'Customer contact details are invalid',
+  [HTTP_ERROR_CODES.INVALID_CUSTOMER_PAYMENT_CONFIGURATION]:
+    'יש לבחור תנאי תשלום קבועים או שלבי תשלום תקינים בסך 100%',
   [HTTP_ERROR_CODES.DUPLICATE_CUSTOMER_CONTACT]:
     'An identical contact already exists for this customer',
   [HTTP_ERROR_CODES.APARTMENT_IMPORT_FILE_REQUIRED]:

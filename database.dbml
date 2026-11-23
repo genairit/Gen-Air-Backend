@@ -92,6 +92,7 @@ Enum priority_sync_status {
 
 Table customers {
   payment_terms varchar(40) [note: 'Quotation default only; note belongs on quotations']
+  payment_schedule jsonb [not null, default: `'[]'::jsonb`, note: 'Customer custom payment-stage defaults, copied into new quotations as independent snapshots']
   id                     uuid                     [pk, default: `gen_random_uuid()`, note: 'Internal customer identifier used by projects, tasks and quotations']
   customer_type          project_detail_field_set [not null, note: 'Same three kinds as project types: company, private client, institution']
   name                   varchar(200)             [not null, note: 'Company, private person or institution name, depending on customer_type']
