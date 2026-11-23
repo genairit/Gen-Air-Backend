@@ -919,7 +919,7 @@ export class QuotationService {
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
     await this.customers.getById(input.customerId);
-    await this.transactions.run(async (transaction) => {
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       if (
@@ -965,6 +965,15 @@ export class QuotationService {
         userId: actor.id,
         transaction,
       });
+      if (current.status === QUOTATION_STATUS.REVIEW) {
+        await this.auditLifecycle({
+          current,
+          actor,
+          toStatus: QUOTATION_STATUS.DRAFT,
+          action: QUOTATION_LIFECYCLE_ACTION.RETURN,
+          transaction,
+        });
+      }
       const oldIds = current.sections.map((section) => section.id);
       await this.items.remove(oldIds, transaction);
       await this.sections.remove([id], transaction);

@@ -1,14 +1,34 @@
+import { QueryTypes } from 'sequelize';
 import { TIME_UNITS } from '@Constants/time.constant';
 import { Quotation } from './entities/quotation.entity';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { QuotationRepository } from './quotation.repository';
 import { PERMISSIONS } from '@Constants/authorization.constant';
+import type { SaveQuotationDto } from './dto/save-quotation.dto';
 import { QUOTATION_STATUS } from './constants/quotation.constant';
 import { TaskQuotationFixture } from './testing/task-quotation.fixture';
+import type { IQuotationDetailView } from './interfaces/quotation-document.interface';
 import { QUOTATION_LIFECYCLE_ACTION } from './constants/quotation-lifecycle.constant';
+import type { IQuotationLifecycleRecord } from './interfaces/quotation-lifecycle.interface';
 
 const fixture = new TaskQuotationFixture();
 jest.setTimeout(2 * TIME_UNITS.MINUTE_MS);
+
+const saveInput = (quotation: IQuotationDetailView): SaveQuotationDto => ({
+  version: quotation.version,
+  customerId: quotation.customerId,
+  projectId: quotation.projectId,
+  date: quotation.date,
+  brand: quotation.brand,
+  brands: quotation.brands,
+  paymentTerms: quotation.paymentTerms,
+  paymentTermsNote: quotation.paymentTermsNote,
+  paymentSchedule: quotation.paymentSchedule,
+  discountPercent: quotation.discountPercent,
+  targetPretaxAmount: quotation.targetPretaxAmount,
+  internalNotes: quotation.internalNotes,
+  sections: [],
+});
 
 beforeAll(async (): Promise<void> => {
   await fixture.start();
@@ -126,6 +146,87 @@ describe('immutable quotation lifecycle PostgreSQL', (): void => {
         (event): boolean => event.quotationVersion === latest.version,
       ),
     ).toHaveLength(1);
+  });
+  it('audits review autosave with prior evidence and leaves draft autosave without extra events', async (): Promise<void> => {
+    const service = fixture.service();
+    const result = await service.createForTask(fixture.taskId, fixture.actor);
+    const approvedAt = new Date('2026-11-02T00:00:00Z');
+    await Quotation.update(
+      {
+        status: QUOTATION_STATUS.REVIEW,
+        approvedById: fixture.actor.id,
+        approvedAt,
+        acknowledgedWarnings: ['prior-review-warning'],
+        paymentTermsNote: 'Prior payment evidence',
+      },
+      { where: { id: result.quotationId } },
+    );
+    const before = await service.getById(result.quotationId);
+    const input = { ...saveInput(before), paymentTermsNote: 'Updated terms' };
+    const saved = await service.save(before.id, input, fixture.actor);
+    expect(saved.status).toBe(QUOTATION_STATUS.DRAFT);
+    expect(saved.version).toBe(before.version + 1);
+    expect(saved.lifecycleHistory).toHaveLength(
+      before.lifecycleHistory.length + 1,
+    );
+    expect(saved.lifecycleHistory.at(-1)).toMatchObject({
+      actorId: fixture.actor.id,
+      fromStatus: QUOTATION_STATUS.REVIEW,
+      toStatus: QUOTATION_STATUS.DRAFT,
+      action: QUOTATION_LIFECYCLE_ACTION.RETURN,
+      quotationVersion: saved.version,
+    });
+    const [event] = await fixture
+      .database()
+      .query<Pick<IQuotationLifecycleRecord, 'evidence'>>(
+        'SELECT evidence FROM quotation_lifecycle_events WHERE quotation_id=$id AND quotation_version=$version',
+        {
+          bind: { id: saved.id, version: saved.version },
+          type: QueryTypes.SELECT,
+        },
+      );
+    expect(event.evidence).toMatchObject({
+      approvedAt: approvedAt.toISOString(),
+      approvedById: fixture.actor.id,
+      acknowledgedWarnings: ['prior-review-warning'],
+      paymentTermsNote: 'Prior payment evidence',
+      ruleConfiguration: before.ruleConfiguration,
+      paymentSchedule: before.paymentSchedule,
+    });
+    await expect(
+      service.save(before.id, input, fixture.actor),
+    ).rejects.toThrow();
+    const draftSaved = await service.save(
+      saved.id,
+      saveInput(saved),
+      fixture.actor,
+    );
+    expect(draftSaved.lifecycleHistory).toHaveLength(
+      saved.lifecycleHistory.length,
+    );
+  });
+  it('rolls back a review save audit when quotation persistence fails', async (): Promise<void> => {
+    const service = fixture.service();
+    const result = await service.createForTask(fixture.taskId, fixture.actor);
+    await Quotation.update(
+      { status: QUOTATION_STATUS.REVIEW },
+      { where: { id: result.quotationId } },
+    );
+    const before = await service.getById(result.quotationId);
+    const persistence = jest
+      .spyOn(QuotationRepository.prototype, 'update')
+      .mockRejectedValueOnce(new Error('Forced save persistence failure'));
+    try {
+      await expect(
+        service.save(before.id, saveInput(before), fixture.actor),
+      ).rejects.toThrow('Forced save persistence failure');
+    } finally {
+      persistence.mockRestore();
+    }
+    const after = await service.getById(before.id);
+    expect(after.version).toBe(before.version);
+    expect(after.status).toBe(QUOTATION_STATUS.REVIEW);
+    expect(after.lifecycleHistory).toEqual(before.lifecycleHistory);
   });
   it('rejects modification, deletion, truncation and browser role reads', async (): Promise<void> => {
     await expect(
