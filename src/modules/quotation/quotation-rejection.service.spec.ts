@@ -20,6 +20,7 @@ import type { QuotationSelectionService } from './quotation-selection.service';
 import type { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
+import { TaskQuotationLinksService } from '@Modules/quotation/task-quotation-links.service';
 import type { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import type { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 import type { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
@@ -41,6 +42,7 @@ const setup = () => {
     transactions,
     mock<UserService>(),
     mock<UserRoleService>(),
+    mock<TaskQuotationLinksService>(),
   );
   const transaction = mock<Transaction>();
   transactions.run.mockImplementation((work) => work(transaction));
@@ -84,7 +86,7 @@ describe('quotation rejection and resubmission', () => {
         actor,
       ),
     ).rejects.toBeInstanceOf(ConflictException);
-    expect(repository.update).not.toHaveBeenCalled();
+    expect(repository.update.mock.calls).toHaveLength(0);
   });
 
   it('returns a review quotation to editable draft with the reason and actor', async () => {

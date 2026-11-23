@@ -116,6 +116,20 @@ export class ProjectService {
     return this.driveLinkService.inspect(project);
   }
 
+  async quotationContext(
+    id: string,
+    transaction: Transaction,
+  ): Promise<Pick<IProject, 'id' | 'customerId'>> {
+    const project = await this.projectRepository.findQuotationContext(
+      id,
+      transaction,
+    );
+    if (!project) {
+      throw new NotFoundException(`Project ${id} was not found`);
+    }
+    return project;
+  }
+
   async getById(id: string): Promise<TProjectRead> {
     const project = await this.getStoredById(id);
     const [projectWithReason] = await this.withWaitingReasons([

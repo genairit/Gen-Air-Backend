@@ -18,6 +18,7 @@ import type { QuotationSelectionService } from './quotation-selection.service';
 import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import type { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
+import { TaskQuotationLinksService } from '@Modules/quotation/task-quotation-links.service';
 import type { CatalogueItem } from '@Modules/catalogue-item/entities/catalogue-item.entity';
 import type { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import type { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
@@ -135,6 +136,7 @@ const setup = () => {
     transactions,
     users,
     userRoles,
+    mock<TaskQuotationLinksService>(),
   );
   jest.spyOn(service, 'document').mockResolvedValue(source);
   jest.spyOn(service, 'getById').mockResolvedValue(mock({ id: randomUUID() }));
@@ -144,7 +146,7 @@ const setup = () => {
     rules: source.ruleConfiguration,
     fingerprint: source.ruleConfigFingerprint,
   });
-  projects.getById.mockResolvedValue(mock({ customerId }));
+  projects.quotationContext.mockResolvedValue(mock({ customerId }));
   links.apartmentLinks.mockResolvedValue(
     new Map([[sourceId, [mock({ apartmentId })]]]),
   );

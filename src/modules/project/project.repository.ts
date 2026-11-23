@@ -83,6 +83,17 @@ export class ProjectRepository {
     return !exists;
   }
 
+  async findQuotationContext(
+    id: string,
+    transaction: Transaction,
+  ): Promise<Pick<IProject, 'id' | 'customerId'> | null> {
+    const project = await Project.findByPk(id, {
+      attributes: ['id', 'customerId'],
+      transaction,
+    });
+    return project ? { id: project.id, customerId: project.customerId } : null;
+  }
+
   async findById(
     id: string,
     transaction?: Transaction,

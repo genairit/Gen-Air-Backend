@@ -27,8 +27,9 @@ export class CustomerRepository {
     @Inject(ProviderNames.SEQUELIZE) private readonly sequelize: Sequelize,
   ) {}
 
-  findById(id: string): Promise<Customer | null> {
+  findById(id: string, transaction?: Transaction): Promise<Customer | null> {
     return Customer.findByPk(id, {
+      transaction,
       include: [
         { model: User, paranoid: false },
         { model: CustomerContact, as: 'primaryContact' },
