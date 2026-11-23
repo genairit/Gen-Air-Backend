@@ -28,15 +28,10 @@ import {
 } from '@Constants/payment-terms.constant';
 
 import { Type } from 'class-transformer';
+import { PaymentStageDto } from '@Dto/payment-stage.dto';
 import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
+import { PAYMENT_CONFIGURATION_LIMITS } from '@Constants/payment-configuration.constant';
 
-export class PaymentStageDto {
-  @Matches(/^(?:100|[0-9]{1,2})(?:\.[0-9]{1,4})?$/)
-  declare percent: string;
-  @IsString()
-  @MaxLength(300)
-  declare text: string;
-}
 export class QuotationItemDto {
   @IsUUID()
   declare id: string;
@@ -123,7 +118,7 @@ export class SaveQuotationDto {
   @MaxLength(1000)
   declare paymentTermsNote: string;
   @IsArray()
-  @ArrayMaxSize(30)
+  @ArrayMaxSize(PAYMENT_CONFIGURATION_LIMITS.STAGES)
   @ValidateNested({ each: true })
   @Type(() => PaymentStageDto)
   declare paymentSchedule: PaymentStageDto[];

@@ -10,6 +10,11 @@ import {
   TCustomerSyncStatusCounts,
 } from './interfaces/customer.interface';
 
+import {
+  resolveCustomerPaymentUpdate,
+  validateCustomerPaymentConfiguration,
+} from './utilities/customer-payment.utility';
+
 import { Transaction } from 'sequelize';
 import { TypedLogger } from '@Logger/logger.service';
 import { Customer } from './entities/customer.entity';
@@ -21,6 +26,7 @@ import { toCursorBatch } from '@Utilities/cursor-batch.utility';
 import { GetCustomersByFilterDto } from './dto/get-by-filter.dto';
 import { CustomerOwnContactService } from './customer-own-contact.service';
 import { isCustomerTaxIdConflict } from './utilities/customer-tax-id.utility';
+import { copyPaymentConfiguration } from '@Utilities/payment-configuration.utility';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { EMPTY_CUSTOMER_SYNC_STATUS_COUNTS } from './constants/priority-sync-status.constant';
 
@@ -60,9 +66,14 @@ export class CustomerService {
     transaction: Transaction,
   ): Promise<Customer> {
     const { name, taxId, phone, email, address, customerType } = customer;
+    const payment = copyPaymentConfiguration({
+      paymentTerms: customer.paymentTerms ?? null,
+      paymentSchedule: customer.paymentSchedule ?? [],
+    });
+    validateCustomerPaymentConfiguration(payment);
     const created = await this.customerRepository.create(
       {
-        paymentTerms: customer.paymentTerms ?? null,
+        ...payment,
         name,
         taxId,
         phone: null,
@@ -170,6 +181,10 @@ export class CustomerService {
       delete attributes.phone;
       delete attributes.email;
       delete attributes.contactName;
+      Object.assign(
+        attributes,
+        resolveCustomerPaymentUpdate(changes, customer),
+      );
       await customer.update(attributes, { transaction });
       const hasOwnDetails = 'phone' in changes || 'email' in changes;
       if (hasOwnDetails) {

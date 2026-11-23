@@ -109,6 +109,7 @@ import { isCompatible } from '@Modules/catalogue-item/utilities/catalogue-rankin
 import type { IQuotationStatusCounts } from './interfaces/quotation-status-counts.interface';
 import { CUSTOMER_PROJECT_KINDS } from '@Modules/project/constants/customer-project.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { customerPaymentSnapshot } from '@Modules/customer/utilities/customer-payment.utility';
 import { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
@@ -352,6 +353,7 @@ export class QuotationService {
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
     const customer = await this.customers.getById(input.customerId);
+    const payment = customerPaymentSnapshot(customer);
     await this.validateProject(input.customerId, input.projectId ?? null);
     await this.validateSalesAgent(input.salesAgentId ?? null, actor);
     const id = randomUUID();
@@ -378,9 +380,8 @@ export class QuotationService {
           brand: '',
           brands: [],
           warningScopeVersion: WARNING_SCOPE_VERSION.PER_SYSTEM,
-          paymentTerms: customer.paymentTerms ?? null,
+          ...payment,
           paymentTermsNote: '',
-          paymentSchedule: [],
           discountPercent: '0',
           targetPretaxAmount: null,
           vatRate: DEFAULT_VAT_RATE,
