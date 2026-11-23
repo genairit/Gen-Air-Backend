@@ -258,10 +258,25 @@ export class TaskQuotationFixture {
     await QuotationItem.sync();
     await QuotationProject.sync();
     await this.database().query(
+      `CREATE TABLE quotation_lifecycle_events (id uuid,quotation_id uuid,action text,from_status text,to_status text,actor_id uuid,actor_name text,occurred_at timestamptz,quotation_version integer,reason text,evidence jsonb)`,
+    );
+    await this.database().query(
       await readFile(
         resolve(
           process.cwd(),
           'migrations/2026-11-23-task-quotation-links.sql',
+        ),
+        'utf8',
+      ),
+    );
+  }
+  async installLifecycleEvents(): Promise<void> {
+    await this.database().query('DROP TABLE quotation_lifecycle_events');
+    await this.database().query(
+      await readFile(
+        resolve(
+          process.cwd(),
+          'migrations/2026-11-23-quotation-lifecycle-events.sql',
         ),
         'utf8',
       ),

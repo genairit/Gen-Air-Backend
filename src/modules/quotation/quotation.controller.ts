@@ -220,7 +220,7 @@ export class QuotationController {
     @AuthenticatedUser()
     user: IAuthorizedUser,
   ): ReturnType<QuotationService['transition']> {
-    const quotation = await this.service.transition(id, input, user.id);
+    const quotation = await this.service.transition(id, input, user);
     return this.service.projectDetailsForActor(quotation, user);
   }
   @Post(':id/reject')

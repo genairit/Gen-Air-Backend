@@ -610,13 +610,13 @@ describe('Quotation aggregate on real PostgreSQL', () => {
     const review = await quotationService().transition(
       quote.id,
       { version: quote.version, status: QUOTATION_STATUS.REVIEW },
-      actor,
+      quotationActor,
     );
     await expect(
       quotationService().transition(
         quote.id,
         { version: review.version, status: 'approved' },
-        actor,
+        quotationActor,
       ),
     ).rejects.toMatchObject({ status: 409 });
     const acknowledged = await quotationService().acknowledge(
@@ -630,7 +630,7 @@ describe('Quotation aggregate on real PostgreSQL', () => {
     const approved = await quotationService().transition(
       quote.id,
       { version: acknowledged.version, status: 'approved' },
-      actor,
+      quotationActor,
     );
     expect(approved.approvedById).toBe(actor);
     await expect(
@@ -639,7 +639,7 @@ describe('Quotation aggregate on real PostgreSQL', () => {
     const reopened = await quotationService().transition(
       quote.id,
       { version: approved.version, status: 'draft' },
-      actor,
+      quotationActor,
     );
     expect(reopened.id).toBe(approved.id);
   });
@@ -688,12 +688,12 @@ describe('Quotation aggregate on real PostgreSQL', () => {
     const review = await quotationService().transition(
       quote.id,
       { version: fresh.version, status: 'review' },
-      actor,
+      quotationActor,
     );
     const approved = await quotationService().transition(
       quote.id,
       { version: review.version, status: 'approved' },
-      actor,
+      quotationActor,
     );
     await QuotationRule.update(
       { version: 3 },
@@ -801,13 +801,13 @@ describe('Review regression coverage', () => {
     const review = await quotationService().transition(
       quote.id,
       { version: current.version, status: 'review' },
-      actor,
+      quotationActor,
     );
     await expect(
       quotationService().transition(
         quote.id,
         { version: review.version, status: 'approved' },
-        actor,
+        quotationActor,
       ),
     ).rejects.toMatchObject({ status: 409 });
     const ack = await quotationService().acknowledge(
@@ -821,7 +821,7 @@ describe('Review regression coverage', () => {
     const approved = await quotationService().transition(
       quote.id,
       { version: ack.version, status: 'approved' },
-      actor,
+      quotationActor,
     );
     await catalogueService().update(catalogue.id, { status: 'active' });
     const history = await quotationService().getById(approved.id);
@@ -968,7 +968,7 @@ describe('Remaining aggregate write guards', () => {
       quotationService().transition(
         quote.id,
         { version: quote.version, status: 'approved' },
-        actor,
+        quotationActor,
       ),
     ).rejects.toMatchObject({ status: 409 });
     const empty = await quotationService().create(
@@ -979,7 +979,7 @@ describe('Remaining aggregate write guards', () => {
       quotationService().transition(
         empty.id,
         { version: empty.version, status: 'review' },
-        actor,
+        quotationActor,
       ),
     ).rejects.toMatchObject({ status: 400 });
   });
@@ -1153,7 +1153,7 @@ describe('Quotation deletion on real PostgreSQL', () => {
           ? await quotationService().transition(
               quote.id,
               { version: quote.version, status: QUOTATION_STATUS.REVIEW },
-              actor,
+              quotationActor,
             )
           : quote;
       const mutations: Record<string, () => Promise<unknown>> = {
@@ -1167,7 +1167,7 @@ describe('Quotation deletion on real PostgreSQL', () => {
           quotationService().transition(
             current.id,
             { version: current.version, status: QUOTATION_STATUS.APPROVED },
-            actor,
+            quotationActor,
           ),
         delete: () =>
           quotationService().delete(

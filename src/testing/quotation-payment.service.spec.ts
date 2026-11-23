@@ -62,7 +62,10 @@ const quotationModel = (row: IQuotation): MockProxy<Quotation> => {
 
 const createContext = async () => {
   const actor = {
-    ...authorizedUser([PERMISSIONS.EMPLOYEES_READ]),
+    ...authorizedUser([
+      PERMISSIONS.EMPLOYEES_READ,
+      PERMISSIONS.QUOTATIONS_APPROVE,
+    ]),
     id: randomUUID(),
   };
   const customer = makeCustomer();
@@ -223,7 +226,7 @@ describe('QuotationService card100 payment ownership', () => {
       service.transition(
         quotation.id,
         { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
-        actor.id,
+        actor,
       ),
     ).rejects.toThrow('נבחרו גם תנאי תשלום קבועים וגם שלבי תשלום');
     await repository.update(
@@ -238,7 +241,7 @@ describe('QuotationService card100 payment ownership', () => {
       service.transition(
         quotation.id,
         { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
-        actor.id,
+        actor,
       ),
     ).rejects.toThrow('יש לתאר את מועד התשלום של כל שלב');
     await repository.update(
@@ -249,7 +252,7 @@ describe('QuotationService card100 payment ownership', () => {
     const approved = await service.transition(
       quotation.id,
       { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
-      actor.id,
+      actor,
     );
     expect(approved.status).toBe(QUOTATION_STATUS.APPROVED);
   });

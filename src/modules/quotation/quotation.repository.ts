@@ -1,3 +1,8 @@
+import type {
+  IQuotationLifecycleEvent,
+  IQuotationLifecycleRecord,
+} from './interfaces/quotation-lifecycle.interface';
+
 import { Injectable } from '@nestjs/common';
 import { Op, QueryTypes, Transaction } from 'sequelize';
 import { Quotation } from './entities/quotation.entity';
@@ -12,6 +17,35 @@ import type { IQuotationStatusCounts } from './interfaces/quotation-status-count
 
 @Injectable()
 export class QuotationRepository {
+  async appendLifecycleEvent(
+    event: IQuotationLifecycleRecord,
+    transaction: Transaction,
+  ): Promise<void> {
+    const database = Quotation.sequelize;
+    if (!database) {
+      throw new Error('Quotation database unavailable');
+    }
+    await database.query(
+      'INSERT INTO quotation_lifecycle_events(id,quotation_id,action,from_status,to_status,actor_id,actor_name,occurred_at,quotation_version,reason,evidence) VALUES ($id,$quotationId,$action,$fromStatus,$toStatus,$actorId,$actorName,$occurredAt,$quotationVersion,$reason,$evidence::jsonb)',
+      {
+        transaction,
+        bind: { ...event, evidence: JSON.stringify(event.evidence) },
+      },
+    );
+  }
+  async lifecycleHistory(
+    quotationId: string,
+    transaction: Transaction,
+  ): Promise<IQuotationLifecycleEvent[]> {
+    const database = Quotation.sequelize;
+    if (!database) {
+      throw new Error('Quotation database unavailable');
+    }
+    return database.query<IQuotationLifecycleEvent>(
+      'SELECT id,quotation_id AS "quotationId",action,from_status AS "fromStatus",to_status AS "toStatus",actor_id AS "actorId",actor_name AS "actorName",occurred_at::text AS "occurredAt",quotation_version AS "quotationVersion",reason FROM quotation_lifecycle_events WHERE quotation_id=$quotationId ORDER BY quotation_version,id',
+      { transaction, bind: { quotationId }, type: QueryTypes.SELECT },
+    );
+  }
   async findCloneCommand(
     command: Pick<IQuotationCloneCommand, 'actorId' | 'idempotencyKey'>,
     transaction: Transaction,

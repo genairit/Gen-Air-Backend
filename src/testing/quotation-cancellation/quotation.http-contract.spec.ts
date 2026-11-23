@@ -689,7 +689,7 @@ describe('Quotation order and cancellation HTTP contract', () => {
       .set('Authorization', 'Bearer valid')
       .send(body)
       .expect(201);
-    expect(quotation.transition).toHaveBeenCalledWith(id, body, state.actor.id);
+    expect(quotation.transition).toHaveBeenCalledWith(id, body, state.actor);
   });
 
   test('manual cancellation and restoration forward version and authenticated actor', async () => {
