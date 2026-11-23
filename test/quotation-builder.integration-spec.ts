@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { Sequelize } from 'sequelize-typescript';
 import { UserService } from '@Modules/user/user.service';
 import { setTimeout as wait } from 'node:timers/promises';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { ProviderNames } from '@Providers/database/provider-names';
 import { CustomerService } from '@Modules/customer/customer.service';
@@ -41,7 +42,10 @@ import { ProjectStageTransition } from '@Modules/project-stage-transition/entiti
 const actor = randomUUID(),
   otherActor = randomUUID(),
   customerId = randomUUID();
-const quotationActor = { ...authorizedUser(), id: actor };
+const quotationActor = {
+  ...authorizedUser([PERMISSIONS.QUOTATIONS_APPROVE]),
+  id: actor,
+};
 const customer = { id: customerId, paymentTerms: 'prepaid' };
 const databaseUrl = process.env.QUOTATION_TEST_DATABASE_URL;
 if (!databaseUrl || !databaseUrl.includes('127.0.0.1')) {
