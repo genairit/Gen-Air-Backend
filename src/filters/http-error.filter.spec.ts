@@ -36,7 +36,10 @@ describe('GeneralFilter public Drive error HTTP contract', () => {
   });
   afterAll(async () => state.app?.close());
   const server = (): Server => {
-    if (!state.app) throw new Error('Application not initialized');
+    if (!state.app) {
+      throw new Error('Application not initialized');
+    }
+
     return state.app.getHttpServer();
   };
   it.each(Object.values(DRIVE_FOLDER_LINK_ERROR_CODES))(
