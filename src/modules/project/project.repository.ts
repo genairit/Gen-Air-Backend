@@ -29,19 +29,30 @@ import { InternalServerErrorException } from '@nestjs/common';
 import { PROJECT_NAME } from './constants/project-name.constant';
 import { CURSOR_DIRECTIONS } from '@Constants/pagination.constant';
 import { Customer } from '@Modules/customer/entities/customer.entity';
-import { rethrowProjectNameConflict } from './utilities/project-name.utility';
 import { ICursorPage, ICursorBatch } from '@Interfaces/cursor-page.interface';
 import { CUSTOMER_SEARCH_INCLUDE } from './constants/project-include.constant';
 import { toContainsPattern, whereWhenPresent } from '@Utilities/query.utility';
 import { ProjectType } from '@Modules/project-type/entities/project-type.entity';
 import { ProjectStage } from '@Modules/project-stage/entities/project-stage.entity';
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
+import { rethrowProjectWriteConflict } from './utilities/project-write-conflict.utility';
 import { BUILDING_INHERITANCE_ATTRIBUTES } from './constants/project-inheritance.constant';
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { buildCustomerReferenceInclude } from '@Modules/customer/constants/customer-reference.constant';
 
 @Injectable()
 export class ProjectRepository {
+  async findDriveFolderOwners(
+    transaction?: Transaction,
+  ): Promise<Pick<IProject, 'id' | 'driveFolderId' | 'parentProjectId'>[]> {
+    const projects = await Project.findAll({
+      where: { driveFolderId: { [Op.ne]: null } },
+      attributes: ['id', 'driveFolderId', 'parentProjectId'],
+      transaction,
+    });
+    return projects.map((project) => project.get({ plain: true }));
+  }
+
   async isNameAvailable(
     name: string,
     excludeId: string | null,
@@ -226,7 +237,7 @@ export class ProjectRepository {
         { transaction },
       );
     } catch (error) {
-      return rethrowProjectNameConflict(error);
+      return rethrowProjectWriteConflict(error);
     }
   }
 
@@ -243,7 +254,7 @@ export class ProjectRepository {
 
       return updatedCount > 0;
     } catch (error) {
-      return rethrowProjectNameConflict(error);
+      return rethrowProjectWriteConflict(error);
     }
   }
 

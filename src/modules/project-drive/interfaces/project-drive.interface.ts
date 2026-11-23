@@ -12,4 +12,5 @@ export interface IProjectDriveContents {
   folderId: string;
   files: IDriveItem[];
   folders: IProjectDriveFolder[];
+  missingTemplateFolders?: string[];
 }

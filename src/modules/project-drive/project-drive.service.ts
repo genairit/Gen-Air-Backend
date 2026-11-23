@@ -12,8 +12,10 @@ import {
 import {
   MAX_FOLDER_DEPTH,
   APARTMENTS_FOLDER_NAME,
+  DRIVE_PROVISIONING_MODE,
   PROJECT_ROOT_FOLDER_NAME,
   PROJECT_DRIVE_ERROR_CODES,
+  type DriveProvisioningModeType,
 } from './constants/project-drive.constant';
 
 import {
@@ -43,9 +45,11 @@ import type { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { validateDriveUploads } from '@Utilities/validate-drive-upload.utility';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
 import { IApartmentFolderRepair } from './interfaces/apartment-folder-repair.interface';
+import { PreviewDriveFolderDto } from '@Modules/project-drive-link/dto/preview-drive-folder.dto';
 import { DRIVE_CONNECTION_STATUS } from '@Providers/google-drive/constants/drive-connection.constant';
 import { getDriveConnectionFailure } from '@Providers/google-drive/utilities/drive-connection.utility';
 import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
+import { IExistingDriveFolder } from '@Modules/project-drive-link/interfaces/drive-folder-link.interface';
 import { DriveTemplateFolderService } from '@Modules/drive-template-folder/drive-template-folder.service';
 import { IDriveTemplateFolderNode } from '@Modules/drive-template-folder/interfaces/drive-template-folder.interface';
 
@@ -122,14 +126,39 @@ export class ProjectDriveService {
     }
   }
 
+  previewExistingFolder(
+    input: PreviewDriveFolderDto,
+  ): Promise<IExistingDriveFolder> {
+    return this.projectService.previewExistingDriveFolder(input);
+  }
+
   provision(projectId: string): Promise<IProject> {
     const pending = this.provisioning.get(projectId);
     if (pending) {
       return pending;
     }
 
-    const operation = this.provisionProject(projectId).finally(() => {
-      this.provisioning.delete(projectId);
+    return this.startProvision(projectId, DRIVE_PROVISIONING_MODE.AUTOMATIC);
+  }
+
+  completeTemplate(projectId: string): Promise<IProject> {
+    return this.startProvision(
+      projectId,
+      DRIVE_PROVISIONING_MODE.COMPLETE_TEMPLATE,
+    );
+  }
+
+  private startProvision(
+    projectId: string,
+    mode: DriveProvisioningModeType,
+  ): Promise<IProject> {
+    const previous = this.provisioning.get(projectId) ?? Promise.resolve(null);
+    const run = () => this.provisionProject(projectId, mode);
+    // Each queued request runs independently of the previous caller's outcome.
+    const operation = previous.then(run, run).finally(() => {
+      if (this.provisioning.get(projectId) === operation) {
+        this.provisioning.delete(projectId);
+      }
     });
     this.provisioning.set(projectId, operation);
     return operation;
@@ -304,8 +333,13 @@ export class ProjectDriveService {
 
     const folders = items.filter((item) => item.isFolder);
     const fileCounts = await this.countFolderFiles(folders);
+    const project = await this.projectService.getById(projectId);
+    const missingTemplateFolders = project.driveFolderLinked
+      ? await this.projectService.inspectLinkedDriveFolder(project)
+      : null;
 
     return {
+      ...(missingTemplateFolders ? { missingTemplateFolders } : {}),
       folderId,
       files: items.filter((item) => !item.isFolder),
       folders: folders.map((folder) =>
@@ -504,12 +538,25 @@ export class ProjectDriveService {
     return item;
   }
 
-  private async provisionProject(projectId: string): Promise<IProject> {
+  private async provisionProject(
+    projectId: string,
+    mode: DriveProvisioningModeType,
+  ): Promise<IProject> {
     const projectsRootFolderId = this.getProjectsRootFolderId();
     const [project, templateTree] = await Promise.all([
       this.projectService.getById(projectId),
       this.driveTemplateFolderService.getTree(),
     ]);
+    if (project.driveFolderLinked) {
+      await this.projectService.inspectLinkedDriveFolder(project);
+    }
+    if (
+      project.driveFolderLinked &&
+      mode !== DRIVE_PROVISIONING_MODE.COMPLETE_TEMPLATE
+    ) {
+      return project;
+    }
+
     const parentFolderId = project.parentProjectId
       ? await this.getApartmentsFolderId(project.parentProjectId)
       : projectsRootFolderId;

@@ -24,10 +24,14 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { ProjectDriveService } from './project-drive.service';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { DriveFileParamsDto } from './dto/drive-file-params.dto';
+import { assertPermissions } from '@Utilities/permission.utility';
+import { Authenticated } from '@Decorators/authenticated.decorator';
 import type { IDriveItem } from '@Interfaces/google-drive.interface';
 import { ApiTags, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
 import { DRIVE_UPLOAD_POLICY } from '@Constants/drive-upload.constant';
 import { ISharedDocument } from './interfaces/shared-document.interface';
+import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
+import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import { ApartmentFolderRepairDto } from './dto/apartment-folder-repair.dto';
 import { IProjectDriveContents } from './interfaces/project-drive.interface';
 import type { IProject } from '@Modules/project/interfaces/project.interface';
@@ -35,13 +39,37 @@ import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 import { SharedDocumentSelectionDto } from './dto/shared-document-selection.dto';
 import { IApartmentFolderRepair } from './interfaces/apartment-folder-repair.interface';
 import { UploadCleanupInterceptor } from '../../interceptors/upload-cleanup.interceptor';
+import { PreviewDriveFolderDto } from '@Modules/project-drive-link/dto/preview-drive-folder.dto';
 import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
+import { IExistingDriveFolder } from '@Modules/project-drive-link/interfaces/drive-folder-link.interface';
 
 @ApiTags('project-drive')
 @ApiBearerAuth()
 @Controller('project-drive')
 export class ProjectDriveController {
   constructor(private readonly projectDriveService: ProjectDriveService) {}
+
+  @Post('existing-folder/preview')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated()
+  previewExistingFolder(
+    @Body() input: PreviewDriveFolderDto,
+    @AuthenticatedUser() actor: IAuthorizedUser,
+  ): Promise<IExistingDriveFolder> {
+    const permission = input.buildingId
+      ? PERMISSIONS.APARTMENTS_CREATE
+      : PERMISSIONS.PROJECTS_CREATE;
+    assertPermissions(actor, permission);
+    return this.projectDriveService.previewExistingFolder(input);
+  }
+
+  @Post(':projectId/complete-template')
+  @RequirePermissions(PERMISSIONS.PROJECTS_UPDATE)
+  completeTemplate(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+  ): Promise<IProject> {
+    return this.projectDriveService.completeTemplate(projectId);
+  }
 
   @Get('upload-policy')
   @RequirePermissions(PERMISSIONS.DRIVE_READ)

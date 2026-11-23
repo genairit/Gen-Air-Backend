@@ -197,6 +197,7 @@ Table projects {
   has_own_team boolean [not null, default: false, note: 'Apartments inherit the building team unless explicitly overridden, including an empty override']
   parent_project_id uuid       [ref: > projects.id, note: 'The building an apartment belongs to; one level only (trigger trg_projects_single_level_nesting)']
   created_by_id   uuid         [not null, ref: > users.id, note: 'The user who opened the project; their initials form the project code']
+  drive_folder_linked boolean [not null, default: false, note: 'Existing folder selected at creation; automatic provisioning never fills missing template folders']
   drive_folder_id varchar(128) [note: 'Root project folder; subfolders are read live from Drive']
   shared_document_file_id varchar(128) [note: 'One selected parent-project Drive file ID, resolved live by apartments; chk_parent_project_shared_document requires parent_project_id to be null when set']
   priority_id   varchar(64)    [note: 'Identifier of the matching project in Priority, the ERP; null until it is synchronised']
@@ -229,6 +230,7 @@ Table projects {
     project_type_id
     customer_id
     parent_project_id
+    drive_folder_id [unique, name: 'uq_projects_live_drive_folder', note: 'Partial: deleted_at IS NULL AND drive_folder_id IS NOT NULL']
     (parent_project_id, customer_apartment) [unique, note: 'Live apartments only: one apartment number per building']
   }
   Note: 'The central work item: a site the company installs air conditioning in. A project is either a standalone project or, for multi-unit buildings, an apartment that points at its building through parent_project_id. It carries the customer details, the site address, the Drive folder, the team and the board stage. Soft deleted.'

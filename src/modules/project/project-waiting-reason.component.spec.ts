@@ -23,6 +23,7 @@ import { ProjectTypeService } from '@Modules/project-type/project-type.service';
 import { ProjectStageService } from '@Modules/project-stage/project-stage.service';
 import { ProjectMemberService } from '@Modules/project-member/project-member.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { ProjectDriveLinkService } from '@Modules/project-drive-link/project-drive-link.service';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 
 const PROJECT_ID = '00000000-0000-4000-8000-000000000001';
@@ -70,6 +71,7 @@ describe('waiting-for-response reason API', () => {
       controllers: [ProjectController],
       providers: [
         ProjectService,
+        { provide: ProjectDriveLinkService, useValue: {} },
         { provide: ProjectRepository, useValue: projectRepository },
         {
           provide: ProjectApartmentService,

@@ -33,3 +33,11 @@ export const PROJECT_DRIVE_ERROR_CODES = {
   APARTMENT_REPAIR_REQUIRED: 'APARTMENT_DRIVE_REPAIR_REQUIRED',
   AUTHENTICATION_FAILED: 'DRIVE_AUTHENTICATION_FAILED',
 } as const;
+
+export const DRIVE_PROVISIONING_MODE = {
+  AUTOMATIC: 'automatic',
+  COMPLETE_TEMPLATE: 'complete_template',
+} as const;
+
+export type DriveProvisioningModeType =
+  (typeof DRIVE_PROVISIONING_MODE)[keyof typeof DRIVE_PROVISIONING_MODE];
