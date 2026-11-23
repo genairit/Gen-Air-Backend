@@ -123,9 +123,12 @@ export class ProjectContactService {
         role,
         transaction,
       );
+      const displacedContacts = contactId
+        ? { projectId, role, contactId: { [Op.ne]: contactId } }
+        : { projectId, role };
       await ProjectContactLink.update(
         { role: null },
-        { where: { projectId, role }, transaction },
+        { where: displacedContacts, transaction },
       );
       if (target) {
         await target.update({ role }, { transaction });

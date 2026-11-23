@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 
-import { Transaction } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import { ProjectContactService } from './project-contact.service';
 import { Project } from '@Modules/project/entities/project.entity';
 import { ProjectContactLink } from './entities/project-contact-link.entity';
@@ -67,7 +67,11 @@ describe('ProjectContactService fixed role assignment', () => {
     expect(context.updateLinks).toHaveBeenCalledWith(
       { role: null },
       {
-        where: { projectId: IDS.PROJECT, role: 'architect' },
+        where: {
+          projectId: IDS.PROJECT,
+          role: 'architect',
+          contactId: { [Op.ne]: IDS.CONTACT },
+        },
         transaction: context.transaction,
       },
     );
@@ -108,6 +112,17 @@ describe('ProjectContactService fixed role assignment', () => {
     expect(update).toHaveBeenCalledWith(
       { role: 'architect' },
       { transaction: context.transaction },
+    );
+    expect(context.updateLinks).toHaveBeenCalledWith(
+      { role: null },
+      {
+        where: {
+          projectId: IDS.PROJECT,
+          role: 'architect',
+          contactId: { [Op.ne]: IDS.CONTACT },
+        },
+        transaction: context.transaction,
+      },
     );
     expect(context.createLink).not.toHaveBeenCalled();
   });
