@@ -1,3 +1,4 @@
+import { TaskSortType } from '../constants/task-sort.constant';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { TaskStatusType } from '../constants/task-status.constant';
 import { IProject } from '@Modules/project/interfaces/project.interface';
@@ -47,6 +48,7 @@ export interface IProtectedTaskSlot {
 }
 
 export interface ITaskFilter {
+  sort?: TaskSortType;
   search: string | null;
   projectId: string | null;
   isUrgent: boolean | null;
@@ -102,4 +104,14 @@ export interface ITaskCursor {
   id: string;
   isUrgent: boolean;
   dueDate: Date | null;
+}
+
+export interface ITaskCursorContext {
+  sort: TaskSortType;
+  position: ITaskCursor;
+}
+
+export interface ITaskCursorPageOptions {
+  batchSize: number;
+  sort?: TaskSortType;
 }
