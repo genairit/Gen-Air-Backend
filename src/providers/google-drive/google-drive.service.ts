@@ -28,6 +28,13 @@ import {
   DRIVE_CONNECTION_METADATA_FIELDS,
 } from './constants/drive-connection.constant';
 
+import type {
+  IPublicationDriveFile,
+  IPublicationDriveMedia,
+  IPublicationDriveCreate,
+} from './interfaces/publication-drive.interface';
+
+import { Readable } from 'node:stream';
 import { createReadStream } from 'node:fs';
 import { Injectable } from '@nestjs/common';
 import { drive, drive_v3 } from '@googleapis/drive';
@@ -38,6 +45,7 @@ import { createDriveAuth } from './utilities/drive-auth.utility';
 import { EnvironmentManager } from '@Utilities/environment-manager.utility';
 import { addFileCounts, tallyTreeLevel } from '@Utilities/drive-tree.utility';
 import { IDriveConnectionResult } from './interfaces/drive-connection.interface';
+import { PUBLICATION_LIMITS } from '@Modules/quotation-publication/constants/publication.constant';
 
 const SHARED_DRIVE_OPTIONS = { supportsAllDrives: true } as const;
 
@@ -55,6 +63,177 @@ export class GoogleDriveService {
     version: 'v3',
     auth: createDriveAuth(),
   });
+
+  private publicationStopped = false;
+  stopPublicationEffects(): void {
+    this.publicationStopped = true;
+  }
+  private assertPublicationRunning(): void {
+    if (this.publicationStopped) {
+      throw new Error('Publication executor is draining');
+    }
+  }
+  async listPublicationChildren(
+    folderId: string,
+    pageToken: string | null = null,
+  ): Promise<IDriveItem[]> {
+    this.assertPublicationRunning();
+    const { data } = await this.drive.files.list(
+      {
+        ...LIST_OPTIONS,
+        q: buildChildrenQuery(folderId),
+        fields: `nextPageToken, files(${GOOGLE_DRIVE.ITEM_FIELDS})`,
+        ...(pageToken ? { pageToken } : {}),
+      },
+      { timeout: PUBLICATION_LIMITS.DRIVE_TIMEOUT_MS, retry: false },
+    );
+    const files = toDriveItems(data.files ?? []);
+    if (!data.nextPageToken) {
+      return files;
+    }
+    return [
+      ...files,
+      ...(await this.listPublicationChildren(folderId, data.nextPageToken)),
+    ];
+  }
+  async reservePublicationId(): Promise<string> {
+    this.assertPublicationRunning();
+    const { data } = await this.drive.files.generateIds(
+      { count: 1, space: 'drive', type: 'files' },
+      { timeout: PUBLICATION_LIMITS.DRIVE_TIMEOUT_MS, retry: false },
+    );
+    const id = data.ids?.at(0);
+    if (!id) {
+      throw new Error('Drive did not reserve an identity');
+    }
+    return id;
+  }
+  async inspectPublicationFile(
+    id: string,
+  ): Promise<IPublicationDriveFile | null> {
+    this.assertPublicationRunning();
+    try {
+      const { data } = await this.drive.files.get(
+        {
+          ...SHARED_DRIVE_OPTIONS,
+          fileId: id,
+          fields:
+            'id,name,mimeType,parents,trashed,md5Checksum,headRevisionId,appProperties',
+        },
+        { timeout: PUBLICATION_LIMITS.DRIVE_TIMEOUT_MS, retry: false },
+      );
+      if (!data.id || !data.mimeType) {
+        throw new Error('Incomplete Drive metadata');
+      }
+      return {
+        id: data.id,
+        name: data.name ?? '',
+        mimeType: data.mimeType,
+        parents: data.parents ?? [],
+        trashed: data.trashed ?? false,
+        md5: data.md5Checksum ?? null,
+        revisionId: data.headRevisionId ?? null,
+        properties: data.appProperties ?? {},
+      };
+    } catch (error: unknown) {
+      if (isDriveNotFoundError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+  async createPublicationFile(input: IPublicationDriveCreate): Promise<void> {
+    this.assertPublicationRunning();
+    const media = input.bytes
+      ? {
+          media: { mimeType: input.mimeType, body: Readable.from(input.bytes) },
+        }
+      : {};
+    await this.drive.files.create(
+      {
+        ...SHARED_DRIVE_OPTIONS,
+        ...media,
+        fields: 'id',
+        keepRevisionForever: input.bytes !== null,
+        requestBody: {
+          id: input.id,
+          name: input.name,
+          parents: [input.parentId],
+          mimeType: input.mimeType,
+          appProperties: input.properties,
+        },
+      },
+      { timeout: PUBLICATION_LIMITS.DRIVE_TIMEOUT_MS, retry: false },
+    );
+  }
+  async replacePublicationMedia(input: IPublicationDriveMedia): Promise<void> {
+    this.assertPublicationRunning();
+    await this.drive.files.update(
+      {
+        ...SHARED_DRIVE_OPTIONS,
+        fileId: input.id,
+        keepRevisionForever: true,
+        fields: 'id',
+        requestBody: { name: input.name },
+        media: {
+          mimeType: GOOGLE_DRIVE.PDF_MIME_TYPE,
+          body: Readable.from(input.bytes),
+        },
+      },
+      { timeout: PUBLICATION_LIMITS.DRIVE_TIMEOUT_MS, retry: false },
+    );
+  }
+  async retainPublicationRevision(
+    fileId: string,
+    revisionId: string,
+    expectedMd5: string,
+  ): Promise<void> {
+    this.assertPublicationRunning();
+    await this.drive.revisions.update(
+      {
+        fileId,
+        revisionId,
+        requestBody: { keepForever: true },
+        fields: 'id,keepForever,md5Checksum',
+      },
+      { timeout: PUBLICATION_LIMITS.DRIVE_TIMEOUT_MS, retry: false },
+    );
+    this.assertPublicationRunning();
+    const { data } = await this.drive.revisions.get(
+      { fileId, revisionId, fields: 'id,keepForever,md5Checksum' },
+      { timeout: PUBLICATION_LIMITS.DRIVE_TIMEOUT_MS, retry: false },
+    );
+    if (
+      data.id !== revisionId ||
+      data.keepForever !== true ||
+      data.md5Checksum !== expectedMd5
+    ) {
+      throw new Error('Drive did not retain the PDF revision');
+    }
+  }
+  async movePublicationFile(
+    fileId: string,
+    sourceParents: string[],
+    destinationId: string,
+  ): Promise<void> {
+    this.assertPublicationRunning();
+    const removeParents = sourceParents
+      .filter((parent): boolean => parent !== destinationId)
+      .join(',');
+    const addParents = sourceParents.includes(destinationId)
+      ? {}
+      : { addParents: destinationId };
+    await this.drive.files.update(
+      {
+        ...SHARED_DRIVE_OPTIONS,
+        ...addParents,
+        ...(removeParents ? { removeParents } : {}),
+        fileId,
+        fields: 'id',
+      },
+      { timeout: PUBLICATION_LIMITS.DRIVE_TIMEOUT_MS, retry: false },
+    );
+  }
 
   getProjectsRootFolderId(): string | null {
     return EnvironmentManager.get('GOOGLE_DRIVE_ROOT_FOLDER_ID') || null;

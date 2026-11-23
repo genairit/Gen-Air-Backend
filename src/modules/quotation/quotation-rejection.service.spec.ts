@@ -21,6 +21,7 @@ import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import type { QuotationSelectionService } from './quotation-selection.service';
 import type { IQuotationDetailView } from './interfaces/quotation-document.interface';
 import { QUOTATION_LIFECYCLE_ACTION } from './constants/quotation-lifecycle.constant';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import type { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
@@ -61,6 +62,7 @@ const setup = (): IRejectionTestContext => {
     mock<UserService>(),
     mock<UserRoleService>(),
     mock<TaskQuotationLinksService>(),
+    mock<PublicationService>(),
   );
   const transaction = mock<Transaction>();
   transactions.run.mockImplementation((work): ReturnType<typeof work> =>

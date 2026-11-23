@@ -34,6 +34,7 @@ import { QuotationItemService } from '@Modules/quotation-item/quotation-item.ser
 import { QuotationRule } from '@Modules/quotation-rule/entities/quotation-rule.entity';
 import { CatalogueItem } from '@Modules/catalogue-item/entities/catalogue-item.entity';
 import { QuotationItem } from '@Modules/quotation-item/entities/quotation-item.entity';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import { QuotationRuleRepository } from '@Modules/quotation-rule/quotation-rule.repository';
 import { CatalogueItemRepository } from '@Modules/catalogue-item/catalogue-item.repository';
 import { QuotationItemRepository } from '@Modules/quotation-item/quotation-item.repository';
@@ -189,6 +190,7 @@ export class TaskQuotationFixture {
       users,
       userRoles,
       this.links(),
+      mock<PublicationService>(),
     );
   }
 

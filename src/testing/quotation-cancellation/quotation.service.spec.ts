@@ -25,6 +25,7 @@ import type { CustomerService } from '@Modules/customer/customer.service';
 import type { UserRoleService } from '@Modules/user-role/user-role.service';
 import { QuotationService } from '../../modules/quotation/quotation.service';
 import type { SaveQuotationDto } from '@Modules/quotation/dto/save-quotation.dto';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import type { QuotationRepository } from '../../modules/quotation/quotation.repository';
 import type { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
@@ -171,6 +172,7 @@ const createService = (
     mock<UserService>(),
     mock<UserRoleService>(),
     mock<TaskQuotationLinksService>(),
+    mock<PublicationService>(),
   );
   jest.spyOn(service, 'document').mockResolvedValue(quotation);
   jest

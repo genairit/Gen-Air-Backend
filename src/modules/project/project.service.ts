@@ -130,6 +130,17 @@ export class ProjectService {
     return project;
   }
 
+  async quotationSnapshot(
+    id: string,
+    transaction?: Transaction,
+  ): Promise<IProject> {
+    const project = await this.projectRepository.findById(id, transaction);
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+    return this.projectApartmentService.resolveForRead(project);
+  }
+
   async getById(id: string): Promise<TProjectRead> {
     const project = await this.getStoredById(id);
     const [projectWithReason] = await this.withWaitingReasons([
