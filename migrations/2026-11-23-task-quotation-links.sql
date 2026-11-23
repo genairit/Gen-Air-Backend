@@ -12,7 +12,7 @@ CREATE INDEX task_quotation_links_quotation ON task_quotation_links(quotation_id
 ALTER TABLE task_quotation_links ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON task_quotation_links FROM PUBLIC, anon, authenticated;
 -- Context constraints also cover internal writers, task deletion history and project edits.
-CREATE FUNCTION check_task_quotation_context() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION check_task_quotation_context() RETURNS trigger LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
 DECLARE
   affected jsonb := CASE WHEN TG_OP = 'DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END;
 BEGIN
@@ -36,7 +36,7 @@ BEGIN
       ))
     )
   ) THEN
-    RAISE EXCEPTION 'Linked task quotation context cannot change' USING ERRCODE='23514';
+    RAISE EXCEPTION 'Linked task quotation context cannot change' USING ERRCODE='23514', CONSTRAINT='task_quotation_context_consistency';
   END IF;
   RETURN NULL;
 END;

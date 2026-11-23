@@ -1,155 +1,23 @@
-import { tmpdir } from 'node:os';
-import { promisify } from 'node:util';
-import { createServer } from 'node:net';
 import { randomUUID } from 'node:crypto';
-import { join, resolve } from 'node:path';
 import { mock } from 'jest-mock-extended';
-import { execFile } from 'node:child_process';
-import { Sequelize } from 'sequelize-typescript';
-import { QuotationService } from './quotation.service';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { QuotationController } from './quotation.controller';
 import { PERMISSIONS } from '@Constants/authorization.constant';
-import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
-import { TaskQuotationLinksService } from './task-quotation-links.service';
-import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { DEFAULT_VAT_RATE } from './constants/quotation.constant';
+import { getHttpErrorResponse } from '@Utilities/http-error.utility';
+import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
+import { TaskQuotationFixture } from './testing/task-quotation.fixture';
+import { getHttpErrorPayload } from '@Utilities/http-error-payload.utility';
+import { taskQuotationSaveInput } from './testing/task-quotation-save.fixture';
+import { QUOTATION_RULE_KEYS } from '@Modules/quotation-rule/constants/quotation-rule.constant';
 
-const execute = promisify(execFile);
-const binaries = resolve(
-  process.cwd(),
-  'node_modules',
-  '@embedded-postgres',
-  `${process.platform}-${process.arch}`,
-  'native',
-  'bin',
-);
-const state: { database: Sequelize | null; directory: string } = {
-  database: null,
-  directory: '',
-};
-const taskId = randomUUID();
-const customerId = randomUUID();
-const projectId = randomUUID();
-const actor = mock<IAuthorizedUser>({
-  permissions: [
-    PERMISSIONS.TASKS_READ,
-    PERMISSIONS.QUOTATIONS_READ,
-    PERMISSIONS.QUOTATIONS_CREATE,
-    PERMISSIONS.PROJECTS_READ,
-    PERMISSIONS.CUSTOMERS_READ,
-  ],
-});
-const database = () => {
-  if (!state.database) {
-    throw new Error('Database unavailable');
-  }
-  return state.database;
-};
-const links = () => new TaskQuotationLinksService(database());
-const service = () => {
-  const current = new QuotationService(
-    mock(),
-    mock(),
-    mock(),
-    mock(),
-    mock(),
-    mock(),
-    mock(),
-    mock(),
-    mock(),
-    new DatabaseTransactionService(database()),
-    mock(),
-    mock(),
-    links(),
-  );
-  jest
-    .spyOn(current, 'createDraft')
-    .mockImplementation(async (input, _actor, transaction) => {
-      const id = randomUUID();
-      await database().query(
-        "INSERT INTO quotations(id,number,status,customer_id) VALUES ($id::uuid,$id::text,'draft',$customerId)",
-        { bind: { id, customerId: input.customerId }, transaction },
-      );
-      if (input.projectId) {
-        await database().query(
-          'INSERT INTO quotation_projects VALUES ($id,$projectId,true)',
-          { bind: { id, projectId: input.projectId }, transaction },
-        );
-      }
-      return id;
-    });
-  return current;
-};
-beforeAll(async () => {
-  const server = createServer();
-  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
-  const address = server.address();
-  await new Promise<void>((done) => server.close(() => done()));
-  if (!address || typeof address === 'string') {
-    throw new Error('No port');
-  }
-  state.directory = await mkdtemp(join(tmpdir(), 'task-quotes-'));
-  await execute(resolve(binaries, 'initdb'), [
-    '-D',
-    state.directory,
-    '-U',
-    'postgres',
-    '--auth=trust',
-  ]);
-  await execute(resolve(binaries, 'pg_ctl'), [
-    '-D',
-    state.directory,
-    '-o',
-    `-h 127.0.0.1 -p ${address.port}`,
-    '-l',
-    join(state.directory, 'postgres.log'),
-    '-w',
-    'start',
-  ]);
-  state.database = new Sequelize({
-    dialect: 'postgres',
-    host: '127.0.0.1',
-    port: address.port,
-    username: 'postgres',
-    password: '',
-    database: 'postgres',
-    logging: false,
-    pool: { max: 6, min: 0 },
-  });
-  await database().query(`CREATE ROLE anon;CREATE ROLE authenticated;
-    CREATE TABLE customers(id uuid PRIMARY KEY,deleted_at timestamptz);
-    CREATE TABLE projects(id uuid PRIMARY KEY,customer_id uuid,deleted_at timestamptz);
-    CREATE TABLE tasks(id uuid PRIMARY KEY,title text,task_type text,project_id uuid,customer_id uuid,deleted_at timestamptz);
-    CREATE TABLE quotations(id uuid PRIMARY KEY,number text,status text,customer_id uuid,deleted_at timestamptz);
-    CREATE TABLE quotation_projects(quotation_id uuid,project_id uuid,is_primary boolean);
-    INSERT INTO customers VALUES ('${customerId}',NULL);
-    INSERT INTO projects VALUES ('${projectId}','${customerId}',NULL);
-    INSERT INTO tasks VALUES ('${taskId}','Quotation task','quotation','${projectId}',NULL,NULL);`);
-  await database().query(
-    await readFile(
-      resolve(process.cwd(), 'migrations/2026-11-23-task-quotation-links.sql'),
-      'utf8',
-    ),
-  );
-}, 30000);
-afterAll(async () => {
-  await state.database?.close();
-  if (state.directory) {
-    await execute(resolve(binaries, 'pg_ctl'), [
-      '-D',
-      state.directory,
-      '-m',
-      'immediate',
-      '-w',
-      'stop',
-    ]);
-    await rm(state.directory, { recursive: true, force: true });
-  }
-});
-beforeEach(async () => {
-  await database().query(
-    'TRUNCATE task_quotation_links,quotation_projects,quotations',
-  );
-});
+const fixture = new TaskQuotationFixture();
+const { taskId, customerId, projectId, actor } = fixture;
+const database = () => fixture.database();
+const links = () => fixture.links();
+const service = () => fixture.service();
+beforeAll(() => fixture.start(), 30000);
+afterAll(() => fixture.close());
+beforeEach(() => fixture.reset());
 it('serializes concurrent creates and response-loss retries to one durable primary', async () => {
   const current = service();
   const results = await Promise.all(
@@ -161,7 +29,6 @@ it('serializes concurrent creates and response-loss retries to one durable prima
     quotationId: results[0].quotationId,
     created: false,
   });
-  expect(jest.spyOn(current, 'createDraft')).toHaveBeenCalledTimes(1);
 });
 it('rolls draft and project association back if link insertion fails', async () => {
   const current = service();
@@ -183,37 +50,6 @@ it('rolls draft and project association back if link insertion fails', async () 
       'DROP TRIGGER reject_link ON task_quotation_links;DROP FUNCTION reject_link()',
     );
   }
-});
-it('copies secondary links and recovers a deleted primary without losing historical associations', async () => {
-  const current = service();
-  const first = await current.createForTask(taskId, actor);
-  const secondary = randomUUID();
-  await database().transaction(async (transaction) => {
-    await database().query(
-      'INSERT INTO quotations SELECT $id::uuid,$id::text,status,customer_id,NULL FROM quotations WHERE id=$source',
-      { bind: { id: secondary, source: first.quotationId }, transaction },
-    );
-    await database().query(
-      'INSERT INTO quotation_projects VALUES ($id,$projectId,true)',
-      { bind: { id: secondary, projectId }, transaction },
-    );
-    await links().copy(first.quotationId, secondary, transaction);
-  });
-  expect(
-    (await links().list(taskId)).filter((row) => !row.isPrimary),
-  ).toHaveLength(1);
-  await database().query(
-    'UPDATE quotations SET deleted_at=now() WHERE id=$id',
-    { bind: { id: first.quotationId } },
-  );
-  expect(await current.createForTask(taskId, actor)).toEqual({
-    quotationId: secondary,
-    created: false,
-  });
-  const [history] = await database().query(
-    'SELECT * FROM task_quotation_links',
-  );
-  expect(history).toHaveLength(2);
 });
 it('rejects linked customer/project changes while retaining deleted task documents', async () => {
   const result = await service().createForTask(taskId, actor);
@@ -311,7 +147,6 @@ it('supports legacy customer-only tasks while blocking missing direct customer a
       { bind: { taskId } },
     );
   }
-  expect(jest.spyOn(current, 'createDraft')).toHaveBeenCalledTimes(1);
 });
 it('restricts public Data API access and enforces one primary per task', async () => {
   await service().createForTask(taskId, actor);
@@ -371,4 +206,244 @@ it('creates customer-only legacy quotation without project read permission', asy
       { bind: { projectId, taskId } },
     );
   }
+});
+it('runs the normal initializer with project and sales agent under a saturated connection pool', async () => {
+  const current = service();
+  const results = await Promise.all(
+    Array.from({ length: 8 }, () =>
+      current.create({ customerId, projectId, salesAgentId: actor.id }, actor),
+    ),
+  );
+  expect(new Set(results.map((row) => row.id)).size).toBe(8);
+  expect(new Set(results.map((row) => row.number)).size).toBe(8);
+  for (const result of results) {
+    expect(result).toMatchObject({
+      customerId,
+      projectId,
+      salesAgentId: actor.id,
+      status: 'draft',
+      paymentTerms: 'prepaid',
+      paymentSchedule: [],
+      issuerName: 'Quotation Engineer',
+      createdById: actor.id,
+    });
+    expect(Number(result.vatRate)).toBe(Number(DEFAULT_VAT_RATE));
+    expect(result.sections).toEqual([]);
+    expect(result.ruleConfiguration).toHaveLength(QUOTATION_RULE_KEYS.length);
+  }
+  expect(await links().list(taskId)).toEqual([]);
+}, 15000);
+it('keeps reader Open available after project or customer deletion and forbids fresh drafts until context returns', async () => {
+  const current = service();
+  const first = await current.createForTask(taskId, actor);
+  const reader = {
+    ...actor,
+    permissions: [PERMISSIONS.TASKS_READ, PERMISSIONS.QUOTATIONS_READ],
+  };
+  for (const table of ['projects', 'customers']) {
+    const id = table === 'projects' ? projectId : customerId;
+    await database().query(
+      `UPDATE ${table} SET deleted_at=now() WHERE id=$id`,
+      { bind: { id } },
+    );
+    try {
+      expect(
+        (await links().read(taskId, reader)).quotations.map((row) => row.id),
+      ).toEqual([first.quotationId]);
+      expect(await current.createForTask(taskId, reader)).toEqual({
+        quotationId: first.quotationId,
+        created: false,
+      });
+    } finally {
+      await database().query(
+        `UPDATE ${table} SET deleted_at=NULL WHERE id=$id`,
+        { bind: { id } },
+      );
+    }
+  }
+  const quotation = await current.getById(first.quotationId);
+  await current.delete(quotation.id, { version: quotation.version }, actor.id);
+  await database().query(
+    'UPDATE projects SET deleted_at=now() WHERE id=$projectId',
+    { bind: { projectId } },
+  );
+  try {
+    await expect(current.createForTask(taskId, actor)).rejects.toThrow(
+      'context is unavailable',
+    );
+  } finally {
+    await database().query(
+      'UPDATE projects SET deleted_at=NULL WHERE id=$projectId',
+      { bind: { projectId } },
+    );
+  }
+  const replacement = await current.createForTask(taskId, actor);
+  expect(replacement.created).toBe(true);
+  expect(replacement.quotationId).not.toBe(first.quotationId);
+  expect(
+    (await database().query('SELECT * FROM task_quotation_links'))[0],
+  ).toHaveLength(2);
+});
+it('clones a secondary through the real clone path, protects save context and returns actor-filtered mutation metadata', async () => {
+  const current = service();
+  const controller = new QuotationController(current, mock());
+  const first = await current.createForTask(taskId, actor);
+  const draft = await current.getById(first.quotationId);
+  const branded = await controller.save(
+    draft.id,
+    taskQuotationSaveInput(draft, {
+      brand: 'אלקטרה',
+      brands: ['אלקטרה'],
+      sections: [
+        {
+          id: randomUUID(),
+          title: 'Single system',
+          brand: 'אלקטרה',
+          systemType: 'SINGLE',
+          items: [],
+        },
+      ],
+    }),
+    actor,
+  );
+  expect(branded.taskLinks).toEqual([
+    { taskId, title: 'Quotation task', isPrimary: true },
+  ]);
+  const secondary = await controller.clone(
+    branded.id,
+    { sourceVersion: branded.version, targetBrand: 'תדיראן', mappings: [] },
+    actor,
+  );
+  const third = await controller.clone(
+    secondary.id,
+    { sourceVersion: secondary.version, targetBrand: 'אלקטרה', mappings: [] },
+    actor,
+  );
+  expect(secondary.taskLinks).toEqual([
+    { taskId, title: 'Quotation task', isPrimary: false },
+  ]);
+  expect(third.taskLinks).toEqual(secondary.taskLinks);
+  expect((await links().list(taskId)).find((row) => row.isPrimary)?.id).toBe(
+    first.quotationId,
+  );
+  const otherProject = randomUUID();
+  await database().query(
+    'INSERT INTO projects(id,customer_id) VALUES ($id,$customerId)',
+    { bind: { id: otherProject, customerId } },
+  );
+  await expect(
+    controller.save(
+      third.id,
+      taskQuotationSaveInput(third, { projectId: otherProject }),
+      actor,
+    ),
+  ).rejects.toMatchObject({
+    status: 409,
+    response: { code: HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_LOCKED },
+  });
+  const noTasks = {
+    ...actor,
+    permissions: actor.permissions.filter(
+      (permission) => permission !== PERMISSIONS.TASKS_READ,
+    ),
+  };
+  const saved = await controller.save(
+    third.id,
+    taskQuotationSaveInput(third, {
+      internalNotes: 'Saved without task disclosure',
+    }),
+    noTasks,
+  );
+  expect(saved).toMatchObject({
+    taskContextLocked: true,
+    taskProjectLocked: true,
+    taskLinks: [],
+    internalNotes: 'Saved without task disclosure',
+  });
+  await current.delete(branded.id, { version: branded.version }, actor.id);
+  await current.delete(secondary.id, { version: secondary.version }, actor.id);
+  expect(await current.createForTask(taskId, actor)).toEqual({
+    quotationId: third.id,
+    created: false,
+  });
+  expect((await links().list(taskId))[0].isPrimary).toBe(true);
+});
+it('maps only the named deferred context constraint to409 for project customer and primary link edits', async () => {
+  const current = service();
+  const first = await current.createForTask(taskId, actor);
+  const otherCustomer = randomUUID();
+  const otherProject = randomUUID();
+  await database().query(
+    'INSERT INTO projects(id,customer_id) VALUES ($id,$customerId)',
+    { bind: { id: otherProject, customerId } },
+  );
+  const projectError = await database()
+    .transaction((transaction) =>
+      database().query(
+        'UPDATE projects SET customer_id=$otherCustomer WHERE id=$projectId',
+        { bind: { otherCustomer, projectId }, transaction },
+      ),
+    )
+    .then(
+      () => null,
+      (error: unknown) => error,
+    );
+  expect(getHttpErrorResponse(projectError)).toEqual({
+    statusCode: 409,
+    ...getHttpErrorPayload(HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_LOCKED),
+  });
+  const linkError = await database()
+    .transaction((transaction) =>
+      database().query(
+        'UPDATE quotation_projects SET project_id=$otherProject WHERE quotation_id=$id',
+        { bind: { otherProject, id: first.quotationId }, transaction },
+      ),
+    )
+    .then(
+      () => null,
+      (error: unknown) => error,
+    );
+  expect(getHttpErrorResponse(linkError)).toEqual(
+    getHttpErrorResponse(projectError),
+  );
+  expect((await current.getById(first.quotationId)).projectId).toBe(projectId);
+});
+it('preserves ordinary project existence, deletion and exact-customer validation without creating task links', async () => {
+  const current = service();
+  await expect(
+    current.create({ customerId, projectId: randomUUID() }, actor),
+  ).rejects.toMatchObject({ status: 404 });
+  const unrelatedProject = randomUUID();
+  const unrelatedCustomer = randomUUID();
+  await database().query(
+    'INSERT INTO projects(id,customer_id,parent_project_id) VALUES ($id,$customerId,$parentId)',
+    {
+      bind: {
+        id: unrelatedProject,
+        customerId: unrelatedCustomer,
+        parentId: projectId,
+      },
+    },
+  );
+  await expect(
+    current.create({ customerId, projectId: unrelatedProject }, actor),
+  ).rejects.toMatchObject({ status: 400 });
+  await database().query(
+    'UPDATE projects SET deleted_at=now() WHERE id=$projectId',
+    { bind: { projectId } },
+  );
+  try {
+    await expect(
+      current.create({ customerId, projectId }, actor),
+    ).rejects.toMatchObject({ status: 404 });
+  } finally {
+    await database().query(
+      'UPDATE projects SET deleted_at=NULL WHERE id=$projectId',
+      { bind: { projectId } },
+    );
+  }
+  expect((await database().query('SELECT id FROM quotations'))[0]).toEqual([]);
+  const unlinked = await current.create({ customerId }, actor);
+  expect(unlinked.projectId).toBeNull();
+  expect(await links().list(taskId)).toEqual([]);
 });

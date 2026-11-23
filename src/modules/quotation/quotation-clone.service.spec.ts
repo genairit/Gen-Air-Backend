@@ -146,7 +146,7 @@ const setup = () => {
     rules: source.ruleConfiguration,
     fingerprint: source.ruleConfigFingerprint,
   });
-  projects.getById.mockResolvedValue(mock({ customerId }));
+  projects.quotationContext.mockResolvedValue(mock({ customerId }));
   links.apartmentLinks.mockResolvedValue(
     new Map([[sourceId, [mock({ apartmentId })]]]),
   );

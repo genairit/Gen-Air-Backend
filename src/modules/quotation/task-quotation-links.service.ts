@@ -12,9 +12,16 @@ import {
 } from '@Utilities/permission.utility';
 
 import {
+  TASK_QUOTATION_UNAVAILABLE_REASONS,
+  TaskQuotationUnavailableReasonType,
+} from './constants/task-quotation.constant';
+
+import {
   ITaskContext,
   IQuotationTaskLink,
   ITaskQuotationSummary,
+  IQuotationTaskMetadata,
+  ITaskQuotationContextResponse,
 } from './interfaces/task-quotation.interface';
 
 import { Sequelize } from 'sequelize-typescript';
@@ -24,6 +31,7 @@ import { ProviderNames } from '@Providers/database/provider-names';
 import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
 import { TASK_TYPES } from '@Modules/task/constants/task-type.constant';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
+import { getHttpErrorPayload } from '@Utilities/http-error-payload.utility';
 
 @Injectable()
 export class TaskQuotationLinksService {
@@ -70,11 +78,13 @@ export class TaskQuotationLinksService {
   }
   unavailableReason(
     task: ITaskContext,
-  ): 'WRONG_TASK_TYPE' | 'MISSING_CONTEXT' | null {
+  ): TaskQuotationUnavailableReasonType | null {
     if (task.taskType !== TASK_TYPES.QUOTATION) {
-      return 'WRONG_TASK_TYPE';
+      return TASK_QUOTATION_UNAVAILABLE_REASONS.WRONG_TASK_TYPE;
     }
-    return task.customerId ? null : 'MISSING_CONTEXT';
+    return task.customerId
+      ? null
+      : TASK_QUOTATION_UNAVAILABLE_REASONS.MISSING_CONTEXT;
   }
   assertContextPermissions(task: ITaskContext, actor: IAuthorizedUser): void {
     assertPermissions(
@@ -87,7 +97,10 @@ export class TaskQuotationLinksService {
       assertPermissions(actor, PERMISSIONS.PROJECTS_READ);
     }
   }
-  async read(taskId: string, actor: IAuthorizedUser) {
+  async read(
+    taskId: string,
+    actor: IAuthorizedUser,
+  ): Promise<ITaskQuotationContextResponse> {
     assertPermissions(
       actor,
       PERMISSIONS.TASKS_READ,
@@ -152,20 +165,22 @@ export class TaskQuotationLinksService {
       `SELECT CASE WHEN t.project_id IS NULL THEN t.customer_id ELSE p.customer_id END AS "customerId",t.project_id AS "projectId" FROM task_quotation_links l JOIN tasks t ON t.id=l.task_id LEFT JOIN projects p ON p.id=t.project_id WHERE l.quotation_id=$quotationId`,
       { bind: { quotationId }, transaction, type: QueryTypes.SELECT },
     );
-    if (
-      rows.some(
-        (row) =>
-          row.customerId !== customerId ||
-          (row.projectId !== null && row.projectId !== projectId),
-      )
-    ) {
-      throw new ConflictException({
-        code: HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_LOCKED,
-        message: 'Linked task quotation context cannot change',
-      });
+    const hasMismatchedContext = rows.some((row) => {
+      const isCustomerChanging = row.customerId !== customerId;
+      const isProjectChanging =
+        row.projectId !== null && row.projectId !== projectId;
+      return isCustomerChanging || isProjectChanging;
+    });
+    if (hasMismatchedContext) {
+      throw new ConflictException(
+        getHttpErrorPayload(HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_LOCKED),
+      );
     }
   }
-  async metadata(quotationId: string, actor: IAuthorizedUser) {
+  async metadata(
+    quotationId: string,
+    actor: IAuthorizedUser,
+  ): Promise<IQuotationTaskMetadata> {
     const rows = await this.database.query<
       IQuotationTaskLink & {
         projectId: string | null;
@@ -192,10 +207,11 @@ export class TaskQuotationLinksService {
   assertAvailable(task: ITaskContext): void {
     const reason = this.unavailableReason(task);
     if (reason) {
-      throw new BadRequestException({
-        code: HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_UNAVAILABLE,
-        message: 'Task quotation context is unavailable',
-      });
+      throw new BadRequestException(
+        getHttpErrorPayload(
+          HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_UNAVAILABLE,
+        ),
+      );
     }
   }
 }

@@ -34,6 +34,11 @@ import {
 } from './utilities/quotation-cursor.utility';
 
 import {
+  ITaskQuotationResult,
+  ITaskQuotationContextResponse,
+} from './interfaces/task-quotation.interface';
+
+import {
   quotationItemSnapshot,
   validateQuotationAccessories,
 } from './utilities/quotation-selection.utility';
@@ -370,13 +375,21 @@ export class QuotationService {
     actor: IAuthorizedUser,
     transaction: Transaction,
   ): Promise<string> {
-    await this.validateSalesAgent(input.salesAgentId ?? null, actor);
+    await this.validateSalesAgent(
+      input.salesAgentId ?? null,
+      actor,
+      transaction,
+    );
     const customer = await this.customers.getById(
       input.customerId,
       transaction,
     );
     const payment = customerPaymentSnapshot(customer);
-    await this.validateProject(input.customerId, input.projectId ?? null);
+    await this.validateProject(
+      input.customerId,
+      input.projectId ?? null,
+      transaction,
+    );
     const id = randomUUID();
     const configuration = await this.rules.configuration(transaction);
     const date = new Date().toISOString().slice(0, 10);
@@ -416,10 +429,16 @@ export class QuotationService {
     await this.links.replacePrimary(id, input.projectId ?? null, transaction);
     return id;
   }
-  async taskQuotations(taskId: string, actor: IAuthorizedUser) {
+  async taskQuotations(
+    taskId: string,
+    actor: IAuthorizedUser,
+  ): Promise<ITaskQuotationContextResponse> {
     return this.taskLinks.read(taskId, actor);
   }
-  async createForTask(taskId: string, actor: IAuthorizedUser) {
+  async createForTask(
+    taskId: string,
+    actor: IAuthorizedUser,
+  ): Promise<ITaskQuotationResult> {
     assertPermissions(
       actor,
       PERMISSIONS.TASKS_READ,
@@ -427,12 +446,12 @@ export class QuotationService {
     );
     return this.transactions.run(async (transaction) => {
       const context = await this.taskLinks.context(taskId, transaction);
-      this.taskLinks.assertAvailable(context);
       const existing = (await this.taskLinks.list(taskId, transaction))[0];
       if (existing) {
         await this.taskLinks.attachPrimary(taskId, existing.id, transaction);
         return { quotationId: existing.id, created: false };
       }
+      this.taskLinks.assertAvailable(context);
       this.taskLinks.assertContextPermissions(context, actor);
       assertPermissions(actor, PERMISSIONS.QUOTATIONS_CREATE);
       const quotationId = await this.createDraft(
@@ -589,7 +608,11 @@ export class QuotationService {
         }
       }
       validateQuotationAccessories(snapshots);
-      await this.validateProject(source.customerId, source.projectId);
+      await this.validateProject(
+        source.customerId,
+        source.projectId,
+        transaction,
+      );
       const configuration = await this.rules.configuration(transaction);
       const date = new Date().toISOString().slice(0, 10);
       const prefix = date.slice(2, 7).replace('-', '');
@@ -703,7 +726,7 @@ export class QuotationService {
           : current.salesAgentId;
 
       if (salesAgentId !== current.salesAgentId) {
-        await this.validateSalesAgent(salesAgentId, actor);
+        await this.validateSalesAgent(salesAgentId, actor, transaction);
       }
 
       await this.assertSharingKeepsContext(current, input, transaction);
@@ -713,7 +736,11 @@ export class QuotationService {
         input.projectId,
         transaction,
       );
-      await this.validateProject(input.customerId, input.projectId);
+      await this.validateProject(
+        input.customerId,
+        input.projectId,
+        transaction,
+      );
       if (!input.brands && current.brands.length > 1) {
         throw new ConflictException(
           'יש לרענן את העורך כדי לשמור הצעה עם מספר חברות',
@@ -782,7 +809,7 @@ export class QuotationService {
         throw new ConflictException('לא ניתן לעדכן הצעת מחיר מבוטלת');
       }
       if (input.salesAgentId !== current.salesAgentId) {
-        await this.validateSalesAgent(input.salesAgentId, actor);
+        await this.validateSalesAgent(input.salesAgentId, actor, transaction);
       }
 
       await this.repository.update(
@@ -1287,11 +1314,15 @@ export class QuotationService {
   private async validateProject(
     customerId: string,
     projectId: string | null,
+    transaction: Transaction,
   ): Promise<void> {
     if (!projectId) {
       return;
     }
-    const project = await this.projects.getById(projectId);
+    const project = await this.projects.quotationContext(
+      projectId,
+      transaction,
+    );
     if (project.customerId !== customerId) {
       throw new BadRequestException('הפרויקט אינו משויך ללקוח שנבחר');
     }
@@ -1300,6 +1331,7 @@ export class QuotationService {
   private async validateSalesAgent(
     salesAgentId: string | null,
     actor: IAuthorizedUser,
+    transaction: Transaction,
   ): Promise<void> {
     if (salesAgentId === null) {
       return;
@@ -1307,7 +1339,7 @@ export class QuotationService {
 
     assertPermissions(actor, PERMISSIONS.EMPLOYEES_READ);
 
-    const salesAgent = await this.users.findById(salesAgentId);
+    const salesAgent = await this.users.findById(salesAgentId, transaction);
     const hasEligibleRole = QUOTATION_AGENT_ELIGIBLE_ROLES.some((role) =>
       salesAgent?.assignedRoles?.includes(role),
     );

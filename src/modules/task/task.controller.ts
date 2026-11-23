@@ -18,6 +18,11 @@ import {
   IProtectedTaskSlot,
 } from './interfaces/task.interface';
 
+import {
+  ITaskQuotationResult,
+  ITaskQuotationContextResponse,
+} from '@Modules/quotation/interfaces/task-quotation.interface';
+
 import { TaskService } from './task.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -47,7 +52,7 @@ export class TaskController {
   taskQuotations(
     @Param('id', ParseUUIDPipe) id: string,
     @AuthenticatedUser() user: IAuthorizedUser,
-  ) {
+  ): Promise<ITaskQuotationContextResponse> {
     return this.quotations.taskQuotations(id, user);
   }
   @Post(':id/quotation')
@@ -57,7 +62,7 @@ export class TaskController {
     @Body() input: CreateTaskQuotationDto,
     @Param('id', ParseUUIDPipe) id: string,
     @AuthenticatedUser() user: IAuthorizedUser,
-  ) {
+  ): Promise<ITaskQuotationResult> {
     void input;
     return this.quotations.createForTask(id, user);
   }

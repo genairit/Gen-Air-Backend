@@ -5,6 +5,7 @@ import type {
 } from '@Modules/quotation-project/interfaces/quotation-project.interface';
 
 import type { IQuotation } from './quotation.interface';
+import type { IQuotationTaskMetadata } from './task-quotation.interface';
 import type { QuotationProjectRoleType } from '../constants/quotation-sharing.constant';
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
 import type { IQuotationSection } from '@Modules/quotation-section/interfaces/quotation-section.interface';
@@ -34,12 +35,10 @@ export interface IQuotationView extends IQuotationDocument {
   warnings: IQuotationWarning[];
   salesAgentName?: string | null;
 }
-export interface IQuotationDetailView extends IQuotationView {
-  taskContextLocked?: boolean;
-  taskProjectLocked?: boolean;
+export interface IQuotationDetailView
+  extends IQuotationView, Partial<IQuotationTaskMetadata> {
   apartmentLinks: IQuotationApartmentLink[];
   primaryProject: IQuotationPrimaryProject | null;
-  taskLinks?: { taskId: string; title: string; isPrimary: boolean }[];
 }
 export interface IProjectQuotationView extends IQuotationView {
   sharedCount: number;

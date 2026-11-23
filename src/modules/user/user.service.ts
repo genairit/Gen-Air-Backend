@@ -76,14 +76,14 @@ export class UserService {
     return user;
   }
 
-  async findById(id: string): Promise<IUser | null> {
-    const user = await this.userRepository.findById(id);
+  async findById(id: string, transaction?: Transaction): Promise<IUser | null> {
+    const user = await this.userRepository.findById(id, transaction);
 
     if (!user) {
       return null;
     }
 
-    const [assignedUser] = await this.addAssignedRoles([user]);
+    const [assignedUser] = await this.addAssignedRoles([user], transaction);
 
     return assignedUser ?? null;
   }
