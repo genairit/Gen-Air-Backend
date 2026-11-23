@@ -21,6 +21,7 @@ import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { APARTMENT } from '../constants/project-apartment.constant';
 import { CUSTOMER_FLOOR_RANGE } from '@Constants/field-validation.constant';
 import { ApartmentCommercialDetailsDto } from './apartment-commercial-details.dto';
+import { LinkProjectContactDto } from '@Modules/project-contact/dto/link-project-contact.dto';
 import { AssignProjectMemberDto } from '@Modules/project-member/dto/assign-project-member.dto';
 
 export class CreateApartmentDto extends IntersectionType(
@@ -49,6 +50,12 @@ export class CreateApartmentDto extends IntersectionType(
   @IsOptional()
   @IsUUID()
   declare engineerUserId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LinkProjectContactDto)
+  declare contacts?: LinkProjectContactDto[];
 
   @IsOptional()
   @IsArray()

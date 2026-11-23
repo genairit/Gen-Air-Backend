@@ -82,6 +82,7 @@ import { DatabaseTransactionService } from '@Providers/database/database-transac
 import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-sync-status.constant';
 import { IProjectMemberAssignment } from '@Modules/project-member/interfaces/project-member.interface';
+import { assertUniqueProjectContactRoles } from '@Modules/project-contact/utilities/project-contact-role.utility';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 
 @Injectable()
@@ -240,10 +241,14 @@ export class ProjectService {
       apartment,
       stageId: initialStage.id,
     });
-    const apartmentId = await this.persistNewProject(attributes, {
-      members,
-      creator,
-    });
+    const apartmentId = await this.persistNewProject(
+      attributes,
+      {
+        members,
+        creator,
+      },
+      apartment.contacts ?? [],
+    );
 
     return this.completeProjectCreation(apartmentId);
   }
@@ -465,6 +470,7 @@ export class ProjectService {
       );
 
       if (contacts.length > 0) {
+        assertUniqueProjectContactRoles(contacts);
         const uniqueIds = new Set(contacts.map((contact) => contact.contactId));
         const primaryCount = contacts.filter(
           (contact) => contact.isPrimary,
