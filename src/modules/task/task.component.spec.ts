@@ -20,6 +20,7 @@ import { USER_ROLES } from '@Constants/user-role.constant';
 import { TASK_TYPES } from './constants/task-type.constant';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { IUser } from '@Modules/user/interfaces/user.interface';
+import { TASK_STATUSES } from './constants/task-status.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { encodeTaskCursor } from './utilities/task-cursor.utility';
@@ -523,7 +524,7 @@ describe('Task HTTP permission boundaries', () => {
         .query({
           sort,
           assigneeId: OTHER_ID,
-          status: 'in_progress',
+          status: TASK_STATUSES.IN_PROGRESS,
           isUrgent: false,
           search: 'test',
         })
@@ -533,7 +534,7 @@ describe('Task HTTP permission boundaries', () => {
         expect.objectContaining({
           sort,
           assigneeId: EMPLOYEE_ID,
-          status: 'in_progress',
+          status: TASK_STATUSES.IN_PROGRESS,
           isUrgent: false,
           search: 'test',
         }),
@@ -542,7 +543,7 @@ describe('Task HTTP permission boundaries', () => {
     },
   );
 
-  it.each(['unknown', '', ['default', 'due_date_asc']])(
+  it.each(['unknown', '', [TASK_SORTS.DEFAULT, TASK_SORTS.DUE_DATE_ASC]])(
     'rejects unsupported sort query %j before querying',
     async (sort) => {
       await request(server())
