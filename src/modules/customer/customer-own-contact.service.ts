@@ -56,10 +56,7 @@ export class CustomerOwnContactService {
     contactId: string,
     transaction: Transaction,
   ): Promise<void> {
-    const source = await CustomerContact.findByPk(contactId, {
-      transaction,
-      lock: transaction.LOCK.UPDATE,
-    });
+    const source = await CustomerContact.findByPk(contactId, { transaction });
     if (!source) {
       throw new NotFoundException('Contact was not found');
     }
@@ -95,6 +92,7 @@ export class CustomerOwnContactService {
         ],
       },
       transaction,
+      lock: transaction.LOCK.UPDATE,
     });
   }
 

@@ -4,9 +4,10 @@ import {
 } from './interfaces/customer-contact.interface';
 
 import { Injectable } from '@nestjs/common';
-import { Op, Transaction } from 'sequelize';
+import { Op, literal, Transaction } from 'sequelize';
 import { toDialablePhone } from '@Utilities/phone.utility';
 import { CustomerContact } from './entities/customer-contact.entity';
+import { REUSABLE_CONTACT_FILTER } from './constants/contact-directory.constant';
 
 @Injectable()
 export class CustomerContactRepository {
@@ -14,7 +15,7 @@ export class CustomerContactRepository {
     const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
     return CustomerContact.findAll({
       where: {
-        customerId: null,
+        [Op.and]: [literal(REUSABLE_CONTACT_FILTER)],
         [Op.or]: [
           { name: { [Op.iLike]: pattern } },
           { phone: { [Op.iLike]: pattern } },
@@ -48,7 +49,10 @@ export class CustomerContactRepository {
     transaction: Transaction,
   ): Promise<CustomerContact | null> {
     const candidates = await CustomerContact.findAll({
-      where: { name: values.name, customerId: null },
+      where: {
+        name: values.name,
+        [Op.and]: [literal(REUSABLE_CONTACT_FILTER)],
+      },
       transaction,
       order: [
         ['createdAt', 'ASC'],

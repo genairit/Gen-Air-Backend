@@ -128,7 +128,7 @@ export class CustomerContactService {
         where: { primaryContactId: id },
         transaction,
       });
-      if (existing.customerId || customerReferences > 0) {
+      if (customerReferences > 0) {
         throw new BadRequestException(
           getHttpErrorPayload(HTTP_ERROR_CODES.CUSTOMER_OWN_CONTACT_MANAGED),
         );

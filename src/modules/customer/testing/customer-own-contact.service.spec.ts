@@ -2,7 +2,10 @@ import { mock } from 'jest-mock-extended';
 import { Sequelize, Transaction } from 'sequelize';
 import { Customer } from '../entities/customer.entity';
 import { CustomerOwnContactService } from '../customer-own-contact.service';
+import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
+import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { CustomerContactRepository } from '@Modules/customer-contact/customer-contact.repository';
 import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 
 const createFixture = () => {
@@ -128,6 +131,9 @@ describe('customer-owned primary-contact identity', () => {
       transaction,
     );
     expect(queries.create).not.toHaveBeenCalled();
+    expect(queries.findMatching).toHaveBeenCalledWith(
+      expect.objectContaining({ transaction, lock: transaction.LOCK.UPDATE }),
+    );
     expect(jest.spyOn(existing, 'update')).not.toHaveBeenCalled();
     expect(jest.spyOn(customer, 'update')).toHaveBeenCalledWith(
       { primaryContactId: created.id },
@@ -162,6 +168,9 @@ describe('customer-owned primary-contact identity', () => {
       createFixture();
     existing.customerId = null;
     await service.copyDetails(customer, existing.id, transaction);
+    expect(queries.findExisting).toHaveBeenCalledWith(existing.id, {
+      transaction,
+    });
     expect(queries.create).toHaveBeenCalledWith(
       {
         name: customer.name,
@@ -201,5 +210,45 @@ describe('customer-owned primary-contact identity', () => {
     ).rejects.toBe(failure);
     expect(jest.spyOn(customer, 'update')).not.toHaveBeenCalled();
     expect(jest.spyOn(existing, 'update')).not.toHaveBeenCalled();
+  });
+  it('keeps an old owned project contact editable after copy-on-write without changing the new customer snapshot', async () => {
+    const { service, customer, existing, created, transaction, queries } =
+      createFixture();
+    queries.projects.mockResolvedValue(1);
+    await service.setDetails(
+      customer,
+      { email: 'customer-own@example.com' },
+      transaction,
+    );
+    expect(customer.update.mock.calls).toContainEqual([
+      { primaryContactId: created.id },
+      { transaction },
+    ]);
+    existing.get.mockReturnValue({
+      name: existing.name,
+      phone: existing.phone,
+      email: existing.email,
+      role: null,
+    });
+    const transactions = mock<DatabaseTransactionService>();
+    transactions.run.mockImplementation((work) => work(transaction));
+    const directory = new CustomerContactService(
+      mock<CustomerContactRepository>(),
+      transactions,
+    );
+    await directory.updateDirectory(existing.id, {
+      email: 'project-person@example.com',
+    });
+    expect(existing.update.mock.calls).toContainEqual([
+      {
+        name: existing.name,
+        phone: existing.phone,
+        email: 'project-person@example.com',
+        role: null,
+      },
+      { transaction },
+    ]);
+    expect(created.update.mock.calls).toHaveLength(0);
+    expect(queries.create).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,10 +1,11 @@
 import { mock } from 'jest-mock-extended';
-import { Sequelize, Transaction } from 'sequelize';
+import { Op, literal, Sequelize, Transaction } from 'sequelize';
 import { CustomerContactService } from '../customer-contact.service';
 import { CustomerContact } from '../entities/customer-contact.entity';
 import { Customer } from '@Modules/customer/entities/customer.entity';
 import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
 import { CustomerContactRepository } from '../customer-contact.repository';
+import { REUSABLE_CONTACT_FILTER } from '../constants/contact-directory.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
 const createFixture = () => {
@@ -37,9 +38,7 @@ describe('directory and customer-owned contact separation', () => {
         contact.customerId = 'customer-id';
       }
 
-      if (identity === 'legacy-primary') {
-        references.mockResolvedValue(1);
-      }
+      references.mockResolvedValue(1);
 
       await expect(
         service.updateDirectory(contact.id, { email: 'changed@example.com' }),
@@ -51,32 +50,36 @@ describe('directory and customer-owned contact separation', () => {
     },
   );
 
-  it('continues to edit an ordinary reusable project contact', async () => {
-    const { service, contact, transaction } = createFixture();
-    contact.get.mockReturnValue({
-      name: 'איש קשר לפרויקט',
-      phone: null,
-      email: 'old@example.com',
-      role: null,
-    });
-    await service.updateDirectory(contact.id, { email: 'new@example.com' });
-    expect(jest.spyOn(contact, 'update')).toHaveBeenCalledWith(
-      {
+  it.each([null, 'legacy-customer-id'])(
+    'continues to edit reusable non-primary project contacts with legacy owner %s',
+    async (customerId) => {
+      const { service, contact, transaction } = createFixture();
+      contact.customerId = customerId;
+      contact.get.mockReturnValue({
         name: 'איש קשר לפרויקט',
         phone: null,
-        email: 'new@example.com',
+        email: 'old@example.com',
         role: null,
-      },
-      { transaction },
-    );
-  });
+      });
+      await service.updateDirectory(contact.id, { email: 'new@example.com' });
+      expect(jest.spyOn(contact, 'update')).toHaveBeenCalledWith(
+        {
+          name: 'איש קשר לפרויקט',
+          phone: null,
+          email: 'new@example.com',
+          role: null,
+        },
+        { transaction },
+      );
+    },
+  );
 
   it('excludes dedicated customer details from reusable-directory search and import matching', async () => {
     const search = jest.spyOn(CustomerContact, 'findAll').mockResolvedValue([]);
     const repository = new CustomerContactRepository();
     await repository.search('לקוח');
     expect(search.mock.calls.at(-1)?.[0]?.where).toEqual(
-      expect.objectContaining({ customerId: null }),
+      expect.objectContaining({ [Op.and]: [literal(REUSABLE_CONTACT_FILTER)] }),
     );
     const transaction = new Transaction(
       new Sequelize({ dialect: 'postgres', logging: false }),
@@ -88,7 +91,7 @@ describe('directory and customer-owned contact separation', () => {
     );
     expect(search).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        where: { name: 'לקוח', customerId: null },
+        where: { name: 'לקוח', [Op.and]: [literal(REUSABLE_CONTACT_FILTER)] },
         transaction,
       }),
     );

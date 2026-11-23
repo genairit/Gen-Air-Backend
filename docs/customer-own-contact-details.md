@@ -21,9 +21,11 @@ No schema migration or environment variables are required for this change.
   The original remains unchanged. An exclusive own contact can be updated in
   place. Returning to an identical owned snapshot reuses it to respect the
   existing per-customer active-tuple constraint.
-- New directory searches and import matching exclude customer-owned records.
+- New directory searches and import matching exclude contacts currently designated
+  as an active customer’s primary contact. Legacy non-primary and detached
+  contacts remain reusable regardless of their historical `customer_id`.
   Project contact links continue to read their exact linked identities.
-  Directory edits of owned or customer-designated contacts return
+  Directory edits of currently customer-designated contacts return
   `CUSTOMER_OWN_CONTACT_MANAGED`; edit those details through the customer page.
 - Existing records are not bulk rewritten. Apartment imports retain transactional
   row handling and explicit identity matching; newly created customer details
