@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS quotation_publication_operations (
  destination_label text,
  destination_folder_id text,
  effect_started boolean NOT NULL DEFAULT false,
+ effect_owner uuid,
  dispatched_at timestamptz,
  reason text,
  updated_at timestamptz NOT NULL DEFAULT now(),
@@ -104,7 +105,10 @@ REVOKE ALL ON FUNCTION protect_quotation_publication_evidence() FROM PUBLIC,anon
 CREATE OR REPLACE FUNCTION protect_quotation_publication_root() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
 BEGIN
  IF ROW(OLD.project_id,OLD.quotation_id) IS DISTINCT FROM ROW(NEW.project_id,NEW.quotation_id) THEN RAISE EXCEPTION 'Publication cycle context is immutable'; END IF;
- IF OLD.root_id IS NOT NULL AND ROW(OLD.root_id,OLD.root_context) IS DISTINCT FROM ROW(NEW.root_id,NEW.root_context) THEN RAISE EXCEPTION 'Publication root authority is immutable'; END IF;
+ IF OLD.root_id IS NOT NULL AND OLD.root_id IS DISTINCT FROM NEW.root_id THEN RAISE EXCEPTION 'Publication root authority is immutable'; END IF;
+ IF OLD.root_id IS NOT NULL AND OLD.root_context IS DISTINCT FROM NEW.root_context THEN
+  IF OLD.root_context->>'parentProjectId' IS NULL OR OLD.root_context->>'parentRootId' IS NOT NULL OR NEW.root_context->>'parentRootId' IS NULL OR NEW.root_context->>'parentRootId'='' OR jsonb_typeof(NEW.root_context->'parentRootId')<>'string' OR (OLD.root_context-'parentRootId') IS DISTINCT FROM (NEW.root_context-'parentRootId') OR current_setting('genair.publication_lineage_fill',true) IS DISTINCT FROM OLD.id::text THEN RAISE EXCEPTION 'Publication root authority is immutable'; END IF;
+ END IF;
  RETURN NEW;
 END $$;
 REVOKE ALL ON FUNCTION protect_quotation_publication_root() FROM PUBLIC,anon,authenticated;

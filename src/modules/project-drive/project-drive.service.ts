@@ -340,7 +340,7 @@ export class ProjectDriveService {
         }
 
         if (preview.status === 'needs_move') {
-          await this.callDrive(() =>
+          await this.callDrive((): ReturnType<GoogleDriveService['moveFile']> =>
             this.googleDriveService.moveFile({
               fileId: preview.sourceFolderId,
               parentIds: [this.getProjectsRootFolderId()],
@@ -604,6 +604,11 @@ export class ProjectDriveService {
       await this.assertApartmentFolderLocation(projectFolderId, parentFolderId);
     }
 
+    await this.projectService.lockDriveRootCandidate(
+      project.id,
+      projectFolderId,
+      transaction,
+    );
     const templateNodes = project.parentProjectId
       ? templateTree.filter((node) => node.name !== APARTMENTS_FOLDER_NAME)
       : templateTree;

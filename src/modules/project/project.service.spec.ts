@@ -280,8 +280,21 @@ const createService = async () => {
 
   const driveLinkService = {
     resolve: jest.fn().mockResolvedValue({ id: 'legacy-folder' }),
-    assertOwnershipAvailable: jest.fn().mockResolvedValue(null),
+    assertOwnershipAvailable: jest
+      .fn<
+        ReturnType<ProjectDriveLinkService['assertOwnershipAvailable']>,
+        Parameters<ProjectDriveLinkService['assertOwnershipAvailable']>
+      >()
+      .mockImplementation((): Promise<void> => Promise.resolve()),
+    assertRootClaimAvailable: jest.fn<
+      ReturnType<ProjectDriveLinkService['assertRootClaimAvailable']>,
+      Parameters<ProjectDriveLinkService['assertRootClaimAvailable']>
+    >(),
   };
+  driveLinkService.assertRootClaimAvailable.mockImplementation(
+    (...parameters): Promise<void> =>
+      driveLinkService.assertOwnershipAvailable(...parameters),
+  );
   const moduleRef = await Test.createTestingModule({
     providers: [
       ProjectService,

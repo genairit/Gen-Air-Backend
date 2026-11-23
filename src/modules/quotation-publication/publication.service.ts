@@ -1,4 +1,10 @@
 import {
+  Injectable,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
+
+import {
   PUBLICATION_KIND,
   PUBLICATION_STATE,
   PUBLICATION_REASON,
@@ -24,7 +30,6 @@ import {
 
 import { Transaction } from 'sequelize';
 import { createHash, randomUUID } from 'node:crypto';
-import { Injectable, ConflictException } from '@nestjs/common';
 import { PublicationRepository } from './publication.repository';
 import { PERMISSIONS, PermissionType } from '@Constants/authorization.constant';
 import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
@@ -95,8 +100,15 @@ export class PublicationService {
     }
 
     const sourceHash = publicationSnapshotHash(snapshot);
+    const previous = active
+      ? await this.repository.operations(active.id, transaction)
+      : [];
+    const blocker = previous.find(
+      (operation): boolean =>
+        operation.state === PUBLICATION_STATE.FAILED && operation.effectStarted,
+    );
     await this.repository.execute(
-      `INSERT INTO quotation_publication_cycles(id,quotation_id,project_id,root_id,root_context,generation,desired_kind,source_version,state) VALUES($cycleId,$quotationId,$projectId,$rootId,$rootContext::jsonb,$generation,$kind,$version,$state) ON CONFLICT(id) DO UPDATE SET generation=EXCLUDED.generation,desired_kind=EXCLUDED.desired_kind,source_version=EXCLUDED.source_version,state=EXCLUDED.state,reason=NULL,updated_at=now()`,
+      `INSERT INTO quotation_publication_cycles(id,quotation_id,project_id,root_id,root_context,generation,desired_kind,source_version,state,reason) VALUES($cycleId,$quotationId,$projectId,$rootId,$rootContext::jsonb,$generation,$kind,$version,$state,$reason) ON CONFLICT(id) DO UPDATE SET generation=EXCLUDED.generation,desired_kind=EXCLUDED.desired_kind,source_version=EXCLUDED.source_version,state=EXCLUDED.state,reason=EXCLUDED.reason,updated_at=now()`,
       {
         cycleId,
         quotationId: document.id,
@@ -111,7 +123,8 @@ export class PublicationService {
         generation,
         kind,
         version: document.version,
-        state: PUBLICATION_STATE.QUEUED,
+        state: blocker ? PUBLICATION_STATE.FAILED : PUBLICATION_STATE.QUEUED,
+        reason: blocker?.reason ?? null,
       },
       transaction,
     );
@@ -186,9 +199,9 @@ export class PublicationService {
     quotationId: string,
     projectId: string | null,
     canReadFiles: boolean,
-    mayRetry: boolean,
+    permissions: readonly PermissionType[],
   ): Promise<IPublicationSummary> {
-    return this.transactions.run(
+    return this.transactions.readSnapshot(
       async (transaction): Promise<IPublicationSummary> => {
         const cycles = await this.repository.cycles(quotationId, transaction);
         const cycle =
@@ -256,6 +269,10 @@ export class PublicationService {
         );
         const hasAcceptedStage = !uncertain && acceptedStage !== null;
         const exposesFile = canReadFiles && cycle !== null && hasAcceptedStage;
+        const permission = cycle
+          ? await this.retryPermission(quotationId, cycle.id, transaction)
+          : PERMISSIONS.QUOTATIONS_UPDATE;
+        const mayRetry = permissions.includes(permission);
         const currentStage = historyGroups
           .flat()
           .find(
@@ -301,6 +318,7 @@ export class PublicationService {
     quotationId: string,
     cycleId: string,
     generation: number,
+    permissions: readonly PermissionType[],
   ): Promise<void> {
     await this.transactions.run(async (transaction): Promise<void> => {
       await this.lock(quotationId, transaction);
@@ -310,12 +328,21 @@ export class PublicationService {
         throw new ConflictException('מצב פרסום הקובץ השתנה. יש לרענן');
       }
 
+      const permission = await this.retryPermission(
+        quotationId,
+        cycleId,
+        transaction,
+      );
+      if (!permissions.includes(permission)) {
+        throw new ForbiddenException('אין הרשאה לניסיון פרסום נוסף');
+      }
+
       if (cycle.state !== PUBLICATION_STATE.FAILED) {
         return;
       }
 
       await this.repository.execute(
-        `UPDATE quotation_publication_operations SET state=CASE WHEN kind IS NULL THEN 'archiving' WHEN pdf IS NULL THEN 'queued' ELSE 'publishing' END,attempt=0,dispatched_at=NULL,reason=NULL,updated_at=now() WHERE cycle_id=$cycleId AND state='failed'`,
+        `UPDATE quotation_publication_operations SET state=CASE WHEN kind IS NULL THEN 'archiving' WHEN hash IS NULL THEN 'queued' ELSE 'publishing' END,attempt=0,dispatched_at=NULL,reason=NULL,updated_at=now() WHERE cycle_id=$cycleId AND state='failed'`,
         { cycleId },
         transaction,
       );
@@ -328,13 +355,15 @@ export class PublicationService {
   }
   async retryPermission(
     quotationId: string,
-    cycleId: string | null = null,
+    cycleId: string,
+    transaction?: Transaction,
   ): Promise<PermissionType> {
     const [operation] = await this.repository.select<{
       permission: PermissionType;
     }>(
-      `SELECT o.retry_permission AS permission FROM quotation_publication_operations o JOIN quotation_publication_cycles c ON c.id=o.cycle_id WHERE c.quotation_id=$quotationId AND ($cycleId::uuid IS NULL OR c.id=$cycleId) ORDER BY (c.state='failed') DESC,(o.state='failed') DESC,(o.retry_permission='quotations.approve') DESC,c.source_version DESC,o.generation DESC LIMIT 1`,
+      `SELECT o.retry_permission AS permission FROM quotation_publication_operations o JOIN quotation_publication_cycles c ON c.id=o.cycle_id WHERE c.quotation_id=$quotationId AND c.id=$cycleId ORDER BY (c.state='failed') DESC,(o.state='failed') DESC,(o.retry_permission='quotations.approve') DESC,c.source_version DESC,o.generation DESC LIMIT 1`,
       { quotationId, cycleId },
+      transaction,
     );
     return operation?.permission ?? PERMISSIONS.QUOTATIONS_UPDATE;
   }

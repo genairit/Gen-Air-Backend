@@ -362,6 +362,7 @@ export class PublicationBrokerService
             );
             continue;
           }
+
           const timedOut =
             operation.dispatchedAt &&
             Date.now() - new Date(operation.dispatchedAt).getTime() >
@@ -376,6 +377,7 @@ export class PublicationBrokerService
           ) {
             continue;
           }
+
           const envelope = {
             version: PUBLICATION_PROTOCOL.VERSION,
             jobId: operation.jobId,
@@ -395,6 +397,7 @@ export class PublicationBrokerService
             await this.fail(operation, PUBLICATION_REASON.WORKER, transaction);
             continue;
           }
+
           await this.publish(bytes);
           await this.repository.execute(
             `UPDATE quotation_publication_operations SET state='rendering',attempt=attempt+1,dispatched_at=now(),updated_at=now() WHERE id=$id`,

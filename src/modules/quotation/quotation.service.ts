@@ -321,12 +321,11 @@ export class QuotationService {
     const mayReadFiles =
       hasPermission(actor, PERMISSIONS.PROJECTS_READ) &&
       hasPermission(actor, PERMISSIONS.DRIVE_READ);
-    const mutationPermission = await this.publications.retryPermission(id);
     return this.publications.summary(
       id,
       quotation.projectId,
       mayReadFiles,
-      hasPermission(actor, mutationPermission),
+      actor.permissions,
     );
   }
   async retryPublication(
@@ -335,11 +334,12 @@ export class QuotationService {
     actor: IAuthorizedUser,
   ): Promise<IPublicationSummary> {
     await this.getForActor(id, actor);
-    assertPermissions(
-      actor,
-      await this.publications.retryPermission(id, input.cycleId),
+    await this.publications.retry(
+      id,
+      input.cycleId,
+      input.generation,
+      actor.permissions,
     );
-    await this.publications.retry(id, input.cycleId, input.generation);
     return this.publicationSummary(id, actor);
   }
   async getForActor(

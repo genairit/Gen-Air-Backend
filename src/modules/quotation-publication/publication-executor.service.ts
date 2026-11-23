@@ -14,6 +14,7 @@ import type {
 } from './interfaces/publication.interface';
 
 import { Transaction } from 'sequelize';
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { PublicationService } from './publication.service';
 import { Meta, TypedLogger } from '@Logger/logger.service';
@@ -58,6 +59,7 @@ export class PublicationExecutorService {
           if (!next) {
             continue;
           }
+
           const obsolete = next.generation < cycle.generation || cycle.terminal;
           if (obsolete && next.kind !== null && !next.effectStarted) {
             await this.repository.execute(
@@ -67,6 +69,7 @@ export class PublicationExecutorService {
             );
             continue;
           }
+
           if (next.state === PUBLICATION_STATE.FAILED) {
             await this.fail(
               cycle.id,
@@ -81,7 +84,13 @@ export class PublicationExecutorService {
             return null;
           }
 
-          if (next.kind === null && !cycle.fileId) {
+          const hasExternalEvidence =
+            cycle.actualHash !== null ||
+            operations.some(
+              (operation): boolean =>
+                operation.kind !== null && operation.effectStarted,
+            );
+          if (next.kind === null && !hasExternalEvidence) {
             await this.repository.execute(
               `UPDATE quotation_publication_operations SET state='archived',reason=$reason,updated_at=now() WHERE id=$id`,
               { id: next.id, reason: PUBLICATION_REASON.SUPERSEDED },
@@ -94,10 +103,8 @@ export class PublicationExecutorService {
             );
             continue;
           }
-          const role =
-            cycle.terminal || next.kind === null
-              ? PUBLICATION_ROLE.ARCHIVE
-              : cycle.desiredKind;
+
+          const role = next.kind ?? PUBLICATION_ROLE.ARCHIVE;
           try {
             const folder = await this.destinations.prepare(
               cycle,
@@ -123,13 +130,20 @@ export class PublicationExecutorService {
               },
               transaction,
             );
+            const effectOwner = randomUUID();
             await this.repository.execute(
-              `UPDATE quotation_publication_operations SET effect_started=true,state=$state,updated_at=now() WHERE id=$id`,
-              { id: next.id, state: PUBLICATION_STATE.RECONCILING },
+              `UPDATE quotation_publication_operations SET effect_owner=$effectOwner,effect_started=true,state=$state,updated_at=now() WHERE id=$id`,
+              {
+                id: next.id,
+                effectOwner,
+                state: PUBLICATION_STATE.RECONCILING,
+              },
               transaction,
             );
             return {
               cycleId: cycle.id,
+              effectOwner,
+              wasStarted: next.effectStarted,
               operationId: next.id,
               generation: cycle.generation,
               terminal: cycle.terminal,
@@ -166,20 +180,36 @@ export class PublicationExecutorService {
         cycle.generation !== plan.generation ||
         cycle.terminal !== plan.terminal;
       const failed = operation?.state === PUBLICATION_STATE.FAILED;
-      const desiredRole = cycle.terminal
-        ? PUBLICATION_ROLE.ARCHIVE
-        : cycle.desiredKind;
+      const desiredRole = operation?.kind ?? PUBLICATION_ROLE.ARCHIVE;
       const matchesDesired = plan.folder.role === desiredRole;
       const invalidGeneration =
         operation !== null && operation.generation > cycle.generation;
+      const ownsPlan = operation?.effectOwner === plan.effectOwner;
       if (
         !operation ||
         completed ||
         failed ||
-        changed ||
+        !ownsPlan ||
         !matchesDesired ||
         invalidGeneration
       ) {
+        return;
+      }
+
+      if (changed && !plan.wasStarted) {
+        await this.repository.execute(
+          `UPDATE quotation_publication_operations SET effect_started=false,state='archived',pdf=NULL,reason=$reason,updated_at=now() WHERE id=$id AND effect_owner=$effectOwner`,
+          {
+            id: operation.id,
+            effectOwner: plan.effectOwner,
+            reason: PUBLICATION_REASON.SUPERSEDED,
+          },
+          transaction,
+        );
+        return;
+      }
+
+      if (changed) {
         return;
       }
 
@@ -197,7 +227,7 @@ export class PublicationExecutorService {
       }
 
       try {
-        await this.destinations.confirm(plan.folder, transaction);
+        await this.destinations.confirm(cycle, plan.folder, transaction);
         await this.apply(cycle, operation, plan.folder, transaction);
       } catch (error: unknown) {
         this.logger.warn({

@@ -46,6 +46,11 @@ import {
   scopeSiteDetailsToFieldSet,
 } from './utilities/project-customer-details.utility';
 
+import {
+  publicationProjectLockKey,
+  publicationPhysicalRootLockKey,
+} from '@Modules/quotation-publication/utilities/publication-lock.utility';
+
 import { Transaction } from 'sequelize';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { MoveProjectDto } from './dto/move-project.dto';
@@ -69,6 +74,7 @@ import { hasAddressChanges } from './utilities/project-intake.utility';
 import { generateProjectCode } from './utilities/project-code.utility';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
+import type { IProjectDriveRootLock } from './interfaces/project.interface';
 import { GetProjectCountsByFilterDto } from './dto/get-counts-by-filter.dto';
 import { GetApartmentsByFilterDto } from './dto/get-apartments-by-filter.dto';
 import { toProjectStageCounts } from './utilities/project-stage-counts.utility';
@@ -86,7 +92,6 @@ import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-syn
 import { DRIVE_FOLDER_LINK } from '@Modules/project-drive-link/constants/drive-folder-link.constant';
 import { IProjectMemberAssignment } from '@Modules/project-member/interfaces/project-member.interface';
 import { IExistingDriveFolder } from '@Modules/project-drive-link/interfaces/drive-folder-link.interface';
-import { publicationProjectLockKey } from '@Modules/quotation-publication/utilities/publication-lock.utility';
 import { assertUniqueProjectContactRoles } from '@Modules/project-contact/utilities/project-contact-role.utility';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 
@@ -438,8 +443,8 @@ export class ProjectService {
       return;
     }
 
-    await this.withDriveRootLock(
-      projectId,
+    await this.runDriveRootTransaction(
+      { projectId, candidateRootId: driveFolderId },
       async (transaction): Promise<void> => {
         await this.persistDriveFolderId(projectId, driveFolderId, transaction);
       },
@@ -449,14 +454,102 @@ export class ProjectService {
     projectId: string,
     work: (transaction: Transaction) => Promise<T>,
   ): Promise<T> {
+    return this.runDriveRootTransaction(
+      { projectId, candidateRootId: null },
+      work,
+    );
+  }
+  private async runDriveRootTransaction<T>(
+    context: IProjectDriveRootLock,
+    work: (transaction: Transaction) => Promise<T>,
+  ): Promise<T> {
     return this.databaseTransactionService.run(
       async (transaction): Promise<T> => {
-        await this.databaseTransactionService.lockKey(
-          publicationProjectLockKey(projectId),
+        const initial = await this.projectRepository.findById(
+          context.projectId,
           transaction,
         );
+        if (!initial) {
+          throw new NotFoundException(
+            `Project ${context.projectId} was not found`,
+          );
+        }
+
+        const projectIds = [
+          context.projectId,
+          ...(initial.parentProjectId ? [initial.parentProjectId] : []),
+        ].sort();
+        for (const id of projectIds) {
+          await this.databaseTransactionService.lockKey(
+            publicationProjectLockKey(id),
+            transaction,
+          );
+        }
+        const project = await this.projectRepository.findById(
+          context.projectId,
+          transaction,
+        );
+        if (!project) {
+          throw new NotFoundException(
+            `Project ${context.projectId} was not found`,
+          );
+        }
+
+        const parent = project.parentProjectId
+          ? await this.projectRepository.findById(
+              project.parentProjectId,
+              transaction,
+            )
+          : null;
+        const rootIds = [
+          project.driveFolderId,
+          parent?.driveFolderId ?? null,
+          context.candidateRootId,
+        ].filter((id): id is string => id !== null);
+        for (const rootId of [...new Set(rootIds)].sort()) {
+          await this.databaseTransactionService.lockKey(
+            publicationPhysicalRootLockKey(rootId),
+            transaction,
+          );
+        }
+        if (project.driveFolderId) {
+          await this.driveLinkService.assertOwnershipAvailable(
+            project.driveFolderId,
+            project.parentProjectId,
+            context.projectId,
+            transaction,
+          );
+        }
         return work(transaction);
       },
+    );
+  }
+  async lockDriveRootCandidate(
+    projectId: string,
+    rootId: string,
+    transaction: Transaction,
+  ): Promise<void> {
+    await this.databaseTransactionService.lockKey(
+      publicationPhysicalRootLockKey(rootId),
+      transaction,
+    );
+    await this.databaseTransactionService.lockKey(
+      DRIVE_FOLDER_LINK.OWNERSHIP_LOCK,
+      transaction,
+    );
+    const project = await this.projectRepository.findById(
+      projectId,
+      transaction,
+    );
+    if (!project) {
+      throw new NotFoundException(`Project ${projectId} was not found`);
+    }
+
+    await this.driveLinkService.assertRootClaimAvailable(
+      rootId,
+      project.parentProjectId,
+      projectId,
+      transaction,
     );
   }
   private async persistDriveFolderId(
@@ -468,6 +561,7 @@ export class ProjectService {
       publicationProjectLockKey(projectId),
       transaction,
     );
+    await this.lockDriveRootCandidate(projectId, driveFolderId, transaction);
     const isUpdated = await this.projectRepository.updateDriveFolderId(
       projectId,
       driveFolderId,
@@ -553,24 +647,53 @@ export class ProjectService {
     return project;
   }
 
+  private async lockNewProjectDriveClaim(
+    attributes: TProjectCreationAttributes,
+    transaction: Transaction,
+  ): Promise<void> {
+    const rootId = attributes.driveFolderId;
+    if (!attributes.driveFolderLinked || !rootId) {
+      return;
+    }
+
+    const parentId = attributes.parentProjectId ?? null;
+    if (parentId) {
+      await this.databaseTransactionService.lockKey(
+        publicationProjectLockKey(parentId),
+        transaction,
+      );
+    }
+    const parent = parentId
+      ? await this.projectRepository.findById(parentId, transaction)
+      : null;
+    const rootIds = [
+      rootId,
+      ...(parent?.driveFolderId ? [parent.driveFolderId] : []),
+    ].sort();
+    for (const candidate of rootIds) {
+      await this.databaseTransactionService.lockKey(
+        publicationPhysicalRootLockKey(candidate),
+        transaction,
+      );
+    }
+    await this.databaseTransactionService.lockKey(
+      DRIVE_FOLDER_LINK.OWNERSHIP_LOCK,
+      transaction,
+    );
+    await this.driveLinkService.assertRootClaimAvailable(
+      rootId,
+      parentId,
+      null,
+      transaction,
+    );
+  }
   private async persistNewProject(
     attributes: TProjectCreationAttributes,
     { members, creator }: INewProjectContext,
     contacts: LinkProjectContactDto[] = [],
   ): Promise<string> {
     return this.databaseTransactionService.run(async (transaction) => {
-      if (attributes.driveFolderLinked && attributes.driveFolderId) {
-        await this.databaseTransactionService.lockKey(
-          DRIVE_FOLDER_LINK.OWNERSHIP_LOCK,
-          transaction,
-        );
-        await this.driveLinkService.assertOwnershipAvailable(
-          attributes.driveFolderId,
-          attributes.parentProjectId ?? null,
-          null,
-          transaction,
-        );
-      }
+      await this.lockNewProjectDriveClaim(attributes, transaction);
 
       const created = await this.projectRepository.create(
         attributes,

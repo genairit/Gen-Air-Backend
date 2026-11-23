@@ -1,4 +1,5 @@
 import { GoogleDriveService } from './google-drive.service';
+import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { PUBLICATION_LIMITS } from '@Modules/quotation-publication/constants/publication.constant';
 
 const generate = jest.fn<Promise<unknown>, [unknown, unknown]>();
@@ -27,7 +28,7 @@ describe('Google publication protocol', (): void => {
       id: 'reserved',
       name: 'frozen.pdf',
       parentId: 'role-folder',
-      mimeType: 'application/pdf',
+      mimeType: GOOGLE_DRIVE.PDF_MIME_TYPE,
       properties: { publicationCycle: 'cycle' },
       bytes: Buffer.from('%PDF-1.7'),
     });

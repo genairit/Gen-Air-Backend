@@ -957,6 +957,7 @@ Table quotation_publication_operations {
   destination_label text [note: 'Immutable verified project/folder context for this stage']
   destination_folder_id text
   effect_started boolean [not null, default: false]
+  effect_owner uuid [note: 'Fences a locally unused prepared attempt from another executor attempt']
   dispatched_at timestamptz
   reason text
   updated_at timestamptz [not null, default: `now()`]

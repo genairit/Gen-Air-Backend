@@ -37,6 +37,7 @@ interface ILifecycleEventInput {
   transaction: Transaction;
   projectId?: string | null;
   status: (typeof QUOTATION_STATUS)[keyof typeof QUOTATION_STATUS];
+  permission?: import('@Constants/authorization.constant').PermissionType;
   action?: (typeof QUOTATION_LIFECYCLE_ACTION)[keyof typeof QUOTATION_LIFECYCLE_ACTION];
 }
 export interface IIntegrationContext {
@@ -58,6 +59,10 @@ const EVENT_ACTION = {
   [QUOTATION_STATUS.DRAFT]: QUOTATION_LIFECYCLE_ACTION.RETURN,
   [QUOTATION_STATUS.CANCELLED]: QUOTATION_LIFECYCLE_ACTION.CANCEL,
 } as const;
+export const PUBLICATION_TEST_PERMISSIONS = [
+  PERMISSIONS.QUOTATIONS_UPDATE,
+  PERMISSIONS.QUOTATIONS_APPROVE,
+] as const;
 export const ROOT = 'project-root';
 export const pdf = Buffer.from('%PDF-1.7\naccepted proposal');
 export const orderPdf = Buffer.from('%PDF-1.7\naccepted order');
@@ -122,7 +127,7 @@ export const lifecycleEvent = async (
   };
   await publication.lifecycle({
     eventId,
-    permission: PERMISSIONS.QUOTATIONS_APPROVE,
+    permission: input.permission ?? PERMISSIONS.QUOTATIONS_APPROVE,
     actorId: fixture.actor.id,
     document,
     transaction,

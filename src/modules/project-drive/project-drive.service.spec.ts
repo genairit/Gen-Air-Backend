@@ -53,6 +53,7 @@ const createService = async () => {
   const projectService = {
     getById: jest.fn().mockResolvedValue(PROJECT),
     quotationSnapshot: jest.fn(),
+    lockDriveRootCandidate: jest.fn((): Promise<void> => Promise.resolve()),
     withDriveRootLock: jest.fn(
       (
         projectId: string,

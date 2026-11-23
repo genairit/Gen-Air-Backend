@@ -43,6 +43,7 @@ import { PublicationBrokerService } from './publication-broker.service';
 import { PublicationExecutorService } from './publication-executor.service';
 import { publicationSnapshotHash } from './utilities/publication-hash.utility';
 import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
+import { PUBLICATION_TEST_PERMISSIONS } from './testing/publication-integration.fixture';
 
 beforeAll(startPublicationFixture);
 afterAll(closePublicationFixture);
@@ -121,7 +122,7 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
       cycle.quotationId,
       fixture.projectId,
       true,
-      true,
+      PUBLICATION_TEST_PERMISSIONS,
     );
     expect(archivedSummary.history.at(-1)).toMatchObject({
       documentKind: PUBLICATION_KIND.ORDER,
@@ -168,7 +169,7 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
       cycle.quotationId,
       fixture.projectId,
       true,
-      true,
+      PUBLICATION_TEST_PERMISSIONS,
     );
     expect(summary).toMatchObject({
       state: PUBLICATION_STATE.ARCHIVED,
@@ -206,6 +207,7 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
       cycle.quotationId,
       cycle.id,
       cycle.generation,
+      PUBLICATION_TEST_PERMISSIONS,
     );
     await context().executor.execute(cycle.quotationId);
     expect((await currentCycle(cycle)).state).toBe(PUBLICATION_STATE.PUBLISHED);
@@ -314,7 +316,7 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
       cycle.quotationId,
       otherProject,
       true,
-      true,
+      PUBLICATION_TEST_PERMISSIONS,
     );
     expect(summary.destinationLabel).toContain(cycle.rootContext.projectLabel);
     expect(summary.destinationLabel).not.toContain('P-2');
@@ -347,7 +349,7 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
       cycle.quotationId,
       fixture.projectId,
       true,
-      true,
+      PUBLICATION_TEST_PERMISSIONS,
     );
     expect(visible).toMatchObject({
       cycleId: cycle.id,
@@ -356,9 +358,19 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
       canRetry: true,
     });
     await expect(
-      context().publication.retry(cycle.quotationId, cycle.id, 1),
+      context().publication.retry(
+        cycle.quotationId,
+        cycle.id,
+        1,
+        PUBLICATION_TEST_PERMISSIONS,
+      ),
     ).rejects.toThrow('רענן');
-    await context().publication.retry(cycle.quotationId, cycle.id, 2);
+    await context().publication.retry(
+      cycle.quotationId,
+      cycle.id,
+      2,
+      PUBLICATION_TEST_PERMISSIONS,
+    );
     await context().executor.execute(cycle.quotationId);
     expect((await currentCycle(cycle)).state).toBe(PUBLICATION_STATE.ARCHIVED);
     await context().executor.execute(cycle.quotationId);

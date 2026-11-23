@@ -85,6 +85,7 @@ export interface IPublicationOperation {
   effectStarted: boolean;
   revisionId: string | null;
   dispatchedAt: Date | null;
+  effectOwner: string | null;
   state: PublicationStateType;
   destinationLabel: string | null;
   lifecycleEventId: string | null;
@@ -126,6 +127,8 @@ export interface IPublicationEffectPlan {
   cycleId: string;
   terminal: boolean;
   generation: number;
+  effectOwner: string;
+  wasStarted: boolean;
   operationId: string;
   folder: IPublicationFolder;
 }

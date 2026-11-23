@@ -5,6 +5,11 @@ import type {
   IPublicationRootConfiguration,
 } from './interfaces/publication.interface';
 
+import {
+  publicationProjectLockKey,
+  publicationPhysicalRootLockKey,
+} from '@Modules/quotation-publication/utilities/publication-lock.utility';
+
 import { Transaction } from 'sequelize';
 import { Injectable } from '@nestjs/common';
 import { Meta, TypedLogger } from '@Logger/logger.service';
@@ -15,7 +20,6 @@ import type { PublicationRoleType } from './constants/publication.constant';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { APARTMENTS_FOLDER_NAME } from '@Modules/project-drive/constants/project-drive.constant';
-import { publicationProjectLockKey } from '@Modules/quotation-publication/utilities/publication-lock.utility';
 
 @Injectable()
 export class PublicationDestinationService {
@@ -32,16 +36,12 @@ export class PublicationDestinationService {
     role: PublicationRoleType,
     transaction: Transaction,
   ): Promise<IPublicationFolder> {
-    await this.transactions.lockKey(
-      publicationProjectLockKey(cycle.projectId),
-      transaction,
-    );
-    const rootId = cycle.rootId;
+    const authorized = await this.authority(cycle, transaction);
+    const rootId = authorized.rootId;
     if (!rootId) {
-      return this.bindRoot(cycle, role, transaction);
+      return this.bindRoot(authorized, role, transaction);
     }
 
-    await this.validateRoot(cycle, transaction);
     const saved = await this.repository.folder(
       cycle.projectId,
       rootId,
@@ -69,7 +69,7 @@ export class PublicationDestinationService {
     }
 
     const needsLinkedCompletion =
-      matches.length === 0 && cycle.rootContext.linked;
+      matches.length === 0 && authorized.rootContext.linked;
     if (needsLinkedCompletion) {
       throw new Error(PUBLICATION_REASON.COMPLETION_REQUIRED);
     }
@@ -90,13 +90,11 @@ export class PublicationDestinationService {
     return folder;
   }
   async confirm(
+    cycle: IPublicationCycle,
     folder: IPublicationFolder,
     transaction: Transaction,
   ): Promise<void> {
-    await this.transactions.lockKey(
-      publicationProjectLockKey(folder.projectId),
-      transaction,
-    );
+    await this.authority(cycle, transaction);
     const metadata = await this.drive.inspectPublicationFile(folder.folderId);
     const needsCreate = metadata === null && !folder.confirmed;
     if (needsCreate) {
@@ -123,6 +121,65 @@ export class PublicationDestinationService {
       { projectId: folder.projectId, rootId: folder.rootId, role: folder.role },
       transaction,
     );
+  }
+  private async authority(
+    cycle: IPublicationCycle,
+    transaction: Transaction,
+  ): Promise<IPublicationCycle> {
+    const parentId = cycle.rootContext.parentProjectId;
+    const projectIds = [
+      cycle.projectId,
+      ...(parentId ? [parentId] : []),
+    ].sort();
+    for (const id of projectIds) {
+      await this.transactions.lockKey(
+        publicationProjectLockKey(id),
+        transaction,
+      );
+    }
+    if (!cycle.rootId) {
+      return cycle;
+    }
+
+    const needsLineage =
+      parentId !== null && cycle.rootContext.parentRootId === null;
+    const [building] = needsLineage
+      ? await this.repository.select<{ rootId: string | null }>(
+          `SELECT drive_folder_id AS "rootId" FROM projects WHERE id=$parentId AND deleted_at IS NULL`,
+          { parentId },
+          transaction,
+        )
+      : [];
+    const parentRootId =
+      cycle.rootContext.parentRootId ?? building?.rootId ?? null;
+    const roots = [
+      cycle.rootId,
+      ...(parentRootId ? [parentRootId] : []),
+    ].sort();
+    for (const root of roots) {
+      await this.transactions.lockKey(
+        publicationPhysicalRootLockKey(root),
+        transaction,
+      );
+    }
+    const authorized = {
+      ...cycle,
+      rootContext: { ...cycle.rootContext, parentRootId },
+    };
+    await this.validateRoot(authorized, transaction);
+    if (needsLineage && parentRootId) {
+      await this.repository.execute(
+        `SELECT set_config('genair.publication_lineage_fill',$cycleId,true)`,
+        { cycleId: cycle.id },
+        transaction,
+      );
+      await this.repository.execute(
+        `UPDATE quotation_publication_cycles SET root_context=jsonb_set(root_context,'{parentRootId}',to_jsonb($parentRootId::text)) WHERE id=$id AND root_context->>'parentRootId' IS NULL AND root_context->>'parentProjectId'=$parentId`,
+        { id: cycle.id, parentRootId, parentId },
+        transaction,
+      );
+    }
+    return authorized;
   }
   private async bindRoot(
     cycle: IPublicationCycle,
@@ -189,6 +246,19 @@ export class PublicationDestinationService {
     );
     if (foreignOwners.length > 0) {
       throw new Error(PUBLICATION_REASON.MISSING);
+    }
+
+    const parentRootId = cycle.rootContext.parentRootId;
+    const parentProjectId = cycle.rootContext.parentProjectId;
+    const parentOwners = parentRootId
+      ? await this.repository.select<IPublicationTemplate>(
+          `SELECT name FROM projects WHERE id<>$parentProjectId AND drive_folder_id=$parentRootId AND deleted_at IS NULL`,
+          { parentProjectId, parentRootId },
+          transaction,
+        )
+      : [];
+    if (parentOwners.length > 0) {
+      throw new Error(PUBLICATION_REASON.APARTMENT);
     }
 
     const root = await this.drive.inspectPublicationFile(cycle.rootId ?? '');
