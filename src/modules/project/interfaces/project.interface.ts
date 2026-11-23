@@ -77,6 +77,7 @@ export interface IProject
   priorityId: string | null;
   projectType?: IProjectType;
   members?: IProjectMember[];
+  driveFolderLinked?: boolean;
   driveFolderId: string | null;
   prioritySyncedAt: Date | null;
   parentProjectId: string | null;
@@ -110,6 +111,8 @@ export type TProjectCreationAttributes = IProjectCustomerDetails &
     Pick<
       IProject,
       | 'customerId'
+      | 'driveFolderId'
+      | 'driveFolderLinked'
       | 'parentProjectId'
       | 'hasOwnTeam'
       | 'hasOwnLighting'

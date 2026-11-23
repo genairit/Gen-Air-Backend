@@ -16,11 +16,18 @@ import { ProjectIntakeDetailsDto } from './project-intake-details.dto';
 import { ProjectCustomerDetailsDto } from './project-customer-details.dto';
 import { LinkProjectContactDto } from '@Modules/project-contact/dto/link-project-contact.dto';
 import { AssignProjectMemberDto } from '@Modules/project-member/dto/assign-project-member.dto';
+import { DRIVE_FOLDER_LINK } from '@Modules/project-drive-link/constants/drive-folder-link.constant';
 
 export class CreateProjectDto extends IntersectionType(
   IntersectionType(ProjectCustomerDetailsDto, ProjectLightingDto),
   ProjectIntakeDetailsDto,
 ) {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(DRIVE_FOLDER_LINK.MAX_REFERENCE_LENGTH)
+  declare existingDriveFolder?: string;
+
   @IsNotEmpty()
   @IsString()
   @Transform(({ value }: { value: unknown }) =>

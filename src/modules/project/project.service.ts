@@ -79,9 +79,13 @@ import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.c
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { LinkProjectContactDto } from '@Modules/project-contact/dto/link-project-contact.dto';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { ProjectDriveLinkService } from '@Modules/project-drive-link/project-drive-link.service';
+import { PreviewDriveFolderDto } from '@Modules/project-drive-link/dto/preview-drive-folder.dto';
 import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-sync-status.constant';
+import { DRIVE_FOLDER_LINK } from '@Modules/project-drive-link/constants/drive-folder-link.constant';
 import { IProjectMemberAssignment } from '@Modules/project-member/interfaces/project-member.interface';
+import { IExistingDriveFolder } from '@Modules/project-drive-link/interfaces/drive-folder-link.interface';
 import { assertUniqueProjectContactRoles } from '@Modules/project-contact/utilities/project-contact-role.utility';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 
@@ -99,7 +103,18 @@ export class ProjectService {
     private readonly projectStageTransitionService: ProjectStageTransitionService,
     @Inject(forwardRef(() => ProjectStageService))
     private readonly projectStageService: ProjectStageService,
+    private readonly driveLinkService: ProjectDriveLinkService,
   ) {}
+
+  previewExistingDriveFolder(
+    input: PreviewDriveFolderDto,
+  ): Promise<IExistingDriveFolder> {
+    return this.driveLinkService.preview(input);
+  }
+
+  inspectLinkedDriveFolder(project: IProject): Promise<string[]> {
+    return this.driveLinkService.inspect(project);
+  }
 
   async getById(id: string): Promise<TProjectRead> {
     const project = await this.getStoredById(id);
@@ -195,6 +210,9 @@ export class ProjectService {
       project,
       projectType.detailFieldSet,
     );
+    const linkedDriveFolder = project.existingDriveFolder
+      ? await this.driveLinkService.resolve(project.existingDriveFolder)
+      : null;
     const code = await this.generateAvailableCode(creator);
 
     const createdProjectId = await this.persistNewProject(
@@ -205,6 +223,9 @@ export class ProjectService {
         ...resolveProjectLighting(project),
         name: project.name.trim(),
         createdById: creator.id,
+        ...(linkedDriveFolder
+          ? { driveFolderId: linkedDriveFolder.id, driveFolderLinked: true }
+          : {}),
         stageId: initialStage.id,
         projectTypeId: project.projectTypeId,
         notes: project.notes ?? null,
@@ -241,8 +262,19 @@ export class ProjectService {
       apartment,
       stageId: initialStage.id,
     });
+    const linkedDriveFolder = apartment.existingDriveFolder
+      ? await this.driveLinkService.resolve(
+          apartment.existingDriveFolder,
+          buildingId,
+        )
+      : null;
     const apartmentId = await this.persistNewProject(
-      attributes,
+      {
+        ...attributes,
+        ...(linkedDriveFolder
+          ? { driveFolderId: linkedDriveFolder.id, driveFolderLinked: true }
+          : {}),
+      },
       {
         members,
         creator,
@@ -464,6 +496,19 @@ export class ProjectService {
     contacts: LinkProjectContactDto[] = [],
   ): Promise<string> {
     return this.databaseTransactionService.run(async (transaction) => {
+      if (attributes.driveFolderLinked && attributes.driveFolderId) {
+        await this.databaseTransactionService.lockKey(
+          DRIVE_FOLDER_LINK.OWNERSHIP_LOCK,
+          transaction,
+        );
+        await this.driveLinkService.assertOwnershipAvailable(
+          attributes.driveFolderId,
+          attributes.parentProjectId ?? null,
+          null,
+          transaction,
+        );
+      }
+
       const created = await this.projectRepository.create(
         attributes,
         transaction,
