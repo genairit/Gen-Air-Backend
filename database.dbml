@@ -144,12 +144,13 @@ Table customer_contacts {
 Table project_contact_links {
   project_id uuid [pk, not null, ref: > projects.id]
   contact_id uuid [pk, not null, ref: > customer_contacts.id]
-  role varchar(60) [note: 'Role on this project or apartment']
+  role varchar(60) [note: 'Free-text legacy role or fixed architect/project_manager/consultant slot; one contact per fixed slot']
   is_primary boolean [not null, default: false, note: 'Distinct primary project contact; one per project']
   created_at timestamptz(3) [not null, default: `now()`]
   updated_at timestamptz(3) [not null, default: `now()`]
   indexes {
     project_id [unique, name: 'uq_project_contact_primary', note: 'Partial: is_primary = true']
+    (project_id, role) [unique, name: 'uq_project_contact_role_slot', note: 'Partial: role IN architect/project_manager/consultant']
     contact_id
   }
   Note: 'Links reusable contacts to projects and apartments; unlinking leaves the directory contact and other links intact. RLS enabled, no public grants.'
