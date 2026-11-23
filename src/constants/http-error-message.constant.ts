@@ -4,6 +4,10 @@ import {
 } from './http-error-code.constant';
 
 export const HTTP_ERROR_MESSAGES = {
+  [HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_LOCKED]:
+    'Linked task quotation context cannot change',
+  [HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_UNAVAILABLE]:
+    'Task quotation context is unavailable',
   [HTTP_ERROR_CODES.DRIVE_FOLDER_REFERENCE_INVALID]:
     'יש להזין קישור לתיקיית Google Drive או מזהה תיקייה תקין',
   [HTTP_ERROR_CODES.DRIVE_FOLDER_NOT_ACCESSIBLE]:

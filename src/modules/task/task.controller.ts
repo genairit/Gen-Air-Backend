@@ -27,6 +27,8 @@ import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
 import { UpdateTaskUrgencyDto } from './dto/update-task-urgency.dto';
+import { QuotationService } from '@Modules/quotation/quotation.service';
+import { CreateTaskQuotationDto } from './dto/create-task-quotation.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
@@ -36,7 +38,29 @@ import { ITaskStatusTransition } from './interfaces/task-status-transition.inter
 @ApiBearerAuth()
 @Controller('task')
 export class TaskController {
-  constructor(private readonly taskService: TaskService) {}
+  constructor(
+    private readonly taskService: TaskService,
+    private readonly quotations: QuotationService,
+  ) {}
+  @Get(':id/quotations')
+  @RequirePermissions(PERMISSIONS.TASKS_READ, PERMISSIONS.QUOTATIONS_READ)
+  taskQuotations(
+    @Param('id', ParseUUIDPipe) id: string,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ) {
+    return this.quotations.taskQuotations(id, user);
+  }
+  @Post(':id/quotation')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(PERMISSIONS.TASKS_READ, PERMISSIONS.QUOTATIONS_READ)
+  createQuotation(
+    @Body() input: CreateTaskQuotationDto,
+    @Param('id', ParseUUIDPipe) id: string,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ) {
+    void input;
+    return this.quotations.createForTask(id, user);
+  }
   @Get()
   @RequirePermissions(PERMISSIONS.TASKS_READ)
   getByFilter(

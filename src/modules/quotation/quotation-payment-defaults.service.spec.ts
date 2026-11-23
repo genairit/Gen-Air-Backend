@@ -17,6 +17,7 @@ import type { IPaymentConfiguration } from '@Interfaces/payment-configuration.in
 import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import type { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
+import { TaskQuotationLinksService } from '@Modules/quotation/task-quotation-links.service';
 import type { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import type { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 import type { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
@@ -69,6 +70,7 @@ const setup = (configuration: IPaymentConfiguration) => {
     transactions,
     users,
     userRoles,
+    mock<TaskQuotationLinksService>(),
   );
   jest.spyOn(service, 'getById').mockResolvedValue(mock({ id: randomUUID() }));
   jest.spyOn(service, 'document').mockResolvedValue(current);

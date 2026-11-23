@@ -39,8 +39,8 @@ export class CustomerService {
     private readonly transactions: DatabaseTransactionService,
   ) {}
 
-  async getById(id: string): Promise<ICustomer> {
-    const customer = await this.customerRepository.findById(id);
+  async getById(id: string, transaction?: Transaction): Promise<ICustomer> {
+    const customer = await this.customerRepository.findById(id, transaction);
 
     if (!customer) {
       throw new NotFoundException(`Customer ${id} was not found`);

@@ -35,8 +35,11 @@ export interface IQuotationView extends IQuotationDocument {
   salesAgentName?: string | null;
 }
 export interface IQuotationDetailView extends IQuotationView {
+  taskContextLocked?: boolean;
+  taskProjectLocked?: boolean;
   apartmentLinks: IQuotationApartmentLink[];
   primaryProject: IQuotationPrimaryProject | null;
+  taskLinks?: { taskId: string; title: string; isPrimary: boolean }[];
 }
 export interface IProjectQuotationView extends IQuotationView {
   sharedCount: number;

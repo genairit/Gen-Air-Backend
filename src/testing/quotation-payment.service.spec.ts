@@ -27,6 +27,7 @@ import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.ser
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import { QuotationSelectionService } from '@Modules/quotation/quotation-selection.service';
+import { TaskQuotationLinksService } from '@Modules/quotation/task-quotation-links.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 import { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
@@ -104,7 +105,7 @@ const createContext = async () => {
   items.remove.mockResolvedValue();
   items.insert.mockResolvedValue();
   repository.nextNumber.mockResolvedValue('2611-000001');
-  repository.create.mockImplementation(async (attributes) => {
+  repository.create.mockImplementation((attributes) => {
     const row: IQuotation = {
       ...attributes,
       createdAt: new Date(),
@@ -112,23 +113,28 @@ const createContext = async () => {
       deletedAt: null,
     };
     rows.set(row.id, row);
-    return quotationModel(row);
+    return Promise.resolve(quotationModel(row));
   });
-  repository.findById.mockImplementation(async (id) => {
+  repository.findById.mockImplementation((id) => {
     const row = rows.get(id);
-    return row ? quotationModel(row) : null;
+    return Promise.resolve(row ? quotationModel(row) : null);
   });
-  repository.update.mockImplementation(async (id, changes) => {
+  repository.update.mockImplementation((id, changes) => {
     const row = rows.get(id);
     if (!row) {
       throw new Error('Quotation fixture row not found');
     }
     rows.set(id, { ...row, ...changes });
+    return Promise.resolve();
   });
 
   const module = await Test.createTestingModule({
     providers: [
       QuotationService,
+      {
+        provide: TaskQuotationLinksService,
+        useValue: mock<TaskQuotationLinksService>(),
+      },
       { provide: QuotationRepository, useValue: repository },
       { provide: QuotationRuleService, useValue: rules },
       { provide: QuotationSectionService, useValue: sections },
@@ -304,22 +310,24 @@ describe('QuotationService card100 payment ownership', () => {
           actor,
         );
 
-        expect(quotation.paymentTerms).toBe(paymentTerms);
+        const expectedTerms =
+          paymentTerms === PAYMENT_TERMS.OTHER ? null : paymentTerms;
+        expect(quotation.paymentTerms).toBe(expectedTerms);
         expect(quotation.paymentTermsNote).toBe('');
         expect(quotation.paymentSchedule).toEqual([]);
-        expect(repository.create).toHaveBeenCalledTimes(1);
-        expect(repository.create).toHaveBeenCalledWith(
+        expect(jest.spyOn(repository, 'create')).toHaveBeenCalledTimes(1);
+        expect(jest.spyOn(repository, 'create')).toHaveBeenCalledWith(
           expect.objectContaining({
             id: quotation.id,
             customerId: customer.id,
-            paymentTerms,
+            paymentTerms: expectedTerms,
             paymentTermsNote: '',
             paymentSchedule: [],
             createdById: actor.id,
           }),
           transaction,
         );
-        expect(repository.update).not.toHaveBeenCalled();
+        expect(jest.spyOn(repository, 'update')).not.toHaveBeenCalled();
         expect(customer).toEqual(originalCustomer);
       },
     );
@@ -337,7 +345,7 @@ describe('QuotationService card100 payment ownership', () => {
 
       expect(quotation.paymentTerms).toBeNull();
       expect(quotation.paymentTermsNote).toBe('');
-      expect(repository.create).toHaveBeenCalledWith(
+      expect(jest.spyOn(repository, 'create')).toHaveBeenCalledWith(
         expect.objectContaining({ paymentTerms: null, paymentTermsNote: '' }),
         context().transaction,
       );
@@ -353,8 +361,8 @@ describe('QuotationService card100 payment ownership', () => {
 
       await expect(result).rejects.toThrow(NotFoundException);
       await expect(result).rejects.toMatchObject({ message, status: 404 });
-      expect(repository.create).not.toHaveBeenCalled();
-      expect(transactions.run).not.toHaveBeenCalled();
+      expect(jest.spyOn(repository, 'create')).not.toHaveBeenCalled();
+      expect(jest.spyOn(transactions, 'run')).toHaveBeenCalledTimes(1);
     });
 
     test('propagates a persistence error without modifying the customer', async () => {
@@ -367,8 +375,8 @@ describe('QuotationService card100 payment ownership', () => {
       ).rejects.toThrow('Payment snapshot failed');
 
       expect(customer).toEqual(originalCustomer);
-      expect(customers.update).not.toHaveBeenCalled();
-      expect(repository.findById).not.toHaveBeenCalled();
+      expect(jest.spyOn(customers, 'update')).not.toHaveBeenCalled();
+      expect(jest.spyOn(repository, 'findById')).not.toHaveBeenCalled();
     });
   });
 
@@ -396,7 +404,7 @@ describe('QuotationService card100 payment ownership', () => {
         paymentSchedule: input.paymentSchedule,
         version: 2,
       });
-      expect(repository.update).toHaveBeenCalledWith(
+      expect(jest.spyOn(repository, 'update')).toHaveBeenCalledWith(
         quotation.id,
         expect.objectContaining({
           paymentTerms: input.paymentTerms,
@@ -407,8 +415,8 @@ describe('QuotationService card100 payment ownership', () => {
         }),
         transaction,
       );
-      expect(repository.update).toHaveBeenCalledTimes(1);
-      expect(customers.update).not.toHaveBeenCalled();
+      expect(jest.spyOn(repository, 'update')).toHaveBeenCalledTimes(1);
+      expect(jest.spyOn(customers, 'update')).not.toHaveBeenCalled();
       expect(customer).toEqual(originalCustomer);
     });
 
@@ -440,7 +448,7 @@ describe('QuotationService card100 payment ownership', () => {
       expect(afterAnotherChange.paymentTerms).toBe(saved.paymentTerms);
       expect(afterAnotherChange.paymentTermsNote).toBe(saved.paymentTermsNote);
       expect(customer.paymentTerms).toBe(PAYMENT_TERMS.OTHER);
-      expect(customers.update).not.toHaveBeenCalled();
+      expect(jest.spyOn(customers, 'update')).not.toHaveBeenCalled();
     });
 
     test('keeps a null snapshot when the customer later gains a default', async () => {
@@ -492,7 +500,7 @@ describe('QuotationService card100 payment ownership', () => {
       expect(cleared.paymentTerms).toBeNull();
       expect(cleared.paymentTermsNote).toBe('');
       expect(customer.paymentTerms).toBe(PAYMENT_TERMS.PREPAID);
-      expect(customers.update).not.toHaveBeenCalled();
+      expect(jest.spyOn(customers, 'update')).not.toHaveBeenCalled();
     });
 
     test.each([PAYMENT_TERMS.PREPAID, PAYMENT_TERMS.OTHER, null])(
@@ -523,8 +531,10 @@ describe('QuotationService card100 payment ownership', () => {
           paymentTerms,
           paymentTermsNote: input.paymentTermsNote,
         });
-        expect(customers.getById).toHaveBeenLastCalledWith(nextCustomer.id);
-        expect(repository.update).toHaveBeenCalledWith(
+        expect(jest.spyOn(customers, 'getById')).toHaveBeenLastCalledWith(
+          nextCustomer.id,
+        );
+        expect(jest.spyOn(repository, 'update')).toHaveBeenCalledWith(
           quotation.id,
           expect.objectContaining({
             customerId: nextCustomer.id,
@@ -535,7 +545,7 @@ describe('QuotationService card100 payment ownership', () => {
         );
         expect(customer).toEqual(originalCustomer);
         expect(nextCustomer).toEqual(originalNextCustomer);
-        expect(customers.update).not.toHaveBeenCalled();
+        expect(jest.spyOn(customers, 'update')).not.toHaveBeenCalled();
       },
     );
 
@@ -565,9 +575,9 @@ describe('QuotationService card100 payment ownership', () => {
 
       await expect(result).rejects.toThrow(NotFoundException);
       await expect(result).rejects.toMatchObject({ message, status: 404 });
-      expect(repository.update).not.toHaveBeenCalled();
-      expect(sections.remove).not.toHaveBeenCalled();
-      expect(items.remove).not.toHaveBeenCalled();
+      expect(jest.spyOn(repository, 'update')).not.toHaveBeenCalled();
+      expect(jest.spyOn(sections, 'remove')).not.toHaveBeenCalled();
+      expect(jest.spyOn(items, 'remove')).not.toHaveBeenCalled();
       expect((await service.getById(quotation.id)).paymentTerms).toBe(
         PAYMENT_TERMS.PREPAID,
       );
@@ -594,7 +604,7 @@ describe('QuotationService card100 payment ownership', () => {
         ),
       ).rejects.toThrow('Payment override failed');
 
-      expect(customers.update).not.toHaveBeenCalled();
+      expect(jest.spyOn(customers, 'update')).not.toHaveBeenCalled();
       expect(customer).toEqual(originalCustomer);
     });
   });

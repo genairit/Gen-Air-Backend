@@ -857,3 +857,14 @@ Ref: project_boq_lines.material_id > materials.id [delete: restrict]
 Ref: project_boq_revisions.boq_id > project_boqs.id [delete: restrict]
 Ref: project_boq_revisions.source_quotation_id > quotations.id [delete: restrict]
 Ref: project_boq_revisions.created_by_id > users.id [delete: restrict]
+
+Table task_quotation_links {
+  task_id uuid [not null, ref: > tasks.id]
+  quotation_id uuid [not null, ref: > quotations.id]
+  is_primary boolean [not null, default: false, note: 'Partial unique index: one primary per task']
+  created_at timestamptz [not null, default: `now()`]
+  indexes {
+    (task_id, quotation_id) [pk]
+    quotation_id
+  }
+}

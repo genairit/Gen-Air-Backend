@@ -25,6 +25,7 @@ import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { encodeTaskCursor } from './utilities/task-cursor.utility';
 import { CustomerService } from '@Modules/customer/customer.service';
+import { QuotationService } from '@Modules/quotation/quotation.service';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { baselinePermissions } from '../../testing/authorization.fixture';
 import { ITask, TTaskUpdateAttributes } from './interfaces/task.interface';
@@ -138,6 +139,7 @@ describe('Task HTTP permission boundaries', () => {
     const module = await Test.createTestingModule({
       controllers: [TaskController],
       providers: [
+        { provide: QuotationService, useValue: {} },
         TaskService,
         { provide: TaskRepository, useValue: repository },
         { provide: TaskStatusTransitionRepository, useValue: transitions },

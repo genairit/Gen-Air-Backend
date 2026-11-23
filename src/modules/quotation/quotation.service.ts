@@ -93,6 +93,7 @@ import type { IUser } from '@Modules/user/interfaces/user.interface';
 import { UserRoleService } from '@Modules/user-role/user-role.service';
 import type { SetApartmentLinksDto } from './dto/set-apartment-links.dto';
 import { QuotationSelectionService } from './quotation-selection.service';
+import { TaskQuotationLinksService } from './task-quotation-links.service';
 import type { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import type { IQuotationSalesAgent } from './interfaces/quotation.interface';
@@ -146,6 +147,7 @@ export class QuotationService {
     private readonly transactions: DatabaseTransactionService,
     private readonly users: UserService,
     private readonly userRoles: UserRoleService,
+    private readonly taskLinks: TaskQuotationLinksService,
   ) {}
   statusCounts(query: GetQuotationCountsDto): Promise<IQuotationStatusCounts> {
     return this.repository.statusCounts(query.search ?? '');
@@ -286,15 +288,21 @@ export class QuotationService {
     const quotation = await this.getById(id);
     return this.projectDetailsForActor(quotation, actor);
   }
-  projectDetailsForActor(
+  async projectDetailsForActor(
     quotation: IQuotationDetailView,
     actor: IAuthorizedUser,
-  ): IQuotationDetailView {
+  ): Promise<IQuotationDetailView> {
+    const metadata = await this.taskLinks.metadata(quotation.id, actor);
     if (hasPermission(actor, PERMISSIONS.PROJECTS_READ)) {
-      return quotation;
+      return { ...quotation, ...metadata };
     }
 
-    return { ...quotation, primaryProject: null, apartmentLinks: [] };
+    return {
+      ...quotation,
+      ...metadata,
+      primaryProject: null,
+      apartmentLinks: [],
+    };
   }
   async apartmentOptions(id: string): Promise<IQuotationApartmentOptions> {
     await this.requireQuotation(id);
@@ -352,53 +360,89 @@ export class QuotationService {
     input: CreateQuotationDto,
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
-    const customer = await this.customers.getById(input.customerId);
+    const id = await this.transactions.run((transaction) =>
+      this.createDraft(input, actor, transaction),
+    );
+    return this.getById(id);
+  }
+  async createDraft(
+    input: CreateQuotationDto,
+    actor: IAuthorizedUser,
+    transaction: Transaction,
+  ): Promise<string> {
+    await this.validateSalesAgent(input.salesAgentId ?? null, actor);
+    const customer = await this.customers.getById(
+      input.customerId,
+      transaction,
+    );
     const payment = customerPaymentSnapshot(customer);
     await this.validateProject(input.customerId, input.projectId ?? null);
-    await this.validateSalesAgent(input.salesAgentId ?? null, actor);
     const id = randomUUID();
-    await this.transactions.run(async (transaction) => {
-      const configuration = await this.rules.configuration(transaction);
-      const date = new Date().toISOString().slice(0, 10);
-      const prefix = date.slice(2, 7).replace('-', '');
-      await this.transactions.lockKey(
-        `quotation-number:${prefix}`,
+    const configuration = await this.rules.configuration(transaction);
+    const date = new Date().toISOString().slice(0, 10);
+    const prefix = date.slice(2, 7).replace('-', '');
+    await this.transactions.lockKey(`quotation-number:${prefix}`, transaction);
+    await this.repository.create(
+      {
+        id,
+        ruleConfiguration: configuration.rules,
+        number: await this.repository.nextNumber(prefix, transaction),
+        customerId: customer.id,
+        salesAgentId: input.salesAgentId ?? null,
+        status: QUOTATION_STATUS.DRAFT,
+        cancelledFromStatus: null,
+        cancellationHistory: [],
+        rejectionHistory: [],
+        date,
+        brand: '',
+        brands: [],
+        warningScopeVersion: WARNING_SCOPE_VERSION.PER_SYSTEM,
+        ...payment,
+        paymentTermsNote: '',
+        discountPercent: '0',
+        targetPretaxAmount: null,
+        vatRate: DEFAULT_VAT_RATE,
+        internalNotes: '',
+        version: 1,
+        acknowledgedWarnings: [],
+        createdById: actor.id,
+        issuerName: `${actor.firstName} ${actor.lastName}`.trim(),
+        updatedById: actor.id,
+        approvedById: null,
+        approvedAt: null,
+      },
+      transaction,
+    );
+    await this.links.replacePrimary(id, input.projectId ?? null, transaction);
+    return id;
+  }
+  async taskQuotations(taskId: string, actor: IAuthorizedUser) {
+    return this.taskLinks.read(taskId, actor);
+  }
+  async createForTask(taskId: string, actor: IAuthorizedUser) {
+    assertPermissions(
+      actor,
+      PERMISSIONS.TASKS_READ,
+      PERMISSIONS.QUOTATIONS_READ,
+    );
+    return this.transactions.run(async (transaction) => {
+      const context = await this.taskLinks.context(taskId, transaction);
+      this.taskLinks.assertAvailable(context);
+      const existing = (await this.taskLinks.list(taskId, transaction))[0];
+      if (existing) {
+        await this.taskLinks.attachPrimary(taskId, existing.id, transaction);
+        return { quotationId: existing.id, created: false };
+      }
+      this.taskLinks.assertContextPermissions(context, actor);
+      assertPermissions(actor, PERMISSIONS.QUOTATIONS_CREATE);
+      const quotationId = await this.createDraft(
+        { customerId: context.customerId!, projectId: context.projectId },
+        actor,
         transaction,
       );
-      await this.repository.create(
-        {
-          id,
-          ruleConfiguration: configuration.rules,
-          number: await this.repository.nextNumber(prefix, transaction),
-          customerId: customer.id,
-          salesAgentId: input.salesAgentId ?? null,
-          status: QUOTATION_STATUS.DRAFT,
-          cancelledFromStatus: null,
-          cancellationHistory: [],
-          rejectionHistory: [],
-          date,
-          brand: '',
-          brands: [],
-          warningScopeVersion: WARNING_SCOPE_VERSION.PER_SYSTEM,
-          ...payment,
-          paymentTermsNote: '',
-          discountPercent: '0',
-          targetPretaxAmount: null,
-          vatRate: DEFAULT_VAT_RATE,
-          internalNotes: '',
-          version: 1,
-          acknowledgedWarnings: [],
-          createdById: actor.id,
-          issuerName: `${actor.firstName} ${actor.lastName}`.trim(),
-          updatedById: actor.id,
-          approvedById: null,
-          approvedAt: null,
-        },
-        transaction,
-      );
-      await this.links.replacePrimary(id, input.projectId ?? null, transaction);
+      await this.taskLinks.attachPrimary(taskId, quotationId, transaction);
+      return { quotationId, created: true };
     });
-    return this.getById(id);
   }
   async clone(
     sourceId: string,
@@ -606,6 +650,7 @@ export class QuotationService {
         transaction,
       );
       await this.links.replacePrimary(id, source.projectId, transaction);
+      await this.taskLinks.copy(sourceId, id, transaction);
       const apartmentLinks = await this.links.apartmentLinks(
         [sourceId],
         transaction,
@@ -662,6 +707,12 @@ export class QuotationService {
       }
 
       await this.assertSharingKeepsContext(current, input, transaction);
+      await this.taskLinks.assertQuotationContext(
+        id,
+        input.customerId,
+        input.projectId,
+        transaction,
+      );
       await this.validateProject(input.customerId, input.projectId);
       if (!input.brands && current.brands.length > 1) {
         throw new ConflictException(
