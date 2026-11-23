@@ -342,7 +342,7 @@ export class PublicationService {
       }
 
       await this.repository.execute(
-        `UPDATE quotation_publication_operations SET state=CASE WHEN kind IS NULL THEN 'archiving' WHEN hash IS NULL THEN 'queued' ELSE 'publishing' END,attempt=0,dispatched_at=NULL,reason=NULL,updated_at=now() WHERE cycle_id=$cycleId AND state='failed'`,
+        `UPDATE quotation_publication_operations SET job_id=CASE WHEN kind IS NOT NULL AND hash IS NULL THEN gen_random_uuid() ELSE job_id END,state=CASE WHEN kind IS NULL THEN 'archiving' WHEN hash IS NULL THEN 'queued' ELSE 'publishing' END,attempt=0,dispatched_at=NULL,reason=NULL,updated_at=now() WHERE cycle_id=$cycleId AND state='failed'`,
         { cycleId },
         transaction,
       );

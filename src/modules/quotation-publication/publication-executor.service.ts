@@ -7,9 +7,10 @@ import {
 
 import type {
   IPublicationCycle,
-  IPublicationFolder,
+  IPublicationMutation,
   IPublicationOperation,
   IPublicationEffectPlan,
+  IPublicationEffectContext,
   IPublicationFolderIdentity,
 } from './interfaces/publication.interface';
 
@@ -226,13 +227,29 @@ export class PublicationExecutorService {
         return;
       }
 
+      const mutation: IPublicationMutation = { issued: false };
       try {
         await this.destinations.confirm(cycle, plan.folder, transaction);
-        await this.apply(cycle, operation, plan.folder, transaction);
+        await this.apply({
+          cycle,
+          operation,
+          folder: plan.folder,
+          transaction,
+          mutation,
+        });
       } catch (error: unknown) {
         this.logger.warn({
           message: 'Quotation publication effect requires recovery',
         });
+        const knownUnused = !plan.wasStarted && !mutation.issued;
+        if (knownUnused) {
+          await this.repository.execute(
+            `UPDATE quotation_publication_operations SET effect_started=false WHERE id=$id AND effect_owner=$effectOwner AND state NOT IN ('published','archived')`,
+            { id: operation.id, effectOwner: plan.effectOwner },
+            transaction,
+          );
+        }
+
         await this.fail(
           cycle.id,
           operation.id,
@@ -242,14 +259,10 @@ export class PublicationExecutorService {
       }
     });
   }
-  private async apply(
-    cycle: IPublicationCycle,
-    operation: IPublicationOperation,
-    folder: IPublicationFolder,
-    transaction: Transaction,
-  ): Promise<void> {
+  private async apply(context: IPublicationEffectContext): Promise<void> {
+    const { cycle, operation, folder, transaction } = context;
     if (operation.kind === null) {
-      await this.archive(cycle, operation, folder, transaction);
+      await this.archive(context);
       return;
     }
 
@@ -276,7 +289,7 @@ export class PublicationExecutorService {
     }
     if (!existing) {
       // A reserved identity is retried; create cannot overwrite an earlier successful create.
-      await this.create(cycle, operation, folder);
+      await this.create(context);
     }
     const current = await this.drive.inspectPublicationFile(cycle.fileId);
     if (!current) {
@@ -285,7 +298,7 @@ export class PublicationExecutorService {
 
     this.assertIdentity(current, cycle);
     if (current.md5 !== expectedMd5) {
-      await this.replaceOrder(cycle, operation, current, transaction);
+      await this.replaceOrder(context, current);
     }
     const accepted = await this.drive.inspectPublicationFile(cycle.fileId);
     if (!accepted || accepted.md5 !== expectedMd5) {
@@ -295,7 +308,7 @@ export class PublicationExecutorService {
     this.assertIdentity(accepted, cycle);
     await this.retainStage(operation, accepted, transaction);
     // The shared quotation lock prevents lifecycle changes while this effect is in flight.
-    await this.move(cycle, accepted, folder);
+    await this.move(context, accepted);
     const final = await this.drive.inspectPublicationFile(cycle.fileId);
     const correctParent =
       final?.parents.length === 1 && final.parents[0] === folder.folderId;
@@ -329,16 +342,14 @@ export class PublicationExecutorService {
       transaction,
     );
   }
-  private async create(
-    cycle: IPublicationCycle,
-    operation: IPublicationOperation,
-    folder: IPublicationFolder,
-  ): Promise<void> {
+  private async create(context: IPublicationEffectContext): Promise<void> {
+    const { cycle, operation, folder } = context;
     if (!cycle.fileId || !operation.pdf || !operation.snapshot) {
       throw new Error(PUBLICATION_REASON.DRIVE);
     }
 
     try {
+      context.mutation.issued = true;
       await this.drive.createPublicationFile({
         id: cycle.fileId,
         name: operation.snapshot.filename,
@@ -358,11 +369,10 @@ export class PublicationExecutorService {
     }
   }
   private async replaceOrder(
-    cycle: IPublicationCycle,
-    operation: IPublicationOperation,
+    context: IPublicationEffectContext,
     current: IPublicationDriveFile,
-    transaction: Transaction,
   ): Promise<void> {
+    const { cycle, operation, transaction } = context;
     if (
       operation.kind !== PUBLICATION_KIND.ORDER ||
       !operation.pdf ||
@@ -382,6 +392,7 @@ export class PublicationExecutorService {
     }
 
     await this.retainStage(proposal, current, transaction);
+    context.mutation.issued = true;
     await this.drive.replacePublicationMedia({
       id: current.id,
       name: operation.snapshot.filename,
@@ -424,12 +435,8 @@ export class PublicationExecutorService {
       });
     }
   }
-  private async archive(
-    cycle: IPublicationCycle,
-    operation: IPublicationOperation,
-    folder: IPublicationFolder,
-    transaction: Transaction,
-  ): Promise<void> {
+  private async archive(context: IPublicationEffectContext): Promise<void> {
+    const { cycle, operation, folder, transaction } = context;
     if (!cycle.fileId) {
       throw new Error(PUBLICATION_REASON.MISSING);
     }
@@ -452,7 +459,7 @@ export class PublicationExecutorService {
       throw new Error(PUBLICATION_REASON.RECONCILING);
     }
 
-    await this.move(cycle, file, folder);
+    await this.move(context, file);
     const actual = await this.drive.inspectPublicationFile(cycle.fileId);
     const sameBytes = actual?.md5 === file.md5;
     const archived =
@@ -477,14 +484,15 @@ export class PublicationExecutorService {
     );
   }
   private async move(
-    cycle: IPublicationCycle,
+    context: IPublicationEffectContext,
     file: IPublicationDriveFile,
-    folder: IPublicationFolder,
   ): Promise<void> {
+    const { folder } = context;
     if (file.parents.length === 1 && file.parents[0] === folder.folderId) {
       return;
     }
 
+    context.mutation.issued = true;
     await this.drive.movePublicationFile(
       file.id,
       file.parents,

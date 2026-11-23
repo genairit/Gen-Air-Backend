@@ -948,7 +948,7 @@ Table quotation_publication_operations {
   source_hash text [not null]
   snapshot jsonb
   state text [not null]
-  job_id uuid [not null, unique]
+  job_id uuid [not null, unique, note: 'Current server render-attempt identity; rotates only when hash-null retry needs a fresh render']
   attempt integer [not null, default: 0]
   pdf bytea [note: 'At most 4MiB per proposal/order stage; released after verified pinned revision, otherwise retained bounded fallback']
   hash text [note: 'Immutable first accepted SHA256 survives byte release']

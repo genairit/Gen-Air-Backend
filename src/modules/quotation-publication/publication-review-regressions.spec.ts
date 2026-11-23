@@ -11,6 +11,23 @@ import {
 } from './testing/publication-broker.fixture';
 
 import {
+  consumeJobId,
+  deliverResult,
+  latestOperation,
+  drainReadyResults,
+} from './testing/publication-result.fixture';
+
+import {
+  completionService,
+  interruptCompletionAfterRoleCreate,
+} from './testing/publication-completion.fixture';
+
+import type {
+  ICommittedRoleReservation,
+  IConfirmedRoleReservation,
+} from './testing/publication-completion.fixture';
+
+import {
   pdf,
   pdfs,
   ROOT,
@@ -37,13 +54,21 @@ import {
   insertRootProject,
 } from './testing/publication-root-writer.fixture';
 
+import { connect } from 'amqplib';
+import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
+import { mock } from 'jest-mock-extended';
 import type { Transaction } from 'sequelize';
 import type { ConfirmChannel } from 'amqplib';
+import { ConfigService } from '@nestjs/config';
+import { BadGatewayException } from '@nestjs/common';
 import { PERMISSIONS } from '@Constants/authorization.constant';
+import { PublicationBrokerService } from './publication-broker.service';
+import { DRIVE_TEMPLATE_TAGS } from '@Constants/drive-template.constant';
 import { deferred, until } from './testing/publication-integration.fixture';
 import type { IPublicationCycle } from './interfaces/publication.interface';
 import { PublicationExecutorService } from './publication-executor.service';
+import type { IPublicationFolder } from './interfaces/publication.interface';
 import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
 import { publicationPhysicalRootLockKey } from './utilities/publication-lock.utility';
 import { PUBLICATION_TEST_PERMISSIONS } from './testing/publication-integration.fixture';
@@ -51,11 +76,22 @@ import { DatabaseTransactionService } from '@Providers/database/database-transac
 import { APARTMENTS_FOLDER_NAME } from '@Modules/project-drive/constants/project-drive.constant';
 import { QUOTATION_LIFECYCLE_ACTION } from '@Modules/quotation/constants/quotation-lifecycle.constant';
 
+const COMPLETION_ACTION = {
+  AUTOMATIC: 'automatic',
+  EXPLICIT: 'complete-template',
+} as const;
+
 const APPROVAL_PHASE = {
   BEFORE_RENDER: 'before-render',
   AFTER_ACCEPT: 'accepted-before-create',
   BETWEEN_EFFECTS: 'between-prepare-effect',
 } as const;
+const PREFLIGHT_FOLLOWUP = {
+  APPROVE: 'approve',
+  RETURN: 'return',
+  DELETE: 'delete',
+} as const;
+
 const WITHDRAWAL_ACTION = { WITHDRAW: 'withdraw', DELETE: 'delete' } as const;
 
 const EXTERNAL_FAILURE = {
@@ -1022,6 +1058,7 @@ describe('physical root, lineage and desired-stage review regressions', (): void
     );
     await executor.execute(cycle.quotationId);
     const uncertain = await currentCycle(cycle);
+    expect((await latestOperation(cycle)).effectStarted).toBe(true);
     expect(uncertain.fileId).not.toBeNull();
     await transactions.run((transaction): Promise<void> =>
       event(cycle.quotationId, 3, QUOTATION_STATUS.APPROVED, transaction),
@@ -1040,7 +1077,14 @@ describe('physical root, lineage and desired-stage review regressions', (): void
       visible.generation ?? 0,
       PUBLICATION_TEST_PERMISSIONS,
     );
-    await executor.execute(cycle.quotationId);
+    const restarted = new PublicationExecutorService(
+      context().repository,
+      publication,
+      context().destinations,
+      transactions,
+      drive,
+    );
+    await restarted.execute(cycle.quotationId);
     const reconciled = await currentCycle(cycle);
     expect(reconciled.fileId).toBe(uncertain.fileId);
     expect(reconciled.state).not.toBe(PUBLICATION_STATE.PUBLISHED);
@@ -1053,5 +1097,541 @@ describe('physical root, lineage and desired-stage review regressions', (): void
     await executor.execute(cycle.quotationId);
     expect((await currentCycle(cycle)).fileId).toBe(uncertain.fileId);
     expect(pdfs.get(uncertain.fileId ?? '')).toEqual(orderPdf);
+  });
+});
+
+describe('first-owner provenance and render-attempt recovery regressions', (): void => {
+  it.each(Object.values(PREFLIGHT_FOLLOWUP))(
+    'keeps a read-only first-owner preflight failure unused through %s',
+    async (action): Promise<void> => {
+      const cycle = await createReview();
+      await accept(cycle, pdf);
+      const {
+        executor,
+        destinations,
+        transactions,
+        publication,
+        drive,
+        repository,
+      } = context();
+      const writes = drive.createPublicationFile.mock.calls.length;
+      const preflight = jest
+        .spyOn(destinations, 'confirm')
+        .mockRejectedValueOnce(new Error('Read-only root preflight denied'));
+      try {
+        await executor.execute(cycle.quotationId);
+      } finally {
+        preflight.mockRestore();
+      }
+      const failed = await latestOperation(cycle);
+      expect(failed.state).toBe(PUBLICATION_STATE.FAILED);
+      expect(failed.effectStarted).toBe(false);
+      expect(drive.createPublicationFile.mock.calls).toHaveLength(writes);
+      await transactions.run(async (transaction): Promise<void> => {
+        if (action === PREFLIGHT_FOLLOWUP.DELETE) {
+          await publication.lock(cycle.quotationId, transaction);
+          await publication.deleted(cycle.quotationId, transaction);
+          await repository.execute(
+            'UPDATE quotations SET deleted_at=now() WHERE id=$id',
+            { id: cycle.quotationId },
+            transaction,
+          );
+          return;
+        }
+
+        const status =
+          action === PREFLIGHT_FOLLOWUP.APPROVE
+            ? QUOTATION_STATUS.APPROVED
+            : QUOTATION_STATUS.DRAFT;
+        await event(cycle.quotationId, 3, status, transaction);
+      });
+      await executor.execute(cycle.quotationId);
+      await executor.execute(cycle.quotationId);
+      expect(drive.createPublicationFile.mock.calls).toHaveLength(writes);
+      if (action === PREFLIGHT_FOLLOWUP.APPROVE) {
+        expect((await latestOperation(cycle)).state).not.toBe(
+          PUBLICATION_STATE.PUBLISHED,
+        );
+        await accept(cycle, orderPdf);
+        await executor.execute(cycle.quotationId);
+        const published = await currentCycle(cycle);
+        expect(pdfs.get(published.fileId ?? '')).toEqual(orderPdf);
+        expect(files.get(published.actualFolderId ?? '')?.name).toBe(
+          'הזמנה לביצוע',
+        );
+        return;
+      }
+
+      expect((await currentCycle(cycle)).state).toBe(
+        PUBLICATION_STATE.ARCHIVED,
+      );
+    },
+  );
+
+  it('rotates only a fresh render job identity and rejects delayed prior outcomes before adopting current bytes', async (): Promise<void> => {
+    const cycle = await createReview();
+    const { executor, publication, transactions, repository, drive } =
+      context();
+    await accept(cycle, pdf);
+    await executor.execute(cycle.quotationId);
+    const originalFileId = (await currentCycle(cycle)).fileId;
+    await transactions.run((transaction): Promise<void> =>
+      event(cycle.quotationId, 3, QUOTATION_STATUS.APPROVED, transaction),
+    );
+    const prefix = `publication.retry.${randomUUID()}`;
+    const url = 'amqp://quotation_test:quotation_test@127.0.0.1:5678';
+    const pending = jest
+      .spyOn(repository, 'pending')
+      .mockResolvedValue([cycle.quotationId]);
+    const broker = new PublicationBrokerService(
+      new ConfigService({ RABBITMQ_URL: url, WORKER_QUEUE_PREFIX: prefix }),
+      publication,
+      repository,
+      mock<PublicationExecutorService>(),
+      transactions,
+    );
+    const connection = await connect(url);
+    const channel = await connection.createConfirmChannel();
+    try {
+      await broker.tick();
+      const old = await latestOperation(cycle);
+      expect(await consumeJobId(channel, prefix)).toBe(old.jobId);
+      await deliverResult({ channel, prefix, operation: old, bytes: null });
+      await until(
+        async (): Promise<boolean> =>
+          (await latestOperation(cycle)).state === PUBLICATION_STATE.FAILED,
+      );
+      const currentCycleBeforeRetry = await currentCycle(cycle);
+      await publication.retry(
+        cycle.quotationId,
+        cycle.id,
+        currentCycleBeforeRetry.generation,
+        PUBLICATION_TEST_PERMISSIONS,
+      );
+      const fresh = await latestOperation(cycle);
+      expect(fresh.jobId).not.toBe(old.jobId);
+      expect(fresh).toMatchObject({
+        id: old.id,
+        cycleId: old.cycleId,
+        generation: old.generation,
+        snapshot: old.snapshot,
+        sourceHash: old.sourceHash,
+        hash: null,
+        state: PUBLICATION_STATE.QUEUED,
+      });
+      expect((await currentCycle(cycle)).fileId).toBe(originalFileId);
+      await broker.tick();
+      expect(await consumeJobId(channel, prefix)).toBe(fresh.jobId);
+      const barrier = { ...fresh, id: randomUUID(), jobId: randomUUID() };
+      await deliverResult({ channel, prefix, operation: old, bytes: null });
+      await deliverResult({ channel, prefix, operation: old, bytes: pdf });
+      await deliverResult({ channel, prefix, operation: barrier, bytes: null });
+      await drainReadyResults(channel, prefix);
+      const stillPending = await latestOperation(cycle);
+      expect(stillPending).toMatchObject({
+        jobId: fresh.jobId,
+        state: PUBLICATION_STATE.RENDERING,
+        hash: null,
+        pdf: null,
+      });
+      await deliverResult({
+        channel,
+        prefix,
+        operation: fresh,
+        bytes: orderPdf,
+      });
+      const expectedHash = createHash('sha256').update(orderPdf).digest('hex');
+      await until(
+        async (): Promise<boolean> =>
+          (await latestOperation(cycle)).hash === expectedHash,
+      );
+      await deliverResult({ channel, prefix, operation: old, bytes: null });
+      await deliverResult({ channel, prefix, operation: fresh, bytes: null });
+      await deliverResult({ channel, prefix, operation: barrier, bytes: null });
+      await drainReadyResults(channel, prefix);
+      expect(await latestOperation(cycle)).toMatchObject({
+        jobId: fresh.jobId,
+        hash: expectedHash,
+        state: PUBLICATION_STATE.PUBLISHING,
+        pdf: orderPdf,
+      });
+      drive.movePublicationFile.mockRejectedValueOnce(
+        new Error('Move acknowledgement unavailable after pin'),
+      );
+      await executor.execute(cycle.quotationId);
+      const retained = await latestOperation(cycle);
+      expect(retained).toMatchObject({
+        jobId: fresh.jobId,
+        hash: expectedHash,
+        pdf: null,
+        state: PUBLICATION_STATE.FAILED,
+      });
+      expect(retained.revisionId).not.toBeNull();
+      await publication.retry(
+        cycle.quotationId,
+        cycle.id,
+        (await currentCycle(cycle)).generation,
+        PUBLICATION_TEST_PERMISSIONS,
+      );
+      expect(await latestOperation(cycle)).toMatchObject({
+        jobId: fresh.jobId,
+        hash: expectedHash,
+        pdf: null,
+        state: PUBLICATION_STATE.PUBLISHING,
+      });
+      await broker.tick();
+      expect(
+        (await channel.checkQueue(`${prefix}.pdf.jobs`)).messageCount,
+      ).toBe(0);
+      await deliverResult({ channel, prefix, operation: fresh, bytes: null });
+      await deliverResult({ channel, prefix, operation: barrier, bytes: null });
+      await drainReadyResults(channel, prefix);
+      expect(await latestOperation(cycle)).toMatchObject({
+        jobId: fresh.jobId,
+        hash: expectedHash,
+        state: PUBLICATION_STATE.PUBLISHING,
+      });
+      await executor.execute(cycle.quotationId);
+      expect((await currentCycle(cycle)).fileId).toBe(originalFileId);
+      expect(pdfs.get(originalFileId ?? '')).toEqual(orderPdf);
+    } finally {
+      await broker.beforeApplicationShutdown();
+      pending.mockRestore();
+      await channel.deleteQueue(`${prefix}.pdf.jobs`);
+      await channel.deleteQueue(`${prefix}.pdf.results`);
+      await channel.close();
+      await connection.close();
+    }
+  });
+});
+
+describe('shared semantic publication role-folder authority', (): void => {
+  it.each(Object.values(COMPLETION_ACTION))(
+    'keeps the publication reserved archive ID through actual %s provisioning between prepare and confirm',
+    async (action): Promise<void> => {
+      const root = `completion-${randomUUID()}`;
+      await setRoot(root);
+      const cycle = await createReview();
+      const { transactions, destinations, repository, drive } = context();
+      const planned = await transactions.run(
+        (transaction): Promise<IPublicationFolder> =>
+          destinations.prepare(cycle, PUBLICATION_ROLE.ARCHIVE, transaction),
+      );
+      expect(planned.confirmed).toBe(false);
+      expect(files.has(planned.folderId)).toBe(false);
+      const service = completionService();
+      if (action === COMPLETION_ACTION.EXPLICIT) {
+        await service.completeTemplate(fixture.projectId);
+      }
+      if (action === COMPLETION_ACTION.AUTOMATIC) {
+        await service.provision(fixture.projectId);
+      }
+
+      const beforeConfirm = [...files.keys()];
+      const creates = drive.createPublicationFile.mock.calls.length;
+      await transactions.run((transaction): Promise<void> =>
+        destinations.confirm(cycle, planned, transaction),
+      );
+      const matching = [...files.values()].filter(
+        (file): boolean =>
+          file.name === planned.label && file.parents.includes(root),
+      );
+      expect(matching.map((file): string => file.id)).toEqual([
+        planned.folderId,
+      ]);
+      const mapped = await transactions.run(
+        (transaction): Promise<IPublicationFolder | null> =>
+          repository.folder(
+            fixture.projectId,
+            root,
+            PUBLICATION_ROLE.ARCHIVE,
+            transaction,
+          ),
+      );
+      expect(mapped).toMatchObject({
+        folderId: planned.folderId,
+        confirmed: true,
+      });
+      expect(drive.createPublicationFile.mock.calls).toHaveLength(creates);
+      expect(beforeConfirm.every((id): boolean => files.has(id))).toBe(true);
+      const legacyRoleCreates = drive.ensureFolder.mock.calls.filter(
+        ([name, parent]): boolean => name === planned.label && parent === root,
+      );
+      expect(legacyRoleCreates).toHaveLength(0);
+    },
+  );
+
+  it('does not authorize linked background creation from an unused managed reservation but explicit completion confirms its exact ID', async (): Promise<void> => {
+    const root = `linked-pending-${randomUUID()}`;
+    await setRoot(root);
+    const old = await createReview();
+    await accept(old, pdf);
+    const {
+      executor,
+      destinations,
+      transactions,
+      repository,
+      drive,
+      publication,
+    } = context();
+    const preflight = jest
+      .spyOn(destinations, 'confirm')
+      .mockRejectedValueOnce(new Error('Stopped before folder create'));
+    try {
+      await executor.execute(old.quotationId);
+    } finally {
+      preflight.mockRestore();
+    }
+    const pending = await transactions.run(
+      (transaction): Promise<IPublicationFolder | null> =>
+        repository.folder(
+          fixture.projectId,
+          root,
+          PUBLICATION_ROLE.QUOTATION,
+          transaction,
+        ),
+    );
+    if (!pending) {
+      throw new Error('Pending semantic reservation missing');
+    }
+
+    await transactions.run((transaction): Promise<void> =>
+      event(old.quotationId, 3, QUOTATION_STATUS.DRAFT, transaction),
+    );
+    await executor.execute(old.quotationId);
+    await executor.execute(old.quotationId);
+    await fixture
+      .database()
+      .query('UPDATE projects SET drive_folder_linked=true WHERE id=$id', {
+        bind: { id: fixture.projectId },
+      });
+    await transactions.run((transaction): Promise<void> =>
+      event(old.quotationId, 4, QUOTATION_STATUS.REVIEW, transaction),
+    );
+    const fresh = await transactions.run(
+      async (transaction): Promise<IPublicationCycle | null> =>
+        (await repository.cycles(old.quotationId, transaction)).at(-1) ?? null,
+    );
+    if (!fresh) {
+      throw new Error('Fresh linked cycle missing');
+    }
+
+    await accept(fresh, pdf);
+    const creates = drive.createPublicationFile.mock.calls.length;
+    await executor.execute(old.quotationId);
+    expect((await currentCycle(fresh)).state).toBe(PUBLICATION_STATE.FAILED);
+    expect(drive.createPublicationFile.mock.calls).toHaveLength(creates);
+    expect(files.has(pending.folderId)).toBe(false);
+    await completionService().completeTemplate(fixture.projectId);
+    expect(files.has(pending.folderId)).toBe(true);
+    await publication.retry(
+      old.quotationId,
+      fresh.id,
+      fresh.generation,
+      PUBLICATION_TEST_PERMISSIONS,
+    );
+    await executor.execute(old.quotationId);
+    expect((await currentCycle(fresh)).state).toBe(PUBLICATION_STATE.PUBLISHED);
+    expect(files.get(pending.folderId)?.parents).toEqual([root]);
+    const exactFolders = [...files.values()].filter(
+      (file): boolean =>
+        file.name === pending.label && file.parents.includes(root),
+    );
+    expect(exactFolders.map((file): string => file.id)).toEqual([
+      pending.folderId,
+    ]);
+  });
+
+  it('adopts a valid explicitly completed tagged template by stable role identity without changing its frozen PDF snapshot', async (): Promise<void> => {
+    const root = `tagged-linked-${randomUUID()}`;
+    await setRoot(root, true);
+    const { repository, transactions, executor, publication, drive } =
+      context();
+    const [template] = await repository.select<{ id: string; name: string }>(
+      `SELECT t.id,t.name FROM drive_template_folders t JOIN quotation_publication_roles r ON r.template_id=t.id WHERE r.role=$role`,
+      { role: PUBLICATION_ROLE.QUOTATION },
+    );
+    const configured = `${DRIVE_TEMPLATE_TAGS.PROJECT_NAME} הצעות`;
+    await fixture
+      .database()
+      .query('UPDATE drive_template_folders SET name=$name WHERE id=$id', {
+        bind: { id: template.id, name: configured },
+      });
+    try {
+      const cycle = await createReview();
+      await accept(cycle, pdf);
+      const [before] = await operations(cycle);
+      const creates = drive.createPublicationFile.mock.calls.length;
+      await executor.execute(cycle.quotationId);
+      expect((await currentCycle(cycle)).state).toBe(PUBLICATION_STATE.FAILED);
+      expect(drive.createPublicationFile.mock.calls).toHaveLength(creates);
+      await completionService().completeTemplate(fixture.projectId);
+      const completed =
+        [...files.values()].find(
+          (file): boolean =>
+            file.name === 'Exact project הצעות' && file.parents.includes(root),
+        ) ?? null;
+      expect(completed).not.toBeNull();
+      await publication.retry(
+        cycle.quotationId,
+        cycle.id,
+        cycle.generation,
+        PUBLICATION_TEST_PERMISSIONS,
+      );
+      await executor.execute(cycle.quotationId);
+      expect((await currentCycle(cycle)).state).toBe(
+        PUBLICATION_STATE.PUBLISHED,
+      );
+      const mapped = await transactions.run(
+        (transaction): Promise<IPublicationFolder | null> =>
+          repository.folder(
+            fixture.projectId,
+            root,
+            PUBLICATION_ROLE.QUOTATION,
+            transaction,
+          ),
+      );
+      expect(mapped?.folderId).toBe(completed?.id);
+      const [after] = await operations(cycle);
+      expect(after.snapshot).toEqual(before.snapshot);
+      expect(after.sourceHash).toBe(before.sourceHash);
+      expect(
+        [...files.values()].filter(
+          (file): boolean =>
+            file.name === 'Exact project הצעות' && file.parents.includes(root),
+        ),
+      ).toHaveLength(1);
+      expect(
+        [...files.values()].some(
+          (file): boolean =>
+            file.name === configured && file.parents.includes(root),
+        ),
+      ).toBe(false);
+    } finally {
+      await fixture
+        .database()
+        .query('UPDATE drive_template_folders SET name=$name WHERE id=$id', {
+          bind: { id: template.id, name: template.name },
+        });
+    }
+  });
+
+  it('blocks a conflicting sibling instead of deleting, fuzzy-adopting or duplicating a reserved role destination', async (): Promise<void> => {
+    const root = `conflict-${randomUUID()}`;
+    await setRoot(root);
+    const cycle = await createReview();
+    const { transactions, destinations, repository, drive } = context();
+    const planned = await transactions.run(
+      (transaction): Promise<IPublicationFolder> =>
+        destinations.prepare(cycle, PUBLICATION_ROLE.ARCHIVE, transaction),
+    );
+    const sibling = completeRole(root, planned.label);
+    const creates = drive.createPublicationFile.mock.calls.filter(
+      ([input]): boolean =>
+        input.name === planned.label && input.parentId === root,
+    ).length;
+    await expect(
+      completionService().completeTemplate(fixture.projectId),
+    ).rejects.toThrow();
+    expect(files.has(sibling)).toBe(true);
+    expect(files.has(planned.folderId)).toBe(false);
+    expect(
+      drive.createPublicationFile.mock.calls.filter(
+        ([input]): boolean =>
+          input.name === planned.label && input.parentId === root,
+      ),
+    ).toHaveLength(creates);
+    const mapping = await transactions.run(
+      (transaction): Promise<IPublicationFolder | null> =>
+        repository.folder(
+          fixture.projectId,
+          root,
+          PUBLICATION_ROLE.ARCHIVE,
+          transaction,
+        ),
+    );
+    expect(mapping?.folderId).toBe(planned.folderId);
+    expect(
+      [...files.values()].filter(
+        (file): boolean =>
+          file.name === planned.label && file.parents.includes(root),
+      ),
+    ).toHaveLength(1);
+  });
+});
+
+describe('durable role reservations across explicit completion failure', (): void => {
+  it('commits every semantic ID before create and reuses it after lost response plus a later template rollback', async (): Promise<void> => {
+    const root = `durable-completion-${randomUUID()}`;
+    await setRoot(root);
+    const nonRoleId = randomUUID();
+    const nonRoleName = `Later non-role ${randomUUID()}`;
+    await fixture
+      .database()
+      .query(
+        'INSERT INTO drive_template_folders(id,parent_id,name,position,created_at,updated_at) VALUES($id,NULL,$name,100,now(),now())',
+        { bind: { id: nonRoleId, name: nonRoleName } },
+      );
+    const service = completionService();
+    const interrupted = interruptCompletionAfterRoleCreate(root, nonRoleName);
+    try {
+      await expect(service.completeTemplate(fixture.projectId)).rejects.toThrow(
+        BadGatewayException,
+      );
+      expect(interrupted.nonRoleFailed()).toBe(true);
+      expect(interrupted.createdIds.size).toBe(3);
+      const original = [...interrupted.createdIds].map(
+        ([role, folderId]): ICommittedRoleReservation => ({
+          role,
+          folderId,
+        }),
+      );
+      for (const visible of interrupted.visibleAtCreate.values()) {
+        expect(visible).toHaveLength(3);
+        expect(visible).toEqual(expect.arrayContaining(original));
+      }
+      const afterFailure =
+        await context().repository.select<ICommittedRoleReservation>(
+          `SELECT role,folder_id AS "folderId" FROM quotation_publication_folders WHERE project_id=$projectId AND root_id=$rootId`,
+          { projectId: fixture.projectId, rootId: root },
+        );
+      expect(afterFailure).toEqual(expect.arrayContaining(original));
+      const creates = context().drive.createPublicationFile.mock.calls.length;
+      await service.completeTemplate(fixture.projectId);
+      const afterRetry =
+        await context().repository.select<IConfirmedRoleReservation>(
+          `SELECT role,folder_id AS "folderId",confirmed FROM quotation_publication_folders WHERE project_id=$projectId AND root_id=$rootId`,
+          { projectId: fixture.projectId, rootId: root },
+        );
+      expect(afterRetry).toHaveLength(3);
+      expect(afterRetry).toEqual(
+        expect.arrayContaining(
+          original.map((reservation): IConfirmedRoleReservation => ({
+            ...reservation,
+            confirmed: true,
+          })),
+        ),
+      );
+      expect(context().drive.createPublicationFile.mock.calls).toHaveLength(
+        creates,
+      );
+      for (const reservation of original) {
+        const actual = files.get(reservation.folderId);
+        expect(actual?.parents).toEqual([root]);
+        expect(
+          [...files.values()].filter(
+            (file): boolean =>
+              file.name === actual?.name && file.parents.includes(root),
+          ),
+        ).toHaveLength(1);
+      }
+    } finally {
+      interrupted.restore();
+      await fixture
+        .database()
+        .query('DELETE FROM drive_template_folders WHERE id=$id', {
+          bind: { id: nonRoleId },
+        });
+    }
   });
 });

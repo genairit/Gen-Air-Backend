@@ -281,6 +281,15 @@ export class PublicationBrokerService
           operation.id,
           transaction,
         );
+        const currentCycle = await this.repository.cycle(
+          operation.cycleId,
+          transaction,
+        );
+        const obsolete =
+          current !== null &&
+          !current.effectStarted &&
+          (currentCycle.terminal ||
+            current.generation < currentCycle.generation);
         const exact =
           current &&
           current.jobId === result.jobId &&
@@ -290,6 +299,7 @@ export class PublicationBrokerService
         if (
           !exact ||
           !current ||
+          obsolete ||
           current.hash ||
           current.state === PUBLICATION_STATE.ARCHIVED ||
           current.state === PUBLICATION_STATE.PUBLISHED
@@ -303,9 +313,10 @@ export class PublicationBrokerService
         }
 
         await this.repository.execute(
-          `UPDATE quotation_publication_operations SET pdf=$pdf,hash=$hash,md5_hash=$md5Hash,state='publishing',reason=NULL,updated_at=now() WHERE id=$id AND pdf IS NULL AND hash IS NULL`,
+          `UPDATE quotation_publication_operations SET pdf=$pdf,hash=$hash,md5_hash=$md5Hash,state='publishing',reason=NULL,updated_at=now() WHERE id=$id AND job_id=$jobId AND pdf IS NULL AND hash IS NULL AND state NOT IN ('published','archived')`,
           {
             id: current.id,
+            jobId: current.jobId,
             pdf: Buffer.from(result.output.pdfBase64, 'base64'),
             hash: result.output.sha256,
             md5Hash: createHash('md5')
@@ -400,13 +411,8 @@ export class PublicationBrokerService
 
           await this.publish(bytes);
           await this.repository.execute(
-            `UPDATE quotation_publication_operations SET state='rendering',attempt=attempt+1,dispatched_at=now(),updated_at=now() WHERE id=$id`,
-            { id: operation.id },
-            transaction,
-          );
-          await this.repository.execute(
-            `UPDATE quotation_publication_cycles SET state='rendering',updated_at=now() WHERE id=$id`,
-            { id: cycle.id },
+            `WITH confirmed AS (UPDATE quotation_publication_operations SET state='rendering',attempt=attempt+1,dispatched_at=now(),updated_at=now() WHERE id=$id AND job_id=$jobId AND hash IS NULL AND state='queued' RETURNING cycle_id) UPDATE quotation_publication_cycles SET state='rendering',reason=NULL,updated_at=now() WHERE id IN (SELECT cycle_id FROM confirmed)`,
+            { id: operation.id, jobId: operation.jobId },
             transaction,
           );
         }
@@ -455,13 +461,8 @@ export class PublicationBrokerService
     transaction: Transaction,
   ): Promise<void> {
     await this.repository.execute(
-      `UPDATE quotation_publication_operations SET state='failed',reason=$reason,updated_at=now() WHERE id=$id`,
-      { id: operation.id, reason },
-      transaction,
-    );
-    await this.repository.execute(
-      `UPDATE quotation_publication_cycles SET state='failed',reason=$reason,updated_at=now() WHERE id=$id`,
-      { id: operation.cycleId, reason },
+      `WITH failed AS (UPDATE quotation_publication_operations SET state='failed',reason=$reason,updated_at=now() WHERE id=$id AND job_id=$jobId AND hash IS NULL AND state NOT IN ('published','archived') RETURNING cycle_id) UPDATE quotation_publication_cycles SET state='failed',reason=$reason,updated_at=now() WHERE id IN (SELECT cycle_id FROM failed)`,
+      { id: operation.id, jobId: operation.jobId, reason },
       transaction,
     );
   }

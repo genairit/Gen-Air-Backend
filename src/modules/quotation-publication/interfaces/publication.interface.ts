@@ -6,6 +6,7 @@ import type {
 
 import type { Transaction } from 'sequelize';
 import type { PermissionType } from '@Constants/authorization.constant';
+import type { IProject } from '@Modules/project/interfaces/project.interface';
 import type { PublicationResultStatusType } from '../constants/publication.constant';
 import type { IQuotationDocument } from '@Modules/quotation/interfaces/quotation-document.interface';
 
@@ -137,4 +138,31 @@ export interface IPublicationFolderIdentity {
 }
 export interface IPublicationTemplate {
   name: string;
+}
+
+export interface IPublicationMutation {
+  issued: boolean;
+}
+export interface IPublicationEffectContext {
+  cycle: IPublicationCycle;
+  transaction: Transaction;
+  folder: IPublicationFolder;
+  mutation: IPublicationMutation;
+  operation: IPublicationOperation;
+}
+
+export interface IPublicationFolderScope {
+  rootId: string;
+  linked: boolean;
+  projectId: string;
+}
+export interface IPublicationTemplateNaming extends Pick<
+  IProject,
+  'code' | 'name'
+> {
+  templateName: string;
+}
+
+export interface IPublicationRoleBinding {
+  role: PublicationRoleType;
 }

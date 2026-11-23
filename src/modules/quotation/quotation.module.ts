@@ -20,15 +20,15 @@ import { QuotationItemModule } from '@Modules/quotation-item/quotation-item.modu
 import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import { QuotationProjectModule } from '@Modules/quotation-project/quotation-project.module';
 import { QuotationSectionModule } from '@Modules/quotation-section/quotation-section.module';
-import { PublicationRepository } from '@Modules/quotation-publication/publication.repository';
 import { PublicationBrokerService } from '@Modules/quotation-publication/publication-broker.service';
 import { CatalogueItemUsageModule } from '@Modules/catalogue-item-usage/catalogue-item-usage.module';
 import { PublicationExecutorService } from '@Modules/quotation-publication/publication-executor.service';
-import { PublicationDestinationService } from '@Modules/quotation-publication/publication-destination.service';
+import { PublicationDestinationModule } from '@Modules/quotation-publication/publication-destination.module';
 
 @Module({
   imports: [
     ConfigModule,
+    PublicationDestinationModule,
     GoogleDriveModule,
     DatabaseModule,
     QuotationRuleModule,
@@ -52,10 +52,8 @@ import { PublicationDestinationService } from '@Modules/quotation-publication/pu
     QuotationPdfService,
     QuotationPdfSnapshotService,
     PublicationService,
-    PublicationRepository,
     PublicationBrokerService,
     PublicationExecutorService,
-    PublicationDestinationService,
   ],
   exports: [QuotationService],
 })

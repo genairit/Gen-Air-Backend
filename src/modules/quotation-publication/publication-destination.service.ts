@@ -2,6 +2,9 @@ import type {
   IPublicationCycle,
   IPublicationFolder,
   IPublicationTemplate,
+  IPublicationFolderScope,
+  IPublicationRoleBinding,
+  IPublicationTemplateNaming,
   IPublicationRootConfiguration,
 } from './interfaces/publication.interface';
 
@@ -20,6 +23,7 @@ import type { PublicationRoleType } from './constants/publication.constant';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { APARTMENTS_FOLDER_NAME } from '@Modules/project-drive/constants/project-drive.constant';
+import { renderDriveFolderName } from '@Modules/project-drive/utilities/drive-folder-name.utility';
 
 @Injectable()
 export class PublicationDestinationService {
@@ -42,44 +46,102 @@ export class PublicationDestinationService {
       return this.bindRoot(authorized, role, transaction);
     }
 
+    return this.prepareFolder(
+      {
+        projectId: cycle.projectId,
+        rootId,
+        linked: authorized.rootContext.linked,
+      },
+      role,
+      transaction,
+    );
+  }
+  async ensureRoleFolder(
+    scope: IPublicationFolderScope,
+    role: PublicationRoleType,
+    transaction: Transaction,
+  ): Promise<string> {
+    const folder = await this.repository.folder(
+      scope.projectId,
+      scope.rootId,
+      role,
+      transaction,
+    );
+    if (!folder) {
+      throw new Error(PUBLICATION_REASON.DESTINATION);
+    }
+
+    const linkedPending = scope.linked && !folder.confirmed;
+    const missingLinkedFolder =
+      linkedPending &&
+      !(await this.drive.inspectPublicationFile(folder.folderId));
+    if (missingLinkedFolder) {
+      throw new Error(PUBLICATION_REASON.COMPLETION_REQUIRED);
+    }
+
+    await this.confirmFolder(folder, transaction);
+    return folder.folderId;
+  }
+  async prepareRoleFolder(
+    scope: IPublicationFolderScope,
+    role: PublicationRoleType,
+    transaction: Transaction,
+  ): Promise<IPublicationFolder> {
+    return this.prepareFolder(scope, role, transaction);
+  }
+  private async prepareFolder(
+    scope: IPublicationFolderScope,
+    role: PublicationRoleType,
+    transaction: Transaction,
+  ): Promise<IPublicationFolder> {
     const saved = await this.repository.folder(
-      cycle.projectId,
-      rootId,
+      scope.projectId,
+      scope.rootId,
       role,
       transaction,
     );
     if (saved) {
+      const linkedPending = scope.linked && !saved.confirmed;
+      if (linkedPending) {
+        const existing = await this.drive.inspectPublicationFile(
+          saved.folderId,
+        );
+        if (!existing) {
+          throw new Error(PUBLICATION_REASON.COMPLETION_REQUIRED);
+        }
+      }
+
       return saved;
     }
 
-    const [template] = await this.repository.select<IPublicationTemplate>(
-      `SELECT t.name FROM quotation_publication_roles r JOIN drive_template_folders t ON t.id=r.template_id WHERE r.role=$role AND t.parent_id IS NULL`,
-      { role },
+    const [template] = await this.repository.select<IPublicationTemplateNaming>(
+      `SELECT t.name AS "templateName",p.code,p.name FROM quotation_publication_roles r JOIN drive_template_folders t ON t.id=r.template_id JOIN projects p ON p.id=$projectId WHERE r.role=$role AND t.parent_id IS NULL`,
+      { role, projectId: scope.projectId },
       transaction,
     );
     if (!template) {
       throw new Error(PUBLICATION_REASON.DESTINATION);
     }
 
-    const matches = (await this.drive.listPublicationChildren(rootId)).filter(
-      (item): boolean => item.isFolder && item.name === template.name,
-    );
+    const label = renderDriveFolderName(template.templateName, template);
+    const matches = (
+      await this.drive.listPublicationChildren(scope.rootId)
+    ).filter((item): boolean => item.isFolder && item.name === label);
     if (matches.length > 1) {
       throw new Error(PUBLICATION_REASON.AMBIGUOUS);
     }
 
-    const needsLinkedCompletion =
-      matches.length === 0 && authorized.rootContext.linked;
+    const needsLinkedCompletion = matches.length === 0 && scope.linked;
     if (needsLinkedCompletion) {
       throw new Error(PUBLICATION_REASON.COMPLETION_REQUIRED);
     }
 
     const folder: IPublicationFolder = {
-      projectId: cycle.projectId,
-      rootId,
+      projectId: scope.projectId,
+      rootId: scope.rootId,
       role,
       folderId: matches.at(0)?.id ?? (await this.drive.reservePublicationId()),
-      label: template.name,
+      label,
       confirmed: matches.length === 1,
     };
     await this.repository.execute(
@@ -95,9 +157,27 @@ export class PublicationDestinationService {
     transaction: Transaction,
   ): Promise<void> {
     await this.authority(cycle, transaction);
+    await this.confirmFolder(folder, transaction);
+  }
+  private async confirmFolder(
+    folder: IPublicationFolder,
+    transaction: Transaction,
+  ): Promise<void> {
     const metadata = await this.drive.inspectPublicationFile(folder.folderId);
     const needsCreate = metadata === null && !folder.confirmed;
     if (needsCreate) {
+      const conflictingSibling = (
+        await this.drive.listPublicationChildren(folder.rootId)
+      ).some(
+        (item): boolean =>
+          item.isFolder &&
+          item.name === folder.label &&
+          item.id !== folder.folderId,
+      );
+      if (conflictingSibling) {
+        throw new Error(PUBLICATION_REASON.AMBIGUOUS);
+      }
+
       await this.create(folder);
     }
 
@@ -121,6 +201,51 @@ export class PublicationDestinationService {
       { projectId: folder.projectId, rootId: folder.rootId, role: folder.role },
       transaction,
     );
+  }
+  async prepareTemplateRoleFolder(
+    projectId: string,
+    rootId: string,
+    templateId: string,
+    transaction: Transaction,
+  ): Promise<void> {
+    const binding = await this.templateRole(templateId, transaction);
+    if (!binding) {
+      return;
+    }
+
+    await this.prepareFolder(
+      { projectId, rootId, linked: false },
+      binding.role,
+      transaction,
+    );
+  }
+  async completeReservedTemplateFolder(
+    projectId: string,
+    rootId: string,
+    templateId: string,
+    transaction: Transaction,
+  ): Promise<string | null> {
+    const binding = await this.templateRole(templateId, transaction);
+    if (!binding) {
+      return null;
+    }
+
+    return this.ensureRoleFolder(
+      { projectId, rootId, linked: false },
+      binding.role,
+      transaction,
+    );
+  }
+  private async templateRole(
+    templateId: string,
+    transaction: Transaction,
+  ): Promise<IPublicationRoleBinding | null> {
+    const [binding] = await this.repository.select<IPublicationRoleBinding>(
+      `SELECT role FROM quotation_publication_roles WHERE template_id=$templateId`,
+      { templateId },
+      transaction,
+    );
+    return binding ?? null;
   }
   private async authority(
     cycle: IPublicationCycle,
