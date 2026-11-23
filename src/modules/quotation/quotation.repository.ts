@@ -15,15 +15,17 @@ export class QuotationRepository {
   async findCloneCommand(
     command: Pick<IQuotationCloneCommand, 'actorId' | 'idempotencyKey'>,
     transaction: Transaction,
-  ): Promise<{ payloadHash: string; quotationId: string } | null> {
+  ): Promise<Pick<
+    IQuotationCloneCommand,
+    'payloadHash' | 'quotationId'
+  > | null> {
     const database = Quotation.sequelize;
     if (!database) {
       throw new Error('Quotation database unavailable');
     }
-    const [saved] = await database.query<{
-      payloadHash: string;
-      quotationId: string;
-    }>(
+    const [saved] = await database.query<
+      Pick<IQuotationCloneCommand, 'payloadHash' | 'quotationId'>
+    >(
       'SELECT payload_hash AS "payloadHash",quotation_id AS "quotationId" FROM quotation_clone_commands WHERE actor_id=$actorId AND idempotency_key=$idempotencyKey',
       { bind: command, transaction, type: QueryTypes.SELECT },
     );

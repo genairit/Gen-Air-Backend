@@ -125,6 +125,7 @@ import { QuotationSectionService } from '@Modules/quotation-section/quotation-se
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
 import { validateRuleConfiguration } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
 import type { IQuotationPrimaryProject } from '@Modules/quotation-project/interfaces/quotation-project.interface';
+import type { IQuotationCloneTransactionRequest } from './interfaces/quotation-clone-transaction-request.interface';
 
 type TQuotationCancellationRecord = Pick<
   IQuotation,
@@ -688,13 +689,9 @@ export class QuotationService {
     }
     return mappings;
   }
-  private async cloneInTransaction(request: {
-    id: string;
-    source: IQuotationDocument;
-    input: CloneQuotationDto;
-    actor: IAuthorizedUser;
-    transaction: Transaction;
-  }): Promise<void> {
+  private async cloneInTransaction(
+    request: IQuotationCloneTransactionRequest,
+  ): Promise<void> {
     const { id, source, input, actor, transaction } = request;
     const sourceId = source.id;
     this.assertVersion(source, input.sourceVersion);

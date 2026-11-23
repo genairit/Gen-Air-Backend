@@ -21,6 +21,7 @@ import { toContainsPattern } from '@Utilities/query.utility';
 import { CatalogueItem } from './entities/catalogue-item.entity';
 import type { ICursorPage } from '@Interfaces/cursor-page.interface';
 import type { GetCatalogueMaintenanceDto } from './dto/get-catalogue-maintenance.dto';
+import type { ICatalogueRankedSearchRequest } from './interfaces/catalogue-ranked-search-request.interface';
 
 @Injectable()
 export class CatalogueItemRepository {
@@ -65,12 +66,9 @@ export class CatalogueItemRepository {
       exactBrand: query.brand ?? null,
     });
   }
-  private async rankedSearch(request: {
-    userId: string;
-    query: CatalogueQueryDto;
-    exactBrand: string | null;
-    transaction?: Transaction;
-  }): Promise<CatalogueItem[]> {
+  private async rankedSearch(
+    request: ICatalogueRankedSearchRequest,
+  ): Promise<CatalogueItem[]> {
     const { query, userId, transaction, exactBrand } = request;
     const database = CatalogueItem.sequelize;
     if (!database) {
