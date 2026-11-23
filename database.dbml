@@ -880,3 +880,20 @@ Table quotation_clone_commands {
     quotation_id [name: 'idx_quotation_clone_commands_quotation']
   }
 }
+
+Table quotation_lifecycle_events {
+  id uuid [pk]
+  quotation_id uuid [not null, ref: > quotations.id]
+  action text [not null]
+  from_status text [not null]
+  to_status text [not null]
+  actor_id uuid [not null]
+  actor_name text [not null]
+  occurred_at timestamptz [not null]
+  quotation_version integer [not null]
+  reason text
+  evidence jsonb [not null]
+  indexes {
+    (quotation_id, quotation_version) [unique]
+  }
+}

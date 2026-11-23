@@ -111,11 +111,13 @@ import { resolveQuotationBrandGroups } from './utilities/quotation-brand.utility
 import { salesAgentDisplayName } from './utilities/quotation-sales-agent.utility';
 import { QUOTATION_SHARING_MESSAGES } from './constants/quotation-sharing.constant';
 import { RecommendedCloneQuotationDto } from './dto/recommended-clone-quotation.dto';
+import { QUOTATION_LIFECYCLE_ACTION } from './constants/quotation-lifecycle.constant';
 import { IQuotationCloneIssue } from './interfaces/quotation-clone-command.interface';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import { isCompatible } from '@Modules/catalogue-item/utilities/catalogue-ranking.utility';
+import type { QuotationLifecycleActionType } from './constants/quotation-lifecycle.constant';
 import type { IQuotationStatusCounts } from './interfaces/quotation-status-counts.interface';
 import { CUSTOMER_PROJECT_KINDS } from '@Modules/project/constants/customer-project.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
@@ -140,6 +142,15 @@ interface ICancelQuotationInput {
   transaction: Transaction;
   kind: TQuotationCancellationKind;
   quotation: TQuotationCancellationRecord;
+}
+
+interface IQuotationLifecycleInput {
+  actor: IUser;
+  reason?: string | null;
+  transaction: Transaction;
+  toStatus: TQuotationStatus;
+  current: IQuotationDocument;
+  action: QuotationLifecycleActionType;
 }
 
 @Injectable()
@@ -285,6 +296,10 @@ export class QuotationService {
               ? quotation.acknowledgedWarnings
               : [],
         }),
+        lifecycleHistory: await this.repository.lifecycleHistory(
+          id,
+          transaction,
+        ),
         primaryProject,
         apartmentLinks: apartmentLinks.get(id) ?? [],
         salesAgentName: salesAgent ? salesAgentDisplayName(salesAgent) : null,
@@ -904,7 +919,7 @@ export class QuotationService {
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
     await this.customers.getById(input.customerId);
-    await this.transactions.run(async (transaction) => {
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       if (
@@ -950,6 +965,15 @@ export class QuotationService {
         userId: actor.id,
         transaction,
       });
+      if (current.status === QUOTATION_STATUS.REVIEW) {
+        await this.auditLifecycle({
+          current,
+          actor,
+          toStatus: QUOTATION_STATUS.DRAFT,
+          action: QUOTATION_LIFECYCLE_ACTION.RETURN,
+          transaction,
+        });
+      }
       const oldIds = current.sections.map((section) => section.id);
       await this.items.remove(oldIds, transaction);
       await this.sections.remove([id], transaction);
@@ -1021,14 +1045,18 @@ export class QuotationService {
   async transition(
     id: string,
     input: QuotationTransitionDto,
-    userId: string,
+    actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
-    await this.transactions.run(async (transaction) => {
+    assertPermissions(actor, PERMISSIONS.QUOTATIONS_APPROVE);
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       const allowed: Record<TQuotationStatus, TQuotationStatus[]> = {
         [QUOTATION_STATUS.DRAFT]: [QUOTATION_STATUS.REVIEW],
-        [QUOTATION_STATUS.REVIEW]: [QUOTATION_STATUS.APPROVED],
+        [QUOTATION_STATUS.REVIEW]: [
+          QUOTATION_STATUS.APPROVED,
+          QUOTATION_STATUS.DRAFT,
+        ],
         [QUOTATION_STATUS.APPROVED]: [QUOTATION_STATUS.DRAFT],
         [QUOTATION_STATUS.CANCELLED]: [],
       };
@@ -1045,6 +1073,22 @@ export class QuotationService {
         );
       }
 
+      const returning = input.status === QUOTATION_STATUS.DRAFT;
+      const reviewReturn =
+        returning && current.status === QUOTATION_STATUS.REVIEW;
+      if (reviewReturn) {
+        this.assertReviewReturnActor(actor);
+      }
+      const transitionActions: Record<
+        TQuotationStatus,
+        QuotationLifecycleActionType
+      > = {
+        [QUOTATION_STATUS.DRAFT]: QUOTATION_LIFECYCLE_ACTION.RETURN,
+        [QUOTATION_STATUS.REVIEW]: QUOTATION_LIFECYCLE_ACTION.SUBMIT,
+        [QUOTATION_STATUS.APPROVED]: QUOTATION_LIFECYCLE_ACTION.APPROVE,
+        [QUOTATION_STATUS.CANCELLED]: QUOTATION_LIFECYCLE_ACTION.CANCEL,
+      };
+      const action = transitionActions[input.status];
       const configuration = await this.rules.configuration(transaction);
       const checked = {
         ...(await this.currentCatalogueState(current, transaction)),
@@ -1056,7 +1100,7 @@ export class QuotationService {
       };
       if (
         input.status === QUOTATION_STATUS.REVIEW &&
-        !current.sections.some((section) => section.items.length)
+        !current.sections.some((section): number => section.items.length)
       ) {
         throw new BadRequestException('יש להוסיף פריטים לפני בדיקה');
       }
@@ -1073,26 +1117,37 @@ export class QuotationService {
       }
       if (
         input.status === QUOTATION_STATUS.APPROVED &&
-        quotationWarnings(checked).some((warning) => !warning.acknowledged)
+        quotationWarnings(checked).some(
+          (warning): boolean => !warning.acknowledged,
+        )
       ) {
         throw new ConflictException('יש לטפל בכל ההתראות או לאשר אותן');
       }
       const approved = input.status === QUOTATION_STATUS.APPROVED;
       if (approved) {
         await this.items.persistCatalogueStatuses(
-          checked.sections.flatMap((section) => section.items),
+          checked.sections.flatMap(
+            (section): IQuotationItem[] => section.items,
+          ),
           transaction,
         );
       }
+      await this.auditLifecycle({
+        current,
+        actor,
+        toStatus: input.status,
+        action,
+        transaction,
+      });
       await this.repository.update(
         id,
         {
           status: input.status,
           ruleConfiguration: configuration.rules,
-          acknowledgedWarnings: checked.acknowledgedWarnings,
+          acknowledgedWarnings: returning ? [] : checked.acknowledgedWarnings,
           version: current.version + 1,
-          updatedById: userId,
-          approvedById: approved ? userId : null,
+          updatedById: actor.id,
+          approvedById: approved ? actor.id : null,
           approvedAt: approved ? new Date() : null,
           cancelledFromStatus: null,
         },
@@ -1106,29 +1161,33 @@ export class QuotationService {
     input: RejectQuotationDto,
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
-    if (
-      !actor.assignedRoles.some(
-        (role) =>
-          role === USER_ROLES.SYSTEM_ADMIN ||
-          role === USER_ROLES.ENGINEERING_LEAD,
-      )
-    ) {
-      throw new ForbiddenException('אין הרשאה להחזיר הצעה לתיקון');
-    }
+    assertPermissions(actor, PERMISSIONS.QUOTATIONS_APPROVE);
+    this.assertReviewReturnActor(actor);
     const reason = input.reason.trim();
     if (!reason || reason.length > MAX_QUOTATION_CANCELLATION_REASON_LENGTH) {
       throw new BadRequestException('יש להזין סיבת דחייה');
     }
-    await this.transactions.run(async (transaction) => {
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       if (current.status !== QUOTATION_STATUS.REVIEW) {
         throw new ConflictException('ניתן להחזיר לתיקון רק הצעה בבדיקה');
       }
+      await this.auditLifecycle({
+        current,
+        actor,
+        toStatus: QUOTATION_STATUS.DRAFT,
+        action: QUOTATION_LIFECYCLE_ACTION.REJECT,
+        transaction,
+        reason,
+      });
       await this.repository.update(
         id,
         {
           status: QUOTATION_STATUS.DRAFT,
+          approvedAt: null,
+          approvedById: null,
+          acknowledgedWarnings: [],
           version: current.version + 1,
           updatedById: actor.id,
           rejectionHistory: [
@@ -1153,7 +1212,7 @@ export class QuotationService {
     input: QuotationVersionDto,
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
-    await this.transactions.run(async (transaction) => {
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       const latest = current.rejectionHistory.at(-1);
@@ -1164,9 +1223,16 @@ export class QuotationService {
       ) {
         throw new ConflictException('ההצעה אינה ממתינה לשליחה מחדש');
       }
-      if (!current.sections.some((section) => section.items.length)) {
+      if (!current.sections.some((section): number => section.items.length)) {
         throw new BadRequestException('יש להוסיף פריטים לפני בדיקה');
       }
+      await this.auditLifecycle({
+        current,
+        actor,
+        toStatus: QUOTATION_STATUS.REVIEW,
+        action: QUOTATION_LIFECYCLE_ACTION.RESUBMIT,
+        transaction,
+      });
       await this.repository.update(
         id,
         {
@@ -1199,7 +1265,7 @@ export class QuotationService {
         `יש להזין סיבת ביטול עד ${MAX_QUOTATION_CANCELLATION_REASON_LENGTH} תווים`,
       );
     }
-    await this.transactions.run(async (transaction) => {
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
 
@@ -1207,6 +1273,14 @@ export class QuotationService {
         throw new ConflictException('הצעת המחיר כבר מבוטלת');
       }
 
+      await this.auditLifecycle({
+        current,
+        actor: user,
+        toStatus: QUOTATION_STATUS.CANCELLED,
+        action: QUOTATION_LIFECYCLE_ACTION.CANCEL,
+        transaction,
+        reason,
+      });
       await this.cancelQuotation({
         quotation: current,
         actorId: user.id,
@@ -1228,7 +1302,7 @@ export class QuotationService {
     if (user.role !== USER_ROLES.SYSTEM_ADMIN) {
       throw new ForbiddenException('רק מנהל מערכת רשאי לשחזר הצעת מחיר');
     }
-    await this.transactions.run(async (transaction) => {
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       const restored = restoreQuotationCancellation({
@@ -1245,6 +1319,13 @@ export class QuotationService {
       ) {
         throw new ConflictException('לא ניתן לשחזר את הצעת המחיר');
       }
+      await this.auditLifecycle({
+        current,
+        actor: user,
+        toStatus: restored.status,
+        action: QUOTATION_LIFECYCLE_ACTION.RESTORE,
+        transaction,
+      });
       await this.repository.update(
         id,
         {
@@ -1463,6 +1544,57 @@ export class QuotationService {
         })),
       })),
     };
+  }
+  private assertReviewReturnActor(actor: IAuthorizedUser): void {
+    const mayReturnReview = actor.assignedRoles.some(
+      (role): boolean =>
+        role === USER_ROLES.SYSTEM_ADMIN ||
+        role === USER_ROLES.ENGINEERING_LEAD,
+    );
+    if (!mayReturnReview) {
+      throw new ForbiddenException('אין הרשאה להחזיר הצעה לתיקון');
+    }
+  }
+  private async auditLifecycle(input: IQuotationLifecycleInput): Promise<void> {
+    const { current, actor, toStatus, action, transaction } = input;
+    const reason = input.reason ?? null;
+    const {
+      approvedAt,
+      approvedById,
+      acknowledgedWarnings,
+      ruleConfiguration,
+      paymentTerms,
+      paymentTermsNote,
+      paymentSchedule,
+      rejectionHistory,
+      cancellationHistory,
+    } = current;
+    await this.repository.appendLifecycleEvent(
+      {
+        id: randomUUID(),
+        quotationId: current.id,
+        action,
+        fromStatus: current.status,
+        toStatus,
+        actorId: actor.id,
+        actorName: quotationActorName(actor),
+        occurredAt: new Date().toISOString(),
+        quotationVersion: current.version + 1,
+        reason,
+        evidence: {
+          approvedAt,
+          approvedById,
+          acknowledgedWarnings,
+          ruleConfiguration,
+          paymentTerms,
+          paymentTermsNote,
+          paymentSchedule,
+          rejectionHistory,
+          cancellationHistory,
+        },
+      },
+      transaction,
+    );
   }
   private assertVersion(current: IQuotationDocument, version: number): void {
     if (current.version !== version) {
