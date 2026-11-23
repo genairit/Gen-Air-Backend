@@ -31,7 +31,11 @@ import { IPaymentConfiguration } from '@Interfaces/payment-configuration.interfa
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
+import { QuotationRule } from '@Modules/quotation-rule/entities/quotation-rule.entity';
+import { CatalogueItem } from '@Modules/catalogue-item/entities/catalogue-item.entity';
 import { QuotationItem } from '@Modules/quotation-item/entities/quotation-item.entity';
+import { QuotationRuleRepository } from '@Modules/quotation-rule/quotation-rule.repository';
+import { CatalogueItemRepository } from '@Modules/catalogue-item/catalogue-item.repository';
 import { QuotationItemRepository } from '@Modules/quotation-item/quotation-item.repository';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
@@ -84,7 +88,10 @@ export class TaskQuotationFixture {
     return new TaskQuotationLinksService(this.database());
   }
 
-  service(): QuotationService {
+  service(
+    catalogueService?: CatalogueItemService,
+    ruleService?: QuotationRuleService,
+  ): QuotationService {
     const customerRepository = mock<CustomerRepository>();
     customerRepository.findById.mockImplementation(async (id, transaction) => {
       const [row] = await this.database().query<
@@ -170,11 +177,11 @@ export class TaskQuotationFixture {
     catalogue.getByIds.mockResolvedValue([]);
     return new QuotationService(
       new QuotationRepository(),
-      rules,
+      ruleService ?? rules,
       new QuotationSectionService(new QuotationSectionRepository()),
       new QuotationItemService(new QuotationItemRepository()),
-      catalogue,
-      new QuotationSelectionService(catalogue, mock()),
+      catalogueService ?? catalogue,
+      new QuotationSelectionService(catalogueService ?? catalogue, mock()),
       customers,
       projects,
       new QuotationProjectService(new QuotationProjectRepository()),
@@ -221,7 +228,14 @@ export class TaskQuotationFixture {
       logging: false,
       define: { underscored: true, timestamps: true },
       pool: { max: 3, min: 0, acquire: 3000 },
-      models: [Quotation, QuotationSection, QuotationItem, QuotationProject],
+      models: [
+        Quotation,
+        QuotationSection,
+        QuotationItem,
+        QuotationProject,
+        CatalogueItem,
+        QuotationRule,
+      ],
     });
     await this.database().query(`CREATE ROLE anon;CREATE ROLE authenticated;
       CREATE TABLE customers(id uuid PRIMARY KEY,name text,deleted_at timestamptz,payment_terms text,payment_schedule jsonb NOT NULL DEFAULT '[]');
@@ -233,6 +247,12 @@ export class TaskQuotationFixture {
       INSERT INTO projects(id,customer_id,name,code) VALUES ('${this.projectId}','${this.customerId}','Exact project','P-1');
       INSERT INTO tasks VALUES ('${this.taskId}','Quotation task','quotation','${this.projectId}',NULL,NULL);
       INSERT INTO fixture_users VALUES ('${this.actor.id}');`);
+    await this.database()
+      .query(`CREATE TABLE users(id uuid PRIMARY KEY); INSERT INTO users VALUES ('${this.actor.id}');
+      CREATE TABLE catalogue_item_usage(catalogue_item_id uuid,user_id uuid,selection_count integer,deleted_at timestamptz);`);
+    await CatalogueItem.sync();
+    await QuotationRule.sync();
+    await QuotationRule.bulkCreate(quotationRuleFixture([]));
     await Quotation.sync();
     await QuotationSection.sync();
     await QuotationItem.sync();
@@ -242,6 +262,26 @@ export class TaskQuotationFixture {
         resolve(
           process.cwd(),
           'migrations/2026-11-23-task-quotation-links.sql',
+        ),
+        'utf8',
+      ),
+    );
+  }
+  rules(): QuotationRuleService {
+    return new QuotationRuleService(new QuotationRuleRepository());
+  }
+  catalogue(): CatalogueItemService {
+    return new CatalogueItemService(
+      new CatalogueItemRepository(),
+      new DatabaseTransactionService(this.database()),
+    );
+  }
+  async installCloneCommands(): Promise<void> {
+    await this.database().query(
+      await readFile(
+        resolve(
+          process.cwd(),
+          'migrations/2026-11-23-quotation-clone-commands.sql',
         ),
         'utf8',
       ),

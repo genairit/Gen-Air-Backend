@@ -6,11 +6,45 @@ import { QUOTATION_STATUS } from './constants/quotation.constant';
 import type { IQuotation } from './interfaces/quotation.interface';
 import { QUOTATION_QUERY } from './constants/quotation-query.constant';
 import type { IQuotationCursor } from './interfaces/quotation-cursor.interface';
+import { IQuotationCloneCommand } from './interfaces/quotation-clone-command.interface';
 import type { IQuotationListFilter } from './interfaces/quotation-list-filter.interface';
 import type { IQuotationStatusCounts } from './interfaces/quotation-status-counts.interface';
 
 @Injectable()
 export class QuotationRepository {
+  async findCloneCommand(
+    command: Pick<IQuotationCloneCommand, 'actorId' | 'idempotencyKey'>,
+    transaction: Transaction,
+  ): Promise<Pick<
+    IQuotationCloneCommand,
+    'payloadHash' | 'quotationId'
+  > | null> {
+    const database = Quotation.sequelize;
+    if (!database) {
+      throw new Error('Quotation database unavailable');
+    }
+    const [saved] = await database.query<
+      Pick<IQuotationCloneCommand, 'payloadHash' | 'quotationId'>
+    >(
+      'SELECT payload_hash AS "payloadHash",quotation_id AS "quotationId" FROM quotation_clone_commands WHERE actor_id=$actorId AND idempotency_key=$idempotencyKey',
+      { bind: command, transaction, type: QueryTypes.SELECT },
+    );
+    return saved ?? null;
+  }
+  async insertCloneCommand(
+    command: IQuotationCloneCommand,
+    transaction: Transaction,
+  ): Promise<void> {
+    const database = Quotation.sequelize;
+    if (!database) {
+      throw new Error('Quotation database unavailable');
+    }
+    await database.query(
+      'INSERT INTO quotation_clone_commands(actor_id,idempotency_key,payload_hash,quotation_id) VALUES ($actorId,$idempotencyKey,$payloadHash,$quotationId)',
+      { bind: { ...command }, transaction },
+    );
+  }
+
   findById(id: string, transaction?: Transaction): Promise<Quotation | null> {
     return Quotation.findByPk(id, {
       transaction,
