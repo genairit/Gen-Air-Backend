@@ -19,7 +19,8 @@ import {
 
 import { Injectable } from '@nestjs/common';
 import { Task } from './entities/task.entity';
-import { TASK_ORDER } from './constants/task-order.constant';
+import { TASK_SORTS } from './constants/task-sort.constant';
+import { TASK_ORDERS } from './constants/task-order.constant';
 import { isTaskStatus } from './utilities/task-status.utility';
 import { PROTECTED_TASK_TYPES } from './constants/task-type.constant';
 import { Op, fn, col, where, Transaction, WhereOptions } from 'sequelize';
@@ -57,18 +58,19 @@ export class TaskRepository {
     filter: ITaskFilter,
     batch: ICursorBatch,
   ): Promise<ICursorPage<Task>> {
+    const sort = filter.sort ?? TASK_SORTS.DEFAULT;
     const rows = await Task.findAll({
       where: {
         [Op.and]: [
           ...this.buildFilterWhere(filter),
-          ...buildTaskCursorWhere(batch.batchCursor),
+          ...buildTaskCursorWhere(batch.batchCursor, sort),
         ],
       },
-      order: TASK_ORDER,
+      order: TASK_ORDERS[sort],
       include: TASK_DETAIL_INCLUDES,
       limit: batch.batchSize + 1,
     });
-    return toTaskCursorPage(rows, batch.batchSize);
+    return toTaskCursorPage(rows, { batchSize: batch.batchSize, sort });
   }
 
   async countByFilter(filter: ITaskFilter): Promise<ITaskCountRow[]> {
