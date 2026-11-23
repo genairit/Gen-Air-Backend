@@ -14,6 +14,7 @@ export class CustomerContactRepository {
     const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
     return CustomerContact.findAll({
       where: {
+        customerId: null,
         [Op.or]: [
           { name: { [Op.iLike]: pattern } },
           { phone: { [Op.iLike]: pattern } },
@@ -47,7 +48,7 @@ export class CustomerContactRepository {
     transaction: Transaction,
   ): Promise<CustomerContact | null> {
     const candidates = await CustomerContact.findAll({
-      where: { name: values.name },
+      where: { name: values.name, customerId: null },
       transaction,
       order: [
         ['createdAt', 'ASC'],

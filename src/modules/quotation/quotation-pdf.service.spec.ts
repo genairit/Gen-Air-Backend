@@ -19,6 +19,7 @@ const customer = {
   phone: null,
   priorityId: null,
 };
+const customers = { getById: jest.fn().mockResolvedValue(customer) };
 const user = { firstName: 'דנה', lastName: 'כהן' };
 const project = {
   id: 'project-1',
@@ -53,7 +54,7 @@ beforeAll(async () => {
       { provide: QuotationService, useValue: quotation },
       {
         provide: CustomerService,
-        useValue: { getById: jest.fn().mockResolvedValue(customer) },
+        useValue: customers,
       },
       {
         provide: ProjectService,
@@ -72,12 +73,14 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   document.projectId = null;
+  customers.getById.mockReset().mockResolvedValue(customer);
   drive.uploadQuotationPdf.mockReset().mockResolvedValue({ id: 'file-1' });
   render
     .mockReset()
-    .mockImplementation(
-      async () =>
+    .mockImplementation(() =>
+      Promise.resolve(
         new Response(pdf, { headers: { 'content-type': 'application/pdf' } }),
+      ),
     );
 });
 afterAll(() => render.mockRestore());
@@ -139,4 +142,33 @@ it('does not return a linked quotation when its Drive upload fails', async () =>
   document.projectId = project.id;
   drive.uploadQuotationPdf.mockRejectedValue(new Error('Drive unavailable'));
   await expect(exportPdf()).rejects.toThrow('Drive unavailable');
+});
+
+it('renders the explicit customer primary contact rather than unrelated or legacy customer details', async () => {
+  customers.getById.mockResolvedValueOnce({
+    ...customer,
+    email: 'legacy@example.com',
+    phone: '0500000000',
+    primaryContact: {
+      id: 'explicit-own-contact',
+      email: 'own@example.com',
+      phone: '+442071838750',
+    },
+    contacts: [
+      {
+        id: 'unrelated-first',
+        email: 'unrelated@example.com',
+        phone: '0511111111',
+      },
+    ],
+  });
+  await exportPdf();
+  const body = render.mock.calls.at(-1)?.[1]?.body ?? null;
+  if (typeof body !== 'string') {
+    throw new Error('Expected a JSON worker request');
+  }
+
+  const payload: unknown = JSON.parse(body);
+  expect(payload).toHaveProperty('recipient.email', 'own@example.com');
+  expect(payload).toHaveProperty('recipient.phone', '+442071838750');
 });

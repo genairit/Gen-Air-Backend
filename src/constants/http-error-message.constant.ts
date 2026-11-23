@@ -32,6 +32,8 @@ export const HTTP_ERROR_MESSAGES = {
     'קיים כבר פרויקט בשם זה. יש לבחור שם אחר (ההשוואה תלוית רישיות)',
   [HTTP_ERROR_CODES.INVALID_TEMPLATE]: 'Invalid apartment import template',
   [HTTP_ERROR_CODES.CUSTOMER_NOT_FOUND]: 'Customer was not found',
+  [HTTP_ERROR_CODES.CUSTOMER_OWN_CONTACT_MANAGED]:
+    'פרטי הקשר הראשיים של הלקוח מתעדכנים בעמוד הלקוח',
   [HTTP_ERROR_CODES.CUSTOMER_CONTACT_NOT_FOUND]:
     'Contact was not found for this customer',
   [HTTP_ERROR_CODES.INVALID_CUSTOMER_CONTACT]:

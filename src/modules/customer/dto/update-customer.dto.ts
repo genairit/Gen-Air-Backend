@@ -19,6 +19,7 @@ import {
 } from '@Constants/project-detail-field-set.constant';
 
 import { ValidateIf } from 'class-validator';
+import { Trim } from '@Decorators/trim.decorator';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { NullIfBlank } from '@Decorators/null-if-blank.decorator';
 import { IsDialablePhone } from '@Decorators/is-dialable-phone.decorator';
@@ -56,12 +57,15 @@ export class UpdateCustomerDto {
   @MaxLength(FIELD_LENGTHS.CONTACT_NAME)
   declare contactName?: string | null;
 
-  @IsOptional()
+  @Trim()
   @NullIfBlank()
+  @IsOptional()
   @IsDialablePhone()
   @MaxLength(FIELD_LENGTHS.PHONE)
   declare phone?: string | null;
 
+  @Trim()
+  @NullIfBlank()
   @IsOptional()
   @IsEmail()
   @MaxLength(FIELD_LENGTHS.EMAIL)
