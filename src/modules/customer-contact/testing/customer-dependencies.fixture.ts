@@ -1,5 +1,5 @@
 import { Sequelize, Transaction } from 'sequelize';
-import { CustomerContactService } from '../customer-contact.service';
+import { CustomerOwnContactService } from '@Modules/customer/customer-own-contact.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
 export const createCustomerDependencyFixtures = () => {
@@ -7,8 +7,9 @@ export const createCustomerDependencyFixtures = () => {
     new Sequelize({ dialect: 'postgres', logging: false }),
     {},
   );
-  const contacts = {
-    resolveDirectoryForImport: jest.fn().mockResolvedValue({ id: 'contact-1' }),
+  const ownContact = {
+    setDetails: jest.fn(async () => {}),
+    copyDetails: jest.fn(async () => {}),
   };
   const transactions = {
     run: jest.fn((work: (value: Transaction) => Promise<unknown>) =>
@@ -16,11 +17,11 @@ export const createCustomerDependencyFixtures = () => {
     ),
   };
   return {
-    contacts,
+    ownContact,
     transaction,
     transactions,
     providers: [
-      { provide: CustomerContactService, useValue: contacts },
+      { provide: CustomerOwnContactService, useValue: ownContact },
       { provide: DatabaseTransactionService, useValue: transactions },
     ],
   };

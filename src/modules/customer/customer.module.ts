@@ -3,13 +3,18 @@ import { CustomerService } from './customer.service';
 import { CustomerController } from './customer.controller';
 import { CustomerRepository } from './customer.repository';
 import { DatabaseModule } from '@Providers/database/database.module';
+import { CustomerOwnContactService } from './customer-own-contact.service';
 import { CustomerProjectLinkService } from './customer-project-link.service';
-import { CustomerContactModule } from '@Modules/customer-contact/customer-contact.module';
 
 @Module({
-  imports: [DatabaseModule, CustomerContactModule],
+  imports: [DatabaseModule],
   controllers: [CustomerController],
-  providers: [CustomerService, CustomerRepository, CustomerProjectLinkService],
+  providers: [
+    CustomerService,
+    CustomerRepository,
+    CustomerProjectLinkService,
+    CustomerOwnContactService,
+  ],
   exports: [CustomerService],
 })
 export class CustomerModule {}

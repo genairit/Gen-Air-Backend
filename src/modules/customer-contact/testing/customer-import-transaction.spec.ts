@@ -16,28 +16,29 @@ const customer = {
 };
 
 describe('customer import transaction boundary', () => {
-  it('rejects contact details without a contact name before insertion', async () => {
-    const transaction = new Transaction(
-      new Sequelize({ dialect: 'postgres', logging: false }),
-      {},
-    );
-    const repository = { create: jest.fn() };
+  it('allows own details without a separate contact person name', async () => {
+    const dependencies = createCustomerDependencyFixtures();
+    const created = { ...customer, id: 'created-customer' };
+    const repository = { create: jest.fn().mockResolvedValue(created) };
     const module = await Test.createTestingModule({
       providers: [
         CustomerService,
-        ...createCustomerDependencyFixtures().providers,
+        ...dependencies.providers,
         { provide: CustomerRepository, useValue: repository },
       ],
     }).compile();
-    const service = module.get(CustomerService);
-    await expect(
-      service.createForImport(
+    await module
+      .get(CustomerService)
+      .createForImport(
         { ...customer, contactName: null },
         'creator',
-        transaction,
-      ),
-    ).rejects.toMatchObject({ status: 400 });
-    expect(repository.create).not.toHaveBeenCalled();
+        dependencies.transaction,
+      );
+    expect(dependencies.ownContact.setDetails).toHaveBeenCalledWith(
+      created,
+      { phone: customer.phone, email: customer.email },
+      dependencies.transaction,
+    );
     await module.close();
   });
 
@@ -81,17 +82,9 @@ describe('customer import transaction boundary', () => {
       },
       transaction,
     );
-    expect(
-      dependencies.contacts.resolveDirectoryForImport,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: customer.contactName,
-      }),
-      transaction,
-    );
-    expect(repository.update).toHaveBeenCalledWith(
-      'created-customer',
-      { primaryContactId: 'contact-1' },
+    expect(dependencies.ownContact.setDetails).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'created-customer' }),
+      { phone: customer.phone, email: customer.email },
       transaction,
     );
     await module.close();
