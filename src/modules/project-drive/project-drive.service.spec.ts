@@ -1388,6 +1388,43 @@ describe('ProjectDriveService linked legacy roots', () => {
     expect(googleDriveService.trashFile).not.toHaveBeenCalled();
   });
 
+  it('runs queued completion after a failed provision and keeps later callers on the queued operation', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    projectService.getById.mockResolvedValue(linked);
+    const controls: {
+      rejectFirst: (reason: Error) => void;
+      finishSecond: () => void;
+    } = {
+      rejectFirst: () => {},
+      finishSecond: () => {},
+    };
+    const firstInspection = new Promise<string[]>((_resolve, reject) => {
+      controls.rejectFirst = reject;
+    });
+    const secondInspection = new Promise<string[]>((resolve) => {
+      controls.finishSecond = () => resolve(['CAD']);
+    });
+    projectService.inspectLinkedDriveFolder
+      .mockReturnValueOnce(firstInspection)
+      .mockReturnValueOnce(secondInspection);
+    const first = service.provision(PROJECT.id);
+    const firstFailure = expect(first).rejects.toThrow(
+      'first inspection failed',
+    );
+    const completion = service.completeTemplate(PROJECT.id);
+    controls.rejectFirst(new Error('first inspection failed'));
+    await firstFailure;
+    expect(service.provision(PROJECT.id)).toBe(completion);
+    controls.finishSecond();
+    await expect(completion).resolves.toMatchObject(linked);
+    expect(projectService.inspectLinkedDriveFolder).toHaveBeenCalledTimes(2);
+    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
+      `01_${PROJECT.code}`,
+      PROJECT_FOLDER_ID,
+    );
+  });
+
   it('stops completion before mutating an ambiguous or relocated linked folder', async () => {
     const { service, projectService, googleDriveService } =
       await createService();

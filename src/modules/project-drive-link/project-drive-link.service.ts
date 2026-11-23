@@ -172,7 +172,11 @@ export class ProjectDriveLinkService {
           const containsOwned = await this.callDrive(() =>
             this.isInside(ownedFolderId, folderId, MAX_FOLDER_DEPTH, parentIds),
           );
-          return insideOwned || containsOwned;
+          const isOwnApartment =
+            buildingId === null &&
+            excludedProjectId !== null &&
+            owner.parentProjectId === excludedProjectId;
+          return insideOwned || (containsOwned && !isOwnApartment);
         }),
       );
       if (checks.some((overlaps) => overlaps)) {

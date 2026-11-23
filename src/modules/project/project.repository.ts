@@ -44,10 +44,10 @@ import { buildCustomerReferenceInclude } from '@Modules/customer/constants/custo
 export class ProjectRepository {
   async findDriveFolderOwners(
     transaction?: Transaction,
-  ): Promise<Pick<IProject, 'id' | 'driveFolderId'>[]> {
+  ): Promise<Pick<IProject, 'id' | 'driveFolderId' | 'parentProjectId'>[]> {
     const projects = await Project.findAll({
       where: { driveFolderId: { [Op.ne]: null } },
-      attributes: ['id', 'driveFolderId'],
+      attributes: ['id', 'driveFolderId', 'parentProjectId'],
       transaction,
     });
     return projects.map((project) => project.get({ plain: true }));

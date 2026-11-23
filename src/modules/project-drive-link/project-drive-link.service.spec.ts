@@ -17,7 +17,7 @@ import { DriveTemplateFolderService } from '@Modules/drive-template-folder/drive
 type TMetadataById = Map<string, IDriveFileMetadata>;
 type TParentIdsById = Map<string, string[]>;
 type TChildrenById = Map<string, IDriveItem[]>;
-type TFolderOwner = Pick<IProject, 'id' | 'driveFolderId'>;
+type TFolderOwner = Pick<IProject, 'id' | 'driveFolderId' | 'parentProjectId'>;
 
 interface ILinkFixtureState {
   building: IProject;
@@ -252,7 +252,11 @@ describe('existing project Drive folder validation', () => {
 
   it('rejects a folder already assigned to another live project', async () => {
     const { service, state } = await createService();
-    state.owners.push({ id: 'other-project', driveFolderId: IDS.LEGACY });
+    state.owners.push({
+      parentProjectId: null,
+      id: 'other-project',
+      driveFolderId: IDS.LEGACY,
+    });
     await expect(
       service.preview({ reference: IDS.LEGACY }),
     ).rejects.toMatchObject({
@@ -264,7 +268,11 @@ describe('existing project Drive folder validation', () => {
     'rejects a folder that %s another project root',
     async (overlap) => {
       const { service, state } = await createService();
-      state.owners.push({ id: 'other-project', driveFolderId: IDS.OWNED });
+      state.owners.push({
+        parentProjectId: null,
+        id: 'other-project',
+        driveFolderId: IDS.OWNED,
+      });
       state.parents.set(
         IDS.OWNED,
         overlap === 'contains' ? [IDS.LEGACY] : [IDS.ROOT],
@@ -283,10 +291,50 @@ describe('existing project Drive folder validation', () => {
 
   it('allows inspecting a project’s own persisted folder rather than treating it as foreign ownership', async () => {
     const { service, state } = await createService();
-    state.owners.push({ id: 'this-project', driveFolderId: IDS.LEGACY });
+    state.owners.push({
+      parentProjectId: null,
+      id: 'this-project',
+      driveFolderId: IDS.LEGACY,
+    });
     await expect(
       service.resolve(IDS.LEGACY, null, 'this-project'),
     ).resolves.toMatchObject({ id: IDS.LEGACY });
+  });
+
+  it('inspects a linked building with its own apartment and accepts a second sibling apartment', async () => {
+    const { service, state } = await createService();
+    state.metadata.set(IDS.BUILDING, folderMetadata(IDS.BUILDING, IDS.ROOT));
+    state.parents.set(IDS.BUILDING, [IDS.ROOT]);
+    state.parents.set(IDS.RESIDENTS, [IDS.BUILDING]);
+    state.parents.set(IDS.OWNED, [IDS.RESIDENTS]);
+    state.parents.set(IDS.LEGACY, [IDS.RESIDENTS]);
+    state.metadata.set(IDS.LEGACY, folderMetadata(IDS.LEGACY, IDS.RESIDENTS));
+    state.children.set(IDS.BUILDING, [folderItem(IDS.RESIDENTS, 'דיירים')]);
+    state.owners.push(
+      {
+        id: IDS.BUILDING_PROJECT,
+        driveFolderId: IDS.BUILDING,
+        parentProjectId: null,
+      },
+      {
+        id: 'first-apartment',
+        driveFolderId: IDS.OWNED,
+        parentProjectId: IDS.BUILDING_PROJECT,
+      },
+    );
+    await expect(service.inspect(state.building)).resolves.toEqual(
+      expect.any(Array),
+    );
+    await expect(
+      service.preview({
+        reference: IDS.LEGACY,
+        buildingId: IDS.BUILDING_PROJECT,
+      }),
+    ).resolves.toMatchObject({ id: IDS.LEGACY });
+    state.owners[1].parentProjectId = 'foreign-building';
+    await expect(service.inspect(state.building)).rejects.toMatchObject({
+      response: { code: DRIVE_FOLDER_LINK_ERROR_CODES.OVERLAP },
+    });
   });
 
   it('rejects duplicate matching template subfolders instead of choosing arbitrarily', async () => {
@@ -306,6 +354,7 @@ describe('existing project Drive folder validation', () => {
   it('permits an apartment folder under its own building’s unique residents folder', async () => {
     const { service, state, drive } = await createService();
     state.owners.push({
+      parentProjectId: null,
       id: IDS.BUILDING_PROJECT,
       driveFolderId: IDS.BUILDING,
     });
@@ -357,8 +406,16 @@ describe('existing project Drive folder validation', () => {
   it('does not let an apartment reuse another apartment’s nested folder', async () => {
     const { service, state } = await createService();
     state.owners.push(
-      { id: IDS.BUILDING_PROJECT, driveFolderId: IDS.BUILDING },
-      { id: 'another-apartment', driveFolderId: IDS.OWNED },
+      {
+        parentProjectId: null,
+        id: IDS.BUILDING_PROJECT,
+        driveFolderId: IDS.BUILDING,
+      },
+      {
+        parentProjectId: IDS.BUILDING_PROJECT,
+        id: 'another-apartment',
+        driveFolderId: IDS.OWNED,
+      },
     );
     state.parents.set(IDS.LEGACY, [IDS.OWNED]);
     state.parents.set(IDS.OWNED, [IDS.RESIDENTS]);

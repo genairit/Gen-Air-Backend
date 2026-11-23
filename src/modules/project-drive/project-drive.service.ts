@@ -153,13 +153,13 @@ export class ProjectDriveService {
     mode: DriveProvisioningModeType,
   ): Promise<IProject> {
     const previous = this.provisioning.get(projectId) ?? Promise.resolve(null);
-    const operation = previous
-      .then(() => this.provisionProject(projectId, mode))
-      .finally(() => {
-        if (this.provisioning.get(projectId) === operation) {
-          this.provisioning.delete(projectId);
-        }
-      });
+    const run = () => this.provisionProject(projectId, mode);
+    // Each queued request runs independently of the previous caller's outcome.
+    const operation = previous.then(run, run).finally(() => {
+      if (this.provisioning.get(projectId) === operation) {
+        this.provisioning.delete(projectId);
+      }
+    });
     this.provisioning.set(projectId, operation);
     return operation;
   }

@@ -19,7 +19,7 @@ must apply the same migration in test and production.
 ## API and behavior
 
 - POST `/project-drive/existing-folder/preview`: `{reference, buildingId?}` resolves folder ID/name
-  and `missingTemplateFolders` without changing Drive. Project-create permission is required.
+  and `missingTemplateFolders` without changing Drive. `PROJECTS_CREATE` permission is required without `buildingId`; `APARTMENTS_CREATE` is required when `buildingId` is supplied.
 - Project/apartment create accepts optional `existingDriveFolder` (folder ID or HTTPS Drive folder
   URL). The service account must see a non-trashed folder beneath the configured company root.
   The root itself and folders overlapping another live project are rejected. Apartment folders
