@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { QuotationService } from './quotation.service';
 import { Meta, TypedLogger } from '@Logger/logger.service';
+import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { QuotationPdfSnapshotService } from './quotation-pdf-snapshot.service';
 import { PUBLICATION_LIMITS } from '@Modules/quotation-publication/constants/publication.constant';
 
@@ -50,17 +51,18 @@ export class QuotationPdfService {
     });
     if (
       !response.ok ||
-      response.headers.get('content-type')?.includes('application/pdf') !== true
+      response.headers
+        .get('content-type')
+        ?.includes(GOOGLE_DRIVE.PDF_MIME_TYPE) !== true
     ) {
       throw new BadGatewayException('Quotation PDF worker failed');
     }
 
     const pdf = Buffer.from(await response.arrayBuffer());
-    if (
-      pdf.length > PUBLICATION_LIMITS.PDF_BYTES ||
-      pdf.length < 8 ||
-      pdf.subarray(0, 5).toString() !== '%PDF-'
-    ) {
+    const boundedPdf =
+      pdf.length >= 8 && pdf.length <= PUBLICATION_LIMITS.PDF_BYTES;
+    const pdfSignature = pdf.subarray(0, 5).toString() === '%PDF-';
+    if (!boundedPdf || !pdfSignature) {
       throw new BadGatewayException(
         'Quotation PDF worker returned an invalid file',
       );

@@ -1,6 +1,8 @@
 import type {
   IPublicationCycle,
   IPublicationFolder,
+  IPublicationTemplate,
+  IPublicationRootConfiguration,
 } from './interfaces/publication.interface';
 
 import { Transaction } from 'sequelize';
@@ -12,6 +14,8 @@ import { PUBLICATION_REASON } from './constants/publication.constant';
 import type { PublicationRoleType } from './constants/publication.constant';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { APARTMENTS_FOLDER_NAME } from '@Modules/project-drive/constants/project-drive.constant';
+import { publicationProjectLockKey } from '@Modules/quotation-publication/utilities/publication-lock.utility';
 
 @Injectable()
 export class PublicationDestinationService {
@@ -29,37 +33,26 @@ export class PublicationDestinationService {
     transaction: Transaction,
   ): Promise<IPublicationFolder> {
     await this.transactions.lockKey(
-      `quotation-publication-folder:${cycle.projectId}`,
+      publicationProjectLockKey(cycle.projectId),
       transaction,
     );
-    const [project] = await this.repository.select<{
-      rootId: string | null;
-      linked: boolean;
-      parentId: string | null;
-    }>(
-      `SELECT drive_folder_id AS "rootId",drive_folder_linked AS linked,parent_project_id AS "parentId" FROM projects WHERE id=$projectId AND deleted_at IS NULL`,
-      { projectId: cycle.projectId },
-      transaction,
-    );
-    if (!project?.rootId || (cycle.rootId && cycle.rootId !== project.rootId)) {
-      throw new Error(PUBLICATION_REASON.MISSING);
+    const rootId = cycle.rootId;
+    if (!rootId) {
+      return this.bindRoot(cycle, role, transaction);
     }
 
-    await this.validateRoot(project.rootId, project.parentId, transaction);
+    await this.validateRoot(cycle, transaction);
     const saved = await this.repository.folder(
       cycle.projectId,
+      rootId,
       role,
       transaction,
     );
     if (saved) {
-      if (saved.rootId !== project.rootId) {
-        throw new Error(PUBLICATION_REASON.MISSING);
-      }
-
       return saved;
     }
 
-    const [template] = await this.repository.select<{ name: string }>(
+    const [template] = await this.repository.select<IPublicationTemplate>(
       `SELECT t.name FROM quotation_publication_roles r JOIN drive_template_folders t ON t.id=r.template_id WHERE r.role=$role AND t.parent_id IS NULL`,
       { role },
       transaction,
@@ -68,30 +61,30 @@ export class PublicationDestinationService {
       throw new Error(PUBLICATION_REASON.DESTINATION);
     }
 
-    const matches = (
-      await this.drive.listPublicationChildren(project.rootId)
-    ).filter((item): boolean => item.isFolder && item.name === template.name);
+    const matches = (await this.drive.listPublicationChildren(rootId)).filter(
+      (item): boolean => item.isFolder && item.name === template.name,
+    );
     if (matches.length > 1) {
       throw new Error(PUBLICATION_REASON.AMBIGUOUS);
     }
 
-    if (!matches.length && project.linked) {
+    const needsLinkedCompletion =
+      matches.length === 0 && cycle.rootContext.linked;
+    if (needsLinkedCompletion) {
       throw new Error(PUBLICATION_REASON.COMPLETION_REQUIRED);
     }
 
-    const folderId =
-      matches.at(0)?.id ?? (await this.drive.reservePublicationId());
-    const folder = {
+    const folder: IPublicationFolder = {
       projectId: cycle.projectId,
+      rootId,
       role,
-      rootId: project.rootId,
-      folderId,
+      folderId: matches.at(0)?.id ?? (await this.drive.reservePublicationId()),
       label: template.name,
       confirmed: matches.length === 1,
     };
     await this.repository.execute(
       `INSERT INTO quotation_publication_folders(project_id,role,root_id,folder_id,label,confirmed) VALUES($projectId,$role,$rootId,$folderId,$label,$confirmed)`,
-      folder,
+      { ...folder },
       transaction,
     );
     return folder;
@@ -101,87 +94,132 @@ export class PublicationDestinationService {
     transaction: Transaction,
   ): Promise<void> {
     await this.transactions.lockKey(
-      `quotation-publication-folder:${folder.projectId}`,
+      publicationProjectLockKey(folder.projectId),
       transaction,
     );
     const metadata = await this.drive.inspectPublicationFile(folder.folderId);
-    if (!metadata && !folder.confirmed) {
-      try {
-        await this.drive.createPublicationFile({
-          id: folder.folderId,
-          name: folder.label,
-          parentId: folder.rootId,
-          mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
-          properties: {
-            publicationRole: folder.role,
-            publicationProject: folder.projectId,
-          },
-          bytes: null,
-        });
-      } catch {
-        this.logger.warn({
-          message: 'Publication folder creation requires reconciliation',
-        });
-      }
+    const needsCreate = metadata === null && !folder.confirmed;
+    if (needsCreate) {
+      await this.create(folder);
     }
+
     const actual = await this.drive.inspectPublicationFile(folder.folderId);
+    const liveFolder =
+      actual !== null &&
+      !actual.trashed &&
+      actual.mimeType === GOOGLE_DRIVE.FOLDER_MIME_TYPE;
     const correctParent =
       actual?.parents.length === 1 && actual.parents[0] === folder.rootId;
-    const correctMime = actual?.mimeType === GOOGLE_DRIVE.FOLDER_MIME_TYPE;
-    const correctProperties =
-      folder.confirmed ||
-      (actual?.properties.publicationRole === folder.role &&
-        actual.properties.publicationProject === folder.projectId);
-    if (
-      !actual ||
-      actual.trashed ||
-      !correctParent ||
-      !correctMime ||
-      !correctProperties
-    ) {
+    const taggedIdentity =
+      actual?.properties.publicationRole === folder.role &&
+      actual.properties.publicationProject === folder.projectId;
+    const correctProperties = folder.confirmed || taggedIdentity;
+    if (!liveFolder || !correctParent || !correctProperties) {
       throw new Error(PUBLICATION_REASON.MISSING);
     }
 
     await this.repository.execute(
-      `UPDATE quotation_publication_folders SET confirmed=true WHERE project_id=$projectId AND role=$role`,
-      { projectId: folder.projectId, role: folder.role },
+      `UPDATE quotation_publication_folders SET confirmed=true WHERE project_id=$projectId AND root_id=$rootId AND role=$role`,
+      { projectId: folder.projectId, rootId: folder.rootId, role: folder.role },
       transaction,
     );
   }
-  private async validateRoot(
-    rootId: string,
-    parentId: string | null,
+  private async bindRoot(
+    cycle: IPublicationCycle,
+    role: PublicationRoleType,
     transaction: Transaction,
-  ): Promise<void> {
-    const root = await this.drive.inspectPublicationFile(rootId);
-    if (
-      !root ||
-      root.trashed ||
-      root.mimeType !== GOOGLE_DRIVE.FOLDER_MIME_TYPE
-    ) {
+  ): Promise<IPublicationFolder> {
+    const [root] = await this.repository.select<IPublicationRootConfiguration>(
+      `SELECT p.drive_folder_id AS "rootId",p.drive_folder_linked AS linked,concat(p.code,' — ',p.name) AS "projectLabel",b.drive_folder_id AS "parentRootId",p.parent_project_id AS "parentProjectId" FROM projects p LEFT JOIN projects b ON b.id=p.parent_project_id WHERE p.id=$projectId`,
+      { projectId: cycle.projectId },
+      transaction,
+    );
+    if (!root?.rootId) {
       throw new Error(PUBLICATION_REASON.MISSING);
     }
 
-    if (!parentId) {
-      return;
-    }
-
-    const [building] = await this.repository.select<{ rootId: string | null }>(
-      `SELECT drive_folder_id AS "rootId" FROM projects WHERE id=$parentId AND deleted_at IS NULL`,
-      { parentId },
+    const rootContext = {
+      linked: root.linked,
+      projectLabel: root.projectLabel,
+      parentRootId: root.parentRootId,
+      parentProjectId: root.parentProjectId,
+    };
+    await this.repository.execute(
+      `UPDATE quotation_publication_cycles SET root_id=$rootId,root_context=$rootContext::jsonb WHERE id=$id AND root_id IS NULL`,
+      {
+        id: cycle.id,
+        rootId: root.rootId,
+        rootContext: JSON.stringify(rootContext),
+      },
       transaction,
     );
-    if (!building?.rootId) {
+    return this.prepare(
+      { ...cycle, rootId: root.rootId, rootContext },
+      role,
+      transaction,
+    );
+  }
+  private async create(folder: IPublicationFolder): Promise<void> {
+    try {
+      await this.drive.createPublicationFile({
+        id: folder.folderId,
+        name: folder.label,
+        parentId: folder.rootId,
+        mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+        properties: {
+          publicationRole: folder.role,
+          publicationProject: folder.projectId,
+        },
+        bytes: null,
+      });
+    } catch {
+      this.logger.warn({
+        message: 'Publication folder creation requires reconciliation',
+      });
+    }
+  }
+  private async validateRoot(
+    cycle: IPublicationCycle,
+    transaction: Transaction,
+  ): Promise<void> {
+    const foreignOwners = await this.repository.select<IPublicationTemplate>(
+      `SELECT name FROM projects WHERE id<>$projectId AND drive_folder_id=$rootId AND deleted_at IS NULL`,
+      { projectId: cycle.projectId, rootId: cycle.rootId },
+      transaction,
+    );
+    if (foreignOwners.length > 0) {
+      throw new Error(PUBLICATION_REASON.MISSING);
+    }
+
+    const root = await this.drive.inspectPublicationFile(cycle.rootId ?? '');
+    const liveFolder =
+      root !== null &&
+      !root.trashed &&
+      root.mimeType === GOOGLE_DRIVE.FOLDER_MIME_TYPE;
+    if (!root || !liveFolder) {
+      throw new Error(PUBLICATION_REASON.MISSING);
+    }
+
+    const buildingRoot = cycle.rootContext.parentRootId;
+    const missingBuilding =
+      cycle.rootContext.parentProjectId !== null && !buildingRoot;
+    if (missingBuilding) {
       throw new Error(PUBLICATION_REASON.APARTMENT);
     }
 
-    const apartmentContainers = (
-      await this.drive.listPublicationChildren(building.rootId)
-    ).filter((item): boolean => item.isFolder && item.name === 'דירות');
+    if (!buildingRoot) {
+      return;
+    }
+
+    const containers = (
+      await this.drive.listPublicationChildren(buildingRoot)
+    ).filter(
+      (item): boolean => item.isFolder && item.name === APARTMENTS_FOLDER_NAME,
+    );
     const correctContainer =
-      apartmentContainers.length === 1 &&
+      containers.length === 1 &&
       root.parents.length === 1 &&
-      root.parents[0] === apartmentContainers[0].id;
+      root.parents[0] === containers[0].id;
     if (!correctContainer) {
       throw new Error(PUBLICATION_REASON.APARTMENT);
     }

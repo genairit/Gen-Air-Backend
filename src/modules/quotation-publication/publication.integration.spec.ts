@@ -2,338 +2,50 @@ import {
   PUBLICATION_KIND,
   PUBLICATION_ROLE,
   PUBLICATION_STATE,
+  PUBLICATION_LIMITS,
   PUBLICATION_POLICY,
+  PUBLICATION_REASON,
+  PUBLICATION_RESULT_STATUS,
 } from './constants/publication.constant';
 
 import type {
   IPublicationCycle,
-  IPublicationSnapshot,
+  IPublicationOperation,
 } from './interfaces/publication.interface';
 
+import {
+  pdf,
+  pdfs,
+  ROOT,
+  event,
+  files,
+  until,
+  accept,
+  context,
+  fixture,
+  setRoot,
+  deferred,
+  orderPdf,
+  completeRole,
+  currentCycle,
+  createReview,
+  lifecycleEvent,
+  startPublicationFixture,
+  closePublicationFixture,
+} from './testing/publication-integration.fixture';
+
 import { connect } from 'amqplib';
-import { resolve } from 'node:path';
-import { Transaction } from 'sequelize';
 import { mock } from 'jest-mock-extended';
-import { readFile } from 'node:fs/promises';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID, createHash } from 'node:crypto';
-import { TIME_UNITS } from '@Constants/time.constant';
-import { PublicationService } from './publication.service';
-import { PERMISSIONS } from '@Constants/authorization.constant';
-import { PublicationRepository } from './publication.repository';
-import type { IDriveItem } from '@Interfaces/google-drive.interface';
+import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { PublicationBrokerService } from './publication-broker.service';
-import { quotationDocumentFixture } from '../../testing/quotation.fixture';
 import { PublicationExecutorService } from './publication-executor.service';
 import { publicationSnapshotHash } from './utilities/publication-hash.utility';
-import type { IPublicationOperation } from './interfaces/publication.interface';
-import { PublicationDestinationService } from './publication-destination.service';
-import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
 import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
-import { TaskQuotationFixture } from '@Modules/quotation/testing/task-quotation.fixture';
-import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
-import { QuotationPdfSnapshotService } from '@Modules/quotation/quotation-pdf-snapshot.service';
-import type { IPublicationDriveFile } from '@Providers/google-drive/interfaces/publication-drive.interface';
 
-interface IIntegrationContext {
-  publication: PublicationService;
-  repository: PublicationRepository;
-  executor: PublicationExecutorService;
-  transactions: DatabaseTransactionService;
-  drive: ReturnType<typeof mock<GoogleDriveService>>;
-  snapshots: ReturnType<typeof mock<QuotationPdfSnapshotService>>;
-}
-const fixture = new TaskQuotationFixture();
-const state: { context: IIntegrationContext | null } = { context: null };
-const files = new Map<string, IPublicationDriveFile>();
-const pdfs = new Map<string, Buffer>();
-const EVENT_ACTION = {
-  [QUOTATION_STATUS.REVIEW]: 'submit',
-  [QUOTATION_STATUS.APPROVED]: 'approve',
-  [QUOTATION_STATUS.DRAFT]: 'return',
-  [QUOTATION_STATUS.CANCELLED]: 'cancel',
-} as const;
-const ROOT = 'project-root';
-const pdf = Buffer.from('%PDF-1.7\naccepted proposal');
-const orderPdf = Buffer.from('%PDF-1.7\naccepted order');
-jest.setTimeout(2 * TIME_UNITS.MINUTE_MS);
-interface IDeferred {
-  resolve: () => void;
-  promise: Promise<void>;
-}
-const deferred = (): IDeferred => {
-  const completion = {
-    resolve: (): void => {
-      throw new Error('Deferred not initialized');
-    },
-  };
-  const promise = new Promise<void>((resolve): void => {
-    completion.resolve = resolve;
-  });
-  return { promise, resolve: (): void => completion.resolve() };
-};
-const context = (): IIntegrationContext => {
-  if (!state.context) {
-    throw new Error('Integration context missing');
-  }
-
-  return state.context;
-};
-const snapshot = (version: number): IPublicationSnapshot => ({
-  source: quotationDocumentFixture([]),
-  document: {
-    title: 'הצעת מחיר',
-    number: '2611-000001',
-    metadata: { revision: version },
-  },
-  filename: 'original.pdf',
-  filenamePolicy: PUBLICATION_POLICY.FILENAME,
-  namingInputs: { customerName: 'Original customer', brands: ['אלקטרה'] },
-  rendererVersion: PUBLICATION_POLICY.RENDERER,
-});
-const event = async (
-  quotationId: string,
-  version: number,
-  status: (typeof QUOTATION_STATUS)[keyof typeof QUOTATION_STATUS],
-  transaction: Transaction,
-): Promise<void> => {
-  const eventId = randomUUID();
-  const { repository, publication } = context();
-  await publication.lock(quotationId, transaction);
-  await repository.execute(
-    `INSERT INTO quotation_lifecycle_events(id,quotation_id,action,from_status,to_status,actor_id,actor_name,occurred_at,quotation_version,reason,evidence) VALUES($id,$quotationId,$action,'draft',$status,$actorId,'Test actor',now(),$version,NULL,'{}')`,
-    {
-      id: eventId,
-      quotationId,
-      actorId: fixture.actor.id,
-      status,
-      version,
-      action: EVENT_ACTION[status],
-    },
-    transaction,
-  );
-  const document = {
-    ...quotationDocumentFixture([]),
-    id: quotationId,
-    customerId: fixture.customerId,
-    projectId: fixture.projectId,
-    status,
-    version,
-  };
-  await publication.lifecycle({
-    eventId,
-    permission: PERMISSIONS.QUOTATIONS_APPROVE,
-    actorId: fixture.actor.id,
-    document,
-    transaction,
-  });
-};
-const createReview = async (): Promise<IPublicationCycle> => {
-  const created = await fixture
-    .service()
-    .create(
-      { customerId: fixture.customerId, projectId: fixture.projectId },
-      fixture.actor,
-    );
-  const { transactions, repository } = context();
-  await transactions.run(async (transaction): Promise<void> => {
-    await event(created.id, 2, QUOTATION_STATUS.REVIEW, transaction);
-  });
-  return transactions.run(
-    async (transaction): Promise<IPublicationCycle> =>
-      (await repository.cycles(created.id, transaction))[0],
-  );
-};
-const accept = async (
-  cycle: IPublicationCycle,
-  bytes: Buffer,
-): Promise<void> => {
-  const { transactions, repository } = context();
-  await transactions.run(async (transaction): Promise<void> => {
-    const operation = (await repository.operations(cycle.id, transaction)).at(
-      -1,
-    );
-    if (!operation) {
-      throw new Error('Operation missing');
-    }
-
-    await repository.execute(
-      `UPDATE quotation_publication_operations SET pdf=$pdf,hash=$hash,md5_hash=$md5Hash,state='publishing' WHERE id=$id`,
-      {
-        id: operation.id,
-        pdf: bytes,
-        hash: createHash('sha256').update(bytes).digest('hex'),
-        md5Hash: createHash('md5').update(bytes).digest('hex'),
-      },
-      transaction,
-    );
-  });
-};
-const currentCycle = (cycle: IPublicationCycle): Promise<IPublicationCycle> =>
-  context().transactions.run(async (transaction): Promise<IPublicationCycle> =>
-    context().repository.cycle(cycle.id, transaction),
-  );
-const until = async (
-  predicate: () => Promise<boolean>,
-  remaining = 100,
-): Promise<void> => {
-  if (await predicate()) {
-    return;
-  }
-
-  if (!remaining) {
-    throw new Error('Timed out awaiting durable result adoption');
-  }
-
-  await new Promise<void>((done): void => {
-    setTimeout(done, TIME_UNITS.SECOND_MS / 20);
-  });
-  await until(predicate, remaining - 1);
-};
-beforeAll(async (): Promise<void> => {
-  await fixture.start();
-  await fixture.installLifecycleEvents();
-  await fixture
-    .database()
-    .query(
-      `ALTER TABLE projects ADD COLUMN drive_folder_id text,ADD COLUMN drive_folder_linked boolean NOT NULL DEFAULT false;UPDATE projects SET drive_folder_id='${ROOT}';CREATE TABLE drive_template_folders(id uuid PRIMARY KEY,parent_id uuid,name text,position integer,created_at timestamptz,updated_at timestamptz);INSERT INTO drive_template_folders VALUES(gen_random_uuid(),NULL,'הצעות מחיר',1,now(),now()),(gen_random_uuid(),NULL,'הזמנה לביצוע',2,now(),now());`,
-    );
-  const migration = await readFile(
-    resolve(
-      process.cwd(),
-      'migrations/2026-11-23-quotation-publication-ledger.sql',
-    ),
-    'utf8',
-  );
-  await fixture.database().query(migration);
-  await fixture.database().query(migration);
-  const transactions = new DatabaseTransactionService(fixture.database());
-  const repository = new PublicationRepository(fixture.database());
-  const snapshots = mock<QuotationPdfSnapshotService>();
-  snapshots.capture.mockImplementation(
-    (document): Promise<IPublicationSnapshot> =>
-      Promise.resolve({
-        ...snapshot(document.version),
-        source: document,
-      }),
-  );
-  const drive = mock<GoogleDriveService>();
-  files.set(ROOT, {
-    id: ROOT,
-    name: 'Project',
-    mimeType: 'application/vnd.google-apps.folder',
-    parents: ['company-root'],
-    trashed: false,
-    md5: null,
-    revisionId: null,
-    properties: {},
-  });
-  drive.reservePublicationId.mockImplementation((): Promise<string> =>
-    Promise.resolve(randomUUID()),
-  );
-  drive.inspectPublicationFile.mockImplementation(
-    (id): Promise<IPublicationDriveFile | null> =>
-      Promise.resolve(files.get(id) ?? null),
-  );
-  drive.listPublicationChildren.mockImplementation(
-    (root): Promise<IDriveItem[]> =>
-      Promise.resolve(
-        [...files.values()]
-          .filter((file): boolean => file.parents.includes(root))
-          .map((file): IDriveItem => ({
-            id: file.id,
-            name: file.name,
-            mimeType: file.mimeType,
-            isFolder: file.mimeType === 'application/vnd.google-apps.folder',
-            size: null,
-            modifiedTime: null,
-            webViewLink: null,
-          })),
-      ),
-  );
-  drive.createPublicationFile.mockImplementation((input): Promise<void> => {
-    if (files.has(input.id)) {
-      return Promise.reject(new Error('409'));
-    }
-
-    files.set(input.id, {
-      id: input.id,
-      name: input.name,
-      mimeType: input.mimeType,
-      parents: [input.parentId],
-      trashed: false,
-      md5: input.bytes
-        ? createHash('md5').update(input.bytes).digest('hex')
-        : null,
-      revisionId: input.bytes ? randomUUID() : null,
-      properties: input.properties,
-    });
-    if (input.bytes) {
-      pdfs.set(input.id, input.bytes);
-      return Promise.reject(new Error('Lost create response'));
-    }
-
-    return Promise.resolve();
-  });
-  drive.replacePublicationMedia.mockImplementation((input): Promise<void> => {
-    const file = files.get(input.id);
-    if (!file) {
-      return Promise.reject(new Error('404'));
-    }
-
-    files.set(input.id, {
-      ...file,
-      name: input.name,
-      md5: createHash('md5').update(input.bytes).digest('hex'),
-      revisionId: randomUUID(),
-    });
-    pdfs.set(input.id, input.bytes);
-    return Promise.resolve();
-  });
-  drive.movePublicationFile.mockImplementation(
-    (id, parents, destination): Promise<void> => {
-      const file = files.get(id);
-      if (
-        !file ||
-        !file.parents.every((parent): boolean => parents.includes(parent))
-      ) {
-        return Promise.reject(new Error('Unverified source parent'));
-      }
-
-      files.set(id, { ...file, parents: [destination] });
-      return Promise.resolve();
-    },
-  );
-  drive.retainPublicationRevision.mockResolvedValue();
-  const publication = new PublicationService(
-    repository,
-    snapshots,
-    transactions,
-  );
-  const destinations = new PublicationDestinationService(
-    repository,
-    drive,
-    transactions,
-  );
-  const executor = new PublicationExecutorService(
-    repository,
-    publication,
-    destinations,
-    transactions,
-    drive,
-  );
-  state.context = {
-    repository,
-    transactions,
-    snapshots,
-    drive,
-    publication,
-    executor,
-  };
-});
-afterAll(async (): Promise<void> => {
-  await fixture.close();
-});
+beforeAll(startPublicationFixture);
+afterAll(closePublicationFixture);
 
 describe('durable quotation publication on real PostgreSQL', (): void => {
   it('reapplies the migration additively and binds actual template identities', async (): Promise<void> => {
@@ -417,6 +129,16 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
       state: PUBLICATION_STATE.ARCHIVED,
     });
     expect(archivedSummary.sourceVersion).toBe(3);
+    expect(archivedSummary.history[0].destinationLabel).toContain('הצעות מחיר');
+    expect(archivedSummary.history[1].destinationLabel).toContain(
+      'הזמנה לביצוע',
+    );
+    expect(archivedSummary.history[2].destinationLabel).toContain(
+      'ארכיון הצעות מחיר',
+    );
+    expect(archivedSummary.history[0].destinationLabel).toContain(
+      cycle.rootContext.projectLabel,
+    );
     expect(pdfs.get(order.fileId ?? '')).toEqual(orderPdf);
     await context().transactions.run(async (transaction): Promise<void> => {
       await event(cycle.quotationId, 5, QUOTATION_STATUS.REVIEW, transaction);
@@ -450,16 +172,24 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
     );
     expect(summary).toMatchObject({
       state: PUBLICATION_STATE.ARCHIVED,
-      reason: 'ההפקה בוטלה לפני יצירת קובץ',
+      reason: PUBLICATION_REASON.SUPERSEDED,
       fileUrl: null,
     });
   });
   it('blocks linked-folder completion and resumes the same failed cycle without inventing a destination', async (): Promise<void> => {
+    await setRoot(ROOT, true);
     const cycle = await createReview();
     await fixture
       .database()
       .query(
-        `UPDATE projects SET drive_folder_linked=true WHERE id='${fixture.projectId}';DELETE FROM quotation_publication_folders WHERE project_id='${fixture.projectId}' AND role='quotation'`,
+        `DELETE FROM quotation_publication_folders WHERE project_id=$projectId AND root_id=$rootId AND role=$role`,
+        {
+          bind: {
+            projectId: fixture.projectId,
+            rootId: ROOT,
+            role: PUBLICATION_ROLE.QUOTATION,
+          },
+        },
       );
     const quotationFolder = [...files.values()].find(
       (file): boolean => file.name === 'הצעות מחיר',
@@ -471,11 +201,7 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
     await context().executor.execute(cycle.quotationId);
     expect((await currentCycle(cycle)).state).toBe(PUBLICATION_STATE.FAILED);
     expect((await currentCycle(cycle)).fileId).toBeNull();
-    await fixture
-      .database()
-      .query(
-        `UPDATE projects SET drive_folder_linked=false WHERE id='${fixture.projectId}'`,
-      );
+    completeRole(ROOT, 'הצעות מחיר');
     await context().publication.retry(
       cycle.quotationId,
       cycle.id,
@@ -483,6 +209,7 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
     );
     await context().executor.execute(cycle.quotationId);
     expect((await currentCycle(cycle)).state).toBe(PUBLICATION_STATE.PUBLISHED);
+    await setRoot(ROOT);
   });
   it('serializes lifecycle and effects with the shared database lock across independent transactions', async (): Promise<void> => {
     const cycle = await createReview();
@@ -562,9 +289,6 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
     const cycle = await createReview();
     await accept(cycle, pdf);
     await context().executor.execute(cycle.quotationId);
-    await context().transactions.run(async (transaction): Promise<void> => {
-      await event(cycle.quotationId, 3, QUOTATION_STATUS.DRAFT, transaction);
-    });
     const otherProject = randomUUID();
     await fixture
       .database()
@@ -572,11 +296,28 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
         `INSERT INTO projects(id,customer_id,name,code,drive_folder_id) VALUES($id,$customerId,'Other','P-2','foreign-root')`,
         { bind: { id: otherProject, customerId: fixture.customerId } },
       );
+    await context().transactions.run((transaction): Promise<void> =>
+      lifecycleEvent({
+        quotationId: cycle.quotationId,
+        version: 3,
+        status: QUOTATION_STATUS.DRAFT,
+        projectId: otherProject,
+        transaction,
+      }),
+    );
     await context().executor.execute(cycle.quotationId);
     const archived = await currentCycle(cycle);
     expect(archived.projectId).toBe(fixture.projectId);
     expect(archived.rootId).toBe(ROOT);
     expect(archived.state).toBe(PUBLICATION_STATE.ARCHIVED);
+    const summary = await context().publication.summary(
+      cycle.quotationId,
+      otherProject,
+      true,
+      true,
+    );
+    expect(summary.destinationLabel).toContain(cycle.rootContext.projectLabel);
+    expect(summary.destinationLabel).not.toContain('P-2');
   });
   it('surfaces a failed old archive in the compact retry contract before allowing a new cycle to publish', async (): Promise<void> => {
     const cycle = await createReview();
@@ -651,7 +392,7 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
         tenantId: PUBLICATION_POLICY.TENANT,
         jobType: PUBLICATION_POLICY.RENDERER,
         jobId: operation.jobId,
-        status: 'succeeded',
+        status: PUBLICATION_RESULT_STATUS.SUCCEEDED,
         correlation: {
           cycleId: cycle.id,
           operationId: operation.id,
@@ -662,13 +403,71 @@ describe('durable quotation publication on real PostgreSQL', (): void => {
           pdfBase64: pdf.toString('base64'),
           byteLength: pdf.length,
           sha256: createHash('sha256').update(pdf).digest('hex'),
-          contentType: 'application/pdf',
+          contentType: GOOGLE_DRIVE.PDF_MIME_TYPE,
           cycleId: cycle.id,
           operationId: operation.id,
           generation: operation.generation,
           sourceHash: operation.sourceHash,
         },
       };
+      const poisoned = {
+        ...envelope,
+        jobId: 'not-uuid',
+        correlation: {
+          ...envelope.correlation,
+          operationId: 'not-uuid',
+          cycleId: 'not-uuid',
+        },
+      };
+      const foreignOperationId = randomUUID();
+      const foreign = {
+        ...envelope,
+        jobId: randomUUID(),
+        correlation: {
+          ...envelope.correlation,
+          operationId: foreignOperationId,
+        },
+        output: { ...envelope.output, operationId: foreignOperationId },
+      };
+      const staleGeneration = envelope.correlation.generation + 1;
+      const stale = {
+        ...envelope,
+        correlation: { ...envelope.correlation, generation: staleGeneration },
+        output: { ...envelope.output, generation: staleGeneration },
+      };
+      const malformedFailure = {
+        ...poisoned,
+        status: PUBLICATION_RESULT_STATUS.FAILED,
+        output: null,
+      };
+      const staleFailure = {
+        ...stale,
+        status: PUBLICATION_RESULT_STATUS.FAILED,
+        output: null,
+      };
+      const invalidHash = {
+        ...envelope,
+        output: { ...envelope.output, sha256: '0'.repeat(64) },
+      };
+      for (const invalid of [
+        poisoned,
+        foreign,
+        stale,
+        invalidHash,
+        malformedFailure,
+        staleFailure,
+      ]) {
+        channel.sendToQueue(
+          `${prefix}.pdf.results`,
+          Buffer.from(JSON.stringify(invalid)),
+          { persistent: true },
+        );
+      }
+      channel.sendToQueue(
+        `${prefix}.pdf.results`,
+        Buffer.alloc(PUBLICATION_LIMITS.RESULT_BYTES + 1),
+        { persistent: true },
+      );
       channel.sendToQueue(
         `${prefix}.pdf.results`,
         Buffer.from(JSON.stringify(envelope)),

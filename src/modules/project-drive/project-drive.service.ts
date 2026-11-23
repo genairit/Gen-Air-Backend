@@ -26,6 +26,7 @@ import {
 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Transaction } from 'sequelize';
 import { OnEvent } from '@nestjs/event-emitter';
 import { DriveFolderDto } from './dto/drive-folder.dto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -153,7 +154,25 @@ export class ProjectDriveService {
     mode: DriveProvisioningModeType,
   ): Promise<IProject> {
     const previous = this.provisioning.get(projectId) ?? Promise.resolve(null);
-    const run = () => this.provisionProject(projectId, mode);
+    const run = async (): Promise<IProject> => {
+      const project = await this.projectService.getById(projectId);
+      if (project.driveFolderLinked) {
+        await this.projectService.inspectLinkedDriveFolder(project);
+      }
+      if (project.parentProjectId) {
+        await this.provision(project.parentProjectId);
+      }
+      return this.projectService.withDriveRootLock(
+        projectId,
+        async (transaction): Promise<IProject> =>
+          this.provisionProject(
+            projectId,
+            mode,
+            transaction,
+            project.driveFolderId,
+          ),
+      );
+    };
     // Each queued request runs independently of the previous caller's outcome.
     const operation = previous.then(run, run).finally(() => {
       if (this.provisioning.get(projectId) === operation) {
@@ -166,9 +185,13 @@ export class ProjectDriveService {
 
   async getApartmentFolderRepair(
     projectId: string,
+    transaction?: Transaction,
   ): Promise<IApartmentFolderRepair> {
     this.assertDriveConfigured();
-    const apartment = await this.projectService.getById(projectId);
+    const apartment = await this.projectService.quotationSnapshot(
+      projectId,
+      transaction,
+    );
     if (!apartment.parentProjectId) {
       throw new BadRequestException('Select an apartment project');
     }
@@ -177,8 +200,9 @@ export class ProjectDriveService {
       throw new ConflictException('Provision this apartment first');
     }
 
-    const building = await this.projectService.getById(
+    const building = await this.projectService.quotationSnapshot(
       apartment.parentProjectId,
+      transaction,
     );
     const buildingFolderId = building.driveFolderId;
     if (!buildingFolderId) {
@@ -299,26 +323,33 @@ export class ProjectDriveService {
     projectId: string,
     repair: ApartmentFolderRepairDto,
   ): Promise<IProject> {
-    const preview = await this.getApartmentFolderRepair(projectId);
-    const matchesSource = preview.sourceFolderId === repair.sourceFolderId;
-    const matchesDestination =
-      preview.destinationFolderId === repair.destinationFolderId;
-    if (!matchesSource || !matchesDestination) {
-      throw new ConflictException(
-        'The apartment folder repair plan has changed',
-      );
-    }
+    await this.projectService.withDriveRootLock(
+      projectId,
+      async (transaction): Promise<void> => {
+        const preview = await this.getApartmentFolderRepair(
+          projectId,
+          transaction,
+        );
+        const matchesSource = preview.sourceFolderId === repair.sourceFolderId;
+        const matchesDestination =
+          preview.destinationFolderId === repair.destinationFolderId;
+        if (!matchesSource || !matchesDestination) {
+          throw new ConflictException(
+            'The apartment folder repair plan has changed',
+          );
+        }
 
-    if (preview.status === 'needs_move') {
-      await this.callDrive(() =>
-        this.googleDriveService.moveFile({
-          fileId: preview.sourceFolderId,
-          parentIds: [this.getProjectsRootFolderId()],
-          destinationFolderId: preview.destinationFolderId,
-        }),
-      );
-    }
-
+        if (preview.status === 'needs_move') {
+          await this.callDrive(() =>
+            this.googleDriveService.moveFile({
+              fileId: preview.sourceFolderId,
+              parentIds: [this.getProjectsRootFolderId()],
+              destinationFolderId: preview.destinationFolderId,
+            }),
+          );
+        }
+      },
+    );
     return this.provision(projectId);
   }
 
@@ -541,15 +572,20 @@ export class ProjectDriveService {
   private async provisionProject(
     projectId: string,
     mode: DriveProvisioningModeType,
+    transaction: Transaction,
+    expectedRootId: string | null,
   ): Promise<IProject> {
     const projectsRootFolderId = this.getProjectsRootFolderId();
     const [project, templateTree] = await Promise.all([
-      this.projectService.getById(projectId),
-      this.driveTemplateFolderService.getTree(),
+      this.projectService.quotationSnapshot(projectId, transaction),
+      this.driveTemplateFolderService.getTree(transaction),
     ]);
-    if (project.driveFolderLinked) {
-      await this.projectService.inspectLinkedDriveFolder(project);
+    if (project.driveFolderId !== expectedRootId) {
+      throw new ConflictException(
+        'Project Drive root changed; refresh before provisioning',
+      );
     }
+
     if (
       project.driveFolderLinked &&
       mode !== DRIVE_PROVISIONING_MODE.COMPLETE_TEMPLATE
@@ -558,7 +594,7 @@ export class ProjectDriveService {
     }
 
     const parentFolderId = project.parentProjectId
-      ? await this.getApartmentsFolderId(project.parentProjectId)
+      ? await this.getApartmentsFolderId(project.parentProjectId, transaction)
       : projectsRootFolderId;
     const projectFolderId = await this.ensureProjectFolder(
       project,
@@ -584,9 +620,13 @@ export class ProjectDriveService {
     }
 
     if (!project.driveFolderId) {
-      await this.projectService.setDriveFolderId(project.id, projectFolderId);
+      await this.projectService.setDriveFolderId(
+        project.id,
+        projectFolderId,
+        transaction,
+      );
     }
-    return this.projectService.getById(projectId);
+    return this.projectService.quotationSnapshot(projectId, transaction);
   }
 
   private async ensureProjectFolder(
@@ -608,8 +648,14 @@ export class ProjectDriveService {
     return projectFolderId;
   }
 
-  private async getApartmentsFolderId(buildingId: string): Promise<string> {
-    const building = await this.provision(buildingId);
+  private async getApartmentsFolderId(
+    buildingId: string,
+    transaction: Transaction,
+  ): Promise<string> {
+    const building = await this.projectService.quotationSnapshot(
+      buildingId,
+      transaction,
+    );
     const buildingFolderId = building.driveFolderId;
     if (!buildingFolderId) {
       throw new ConflictException('The building Drive folder is unavailable');

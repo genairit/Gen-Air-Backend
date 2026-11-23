@@ -104,7 +104,7 @@ it('returns a downloadable PDF without a Drive upload when no project is linked'
   );
 });
 
-it('downloads a linked quotation without Drive publication', async () => {
+it('downloads a linked quotation without Drive publication', async (): Promise<void> => {
   document.projectId = project.id;
   const result = await exportPdf();
   expect(result.filename).toBe(
@@ -136,7 +136,7 @@ it('rejects invalid worker output and never uploads', async () => {
   expect(drive.uploadQuotationPdf).not.toHaveBeenCalled();
 });
 
-it('preserves manual download while Drive is unavailable', async () => {
+it('preserves manual download while Drive is unavailable', async (): Promise<void> => {
   document.projectId = project.id;
   drive.uploadQuotationPdf.mockRejectedValue(new Error('Drive unavailable'));
   expect((await exportPdf()).pdf).toEqual(pdf);

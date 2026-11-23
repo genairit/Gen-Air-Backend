@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS quotation_publication_folders (
  folder_id text NOT NULL UNIQUE,
  label text NOT NULL,
  confirmed boolean NOT NULL DEFAULT false,
- PRIMARY KEY(project_id,role)
+ PRIMARY KEY(project_id,root_id,role)
 );
 CREATE INDEX IF NOT EXISTS quotation_publication_folder_role ON quotation_publication_folders(role);
 CREATE TABLE IF NOT EXISTS quotation_publication_cycles (
@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS quotation_publication_cycles (
  quotation_id uuid NOT NULL REFERENCES quotations(id),
  project_id uuid NOT NULL REFERENCES projects(id),
  root_id text,
+ root_context jsonb NOT NULL,
  file_id text UNIQUE,
  terminal boolean NOT NULL DEFAULT false,
  generation integer NOT NULL CHECK(generation>0),
@@ -66,6 +67,8 @@ CREATE TABLE IF NOT EXISTS quotation_publication_operations (
  md5_hash text CHECK(md5_hash IS NULL OR md5_hash ~ '^[a-f0-9]{32}$'),
  hash text CHECK(hash IS NULL OR hash ~ '^[a-f0-9]{64}$'),
  revision_id text,
+ destination_label text,
+ destination_folder_id text,
  effect_started boolean NOT NULL DEFAULT false,
  dispatched_at timestamptz,
  reason text,
@@ -81,8 +84,10 @@ BEGIN
  IF TG_OP<>'UPDATE' THEN RAISE EXCEPTION 'Publication evidence cannot be removed'; END IF;
  IF ROW(OLD.id,OLD.cycle_id,OLD.lifecycle_event_id,OLD.generation,OLD.kind,OLD.source_version,OLD.retry_permission,OLD.source_hash,OLD.snapshot) IS DISTINCT FROM ROW(NEW.id,NEW.cycle_id,NEW.lifecycle_event_id,NEW.generation,NEW.kind,NEW.source_version,NEW.retry_permission,NEW.source_hash,NEW.snapshot) THEN RAISE EXCEPTION 'Publication snapshot is immutable'; END IF;
  IF OLD.hash IS NOT NULL AND ROW(OLD.hash,OLD.md5_hash) IS DISTINCT FROM ROW(NEW.hash,NEW.md5_hash) THEN RAISE EXCEPTION 'Accepted PDF hashes are immutable'; END IF;
+ IF OLD.hash IS NOT NULL AND OLD.pdf IS NULL AND NEW.pdf IS NOT NULL THEN RAISE EXCEPTION 'Released PDF adoption cannot be replaced'; END IF;
  IF OLD.pdf IS NOT NULL AND NEW.pdf IS NOT NULL AND OLD.pdf<>NEW.pdf THEN RAISE EXCEPTION 'Accepted PDF bytes are immutable'; END IF;
  IF OLD.pdf IS NOT NULL AND NEW.pdf IS NULL AND NEW.revision_id IS NULL AND NOT (NEW.state='archived' AND NOT NEW.effect_started) THEN RAISE EXCEPTION 'Accepted PDF requires retained revision proof'; END IF;
+ IF OLD.destination_folder_id IS NOT NULL AND ROW(OLD.destination_folder_id,OLD.destination_label) IS DISTINCT FROM ROW(NEW.destination_folder_id,NEW.destination_label) THEN RAISE EXCEPTION 'Verified publication destination is immutable'; END IF;
  RETURN NEW;
 END $$;
 DROP TRIGGER IF EXISTS protect_quotation_publication_evidence ON quotation_publication_operations;
@@ -95,3 +100,13 @@ ALTER TABLE quotation_publication_cycles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quotation_publication_operations ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON quotation_publication_roles,quotation_publication_folders,quotation_publication_cycles,quotation_publication_operations FROM PUBLIC,anon,authenticated;
 REVOKE ALL ON FUNCTION protect_quotation_publication_evidence() FROM PUBLIC,anon,authenticated;
+
+CREATE OR REPLACE FUNCTION protect_quotation_publication_root() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
+BEGIN
+ IF ROW(OLD.project_id,OLD.quotation_id) IS DISTINCT FROM ROW(NEW.project_id,NEW.quotation_id) THEN RAISE EXCEPTION 'Publication cycle context is immutable'; END IF;
+ IF OLD.root_id IS NOT NULL AND ROW(OLD.root_id,OLD.root_context) IS DISTINCT FROM ROW(NEW.root_id,NEW.root_context) THEN RAISE EXCEPTION 'Publication root authority is immutable'; END IF;
+ RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION protect_quotation_publication_root() FROM PUBLIC,anon,authenticated;
+DROP TRIGGER IF EXISTS protect_quotation_publication_root ON quotation_publication_cycles;
+CREATE TRIGGER protect_quotation_publication_root BEFORE UPDATE ON quotation_publication_cycles FOR EACH ROW EXECUTE FUNCTION protect_quotation_publication_root();

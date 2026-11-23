@@ -17,12 +17,18 @@ import {
   publicationSnapshotHash,
 } from './utilities/publication-hash.utility';
 
+import {
+  publicationProjectLockKey,
+  publicationQuotationLockKey,
+} from '@Modules/quotation-publication/utilities/publication-lock.utility';
+
 import { Transaction } from 'sequelize';
 import { createHash, randomUUID } from 'node:crypto';
 import { Injectable, ConflictException } from '@nestjs/common';
 import { PublicationRepository } from './publication.repository';
 import { PERMISSIONS, PermissionType } from '@Constants/authorization.constant';
 import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
+import type { IPublicationRootConfiguration } from './interfaces/publication.interface';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { QuotationPdfSnapshotService } from '@Modules/quotation/quotation-pdf-snapshot.service';
 
@@ -35,7 +41,7 @@ export class PublicationService {
   ) {}
   async lock(quotationId: string, transaction: Transaction): Promise<void> {
     await this.transactions.lockKey(
-      `quotation-publication:${quotationId}`,
+      publicationQuotationLockKey(quotationId),
       transaction,
     );
   }
@@ -46,16 +52,16 @@ export class PublicationService {
     const publishes =
       document.status === QUOTATION_STATUS.REVIEW ||
       document.status === QUOTATION_STATUS.APPROVED;
+    if (!publishes && active) {
+      await this.archive(
+        active,
+        eventId,
+        document.version,
+        transaction,
+        input.permission,
+      );
+    }
     if (!publishes) {
-      if (active) {
-        await this.archive(
-          active,
-          eventId,
-          document.version,
-          transaction,
-          input.permission,
-        );
-      }
       return;
     }
 
@@ -69,6 +75,19 @@ export class PublicationService {
         : PUBLICATION_KIND.QUOTATION;
     const cycleId = active?.id ?? randomUUID();
     const generation = (active?.generation ?? 0) + 1;
+    await this.transactions.lockKey(
+      publicationProjectLockKey(document.projectId),
+      transaction,
+    );
+    const [root] = await this.repository.select<IPublicationRootConfiguration>(
+      `SELECT p.drive_folder_id AS "rootId",p.drive_folder_linked AS linked,concat(p.code,' — ',p.name) AS "projectLabel",b.drive_folder_id AS "parentRootId",p.parent_project_id AS "parentProjectId" FROM projects p LEFT JOIN projects b ON b.id=p.parent_project_id WHERE p.id=$projectId`,
+      { projectId: document.projectId },
+      transaction,
+    );
+    if (!root) {
+      throw new ConflictException(PUBLICATION_REASON.MISSING);
+    }
+
     const snapshot = await this.snapshots.capture(document, transaction);
     const serialized = publicationSnapshotJson(snapshot);
     if (Buffer.byteLength(serialized) > PUBLICATION_LIMITS.JOB_BYTES / 2) {
@@ -77,11 +96,18 @@ export class PublicationService {
 
     const sourceHash = publicationSnapshotHash(snapshot);
     await this.repository.execute(
-      `INSERT INTO quotation_publication_cycles(id,quotation_id,project_id,generation,desired_kind,source_version,state) VALUES($cycleId,$quotationId,$projectId,$generation,$kind,$version,$state) ON CONFLICT(id) DO UPDATE SET generation=EXCLUDED.generation,desired_kind=EXCLUDED.desired_kind,source_version=EXCLUDED.source_version,state=EXCLUDED.state,reason=NULL,updated_at=now()`,
+      `INSERT INTO quotation_publication_cycles(id,quotation_id,project_id,root_id,root_context,generation,desired_kind,source_version,state) VALUES($cycleId,$quotationId,$projectId,$rootId,$rootContext::jsonb,$generation,$kind,$version,$state) ON CONFLICT(id) DO UPDATE SET generation=EXCLUDED.generation,desired_kind=EXCLUDED.desired_kind,source_version=EXCLUDED.source_version,state=EXCLUDED.state,reason=NULL,updated_at=now()`,
       {
         cycleId,
         quotationId: document.id,
         projectId: document.projectId,
+        rootId: root.rootId,
+        rootContext: JSON.stringify({
+          linked: root.linked,
+          projectLabel: root.projectLabel,
+          parentRootId: root.parentRootId,
+          parentProjectId: root.parentProjectId,
+        }),
         generation,
         kind,
         version: document.version,
@@ -114,14 +140,20 @@ export class PublicationService {
     transaction: Transaction,
     permission: PermissionType = PERMISSIONS.QUOTATIONS_UPDATE,
   ): Promise<void> {
+    const operations = await this.repository.operations(cycle.id, transaction);
+    const blocker = operations.find(
+      (operation): boolean =>
+        operation.state === PUBLICATION_STATE.FAILED && operation.effectStarted,
+    );
     const generation = cycle.generation + 1;
     await this.repository.execute(
-      `UPDATE quotation_publication_cycles SET terminal=true,generation=$generation,source_version=$version,state=$state,reason=NULL,updated_at=now() WHERE id=$cycleId`,
+      `UPDATE quotation_publication_cycles SET terminal=true,generation=$generation,source_version=$version,state=$state,reason=$reason,updated_at=now() WHERE id=$cycleId`,
       {
         cycleId: cycle.id,
         generation,
         version,
-        state: PUBLICATION_STATE.ARCHIVING,
+        state: blocker ? PUBLICATION_STATE.FAILED : PUBLICATION_STATE.ARCHIVING,
+        reason: blocker?.reason ?? null,
       },
       transaction,
     );
@@ -171,6 +203,12 @@ export class PublicationService {
               saved.id,
               transaction,
             );
+            const uncertain = operations.some(
+              (operation): boolean =>
+                operation.effectStarted &&
+                operation.state !== PUBLICATION_STATE.PUBLISHED &&
+                operation.state !== PUBLICATION_STATE.ARCHIVED,
+            );
             const accepted = operations.find(
               (operation): boolean =>
                 operation.hash !== null && operation.hash === saved.actualHash,
@@ -187,16 +225,37 @@ export class PublicationService {
                   : operation.sourceVersion,
               state: operation.state,
               reason: operation.reason,
-              destinationLabel: canReadFiles ? saved.destinationLabel : null,
+              destinationLabel: canReadFiles
+                ? operation.destinationLabel
+                : null,
               // Only the final stage's current file link is a current-byte claim; earlier retained stages have no misleading live link.
               fileUrl:
-                canReadFiles && operation.generation === saved.generation
+                canReadFiles &&
+                !uncertain &&
+                operation.generation === saved.generation &&
+                (operation.kind === null || operation.hash === saved.actualHash)
                   ? this.fileUrl(saved)
                   : null,
               updatedAt: operation.updatedAt,
             }));
           }),
         );
+        const acceptedOperations = cycle
+          ? await this.repository.operations(cycle.id, transaction)
+          : [];
+        const acceptedStage =
+          acceptedOperations.find(
+            (operation): boolean =>
+              operation.hash !== null && operation.hash === cycle?.actualHash,
+          ) ?? null;
+        const uncertain = acceptedOperations.some(
+          (operation): boolean =>
+            operation.effectStarted &&
+            operation.state !== PUBLICATION_STATE.PUBLISHED &&
+            operation.state !== PUBLICATION_STATE.ARCHIVED,
+        );
+        const hasAcceptedStage = !uncertain && acceptedStage !== null;
+        const exposesFile = canReadFiles && cycle !== null && hasAcceptedStage;
         const currentStage = historyGroups
           .flat()
           .find(
@@ -204,24 +263,34 @@ export class PublicationService {
               entry.cycleId === cycle?.id &&
               entry.generation === cycle?.generation,
           );
+        const untrackedReason = projectId
+          ? null
+          : PUBLICATION_REASON.NO_PROJECT;
+        const reason = cycle ? cycle.reason : untrackedReason;
         return {
           cycleId: cycle?.id ?? null,
           generation: cycle?.generation ?? null,
-          documentKind: cycle?.desiredKind ?? null,
-          sourceVersion:
-            currentStage?.sourceVersion ?? cycle?.sourceVersion ?? null,
+          documentKind: hasAcceptedStage
+            ? acceptedStage.kind
+            : (cycle?.desiredKind ?? null),
+          sourceVersion: hasAcceptedStage
+            ? acceptedStage.sourceVersion
+            : (currentStage?.sourceVersion ?? cycle?.sourceVersion ?? null),
           state:
             cycle?.state ??
             (projectId
               ? PUBLICATION_STATE.UNTRACKED
               : PUBLICATION_STATE.NOT_APPLICABLE),
-          reason:
-            cycle?.reason ?? (projectId ? null : PUBLICATION_REASON.NO_PROJECT),
+          reason,
           updatedAt: cycle?.updatedAt ?? null,
           destinationLabel: canReadFiles
-            ? (cycle?.destinationLabel ?? null)
+            ? ((cycle?.state === PUBLICATION_STATE.ARCHIVED
+                ? currentStage?.destinationLabel
+                : acceptedStage?.destinationLabel) ??
+              cycle?.destinationLabel ??
+              null)
             : null,
-          fileUrl: canReadFiles && cycle ? this.fileUrl(cycle) : null,
+          fileUrl: exposesFile && cycle ? this.fileUrl(cycle) : null,
           canRetry: mayRetry && cycle?.state === PUBLICATION_STATE.FAILED,
           history: historyGroups.flat(),
         };
@@ -264,7 +333,7 @@ export class PublicationService {
     const [operation] = await this.repository.select<{
       permission: PermissionType;
     }>(
-      `SELECT o.retry_permission AS permission FROM quotation_publication_operations o JOIN quotation_publication_cycles c ON c.id=o.cycle_id WHERE c.quotation_id=$quotationId AND ($cycleId::uuid IS NULL OR c.id=$cycleId) ORDER BY (c.state='failed') DESC,c.source_version DESC,o.generation DESC LIMIT 1`,
+      `SELECT o.retry_permission AS permission FROM quotation_publication_operations o JOIN quotation_publication_cycles c ON c.id=o.cycle_id WHERE c.quotation_id=$quotationId AND ($cycleId::uuid IS NULL OR c.id=$cycleId) ORDER BY (c.state='failed') DESC,(o.state='failed') DESC,(o.retry_permission='quotations.approve') DESC,c.source_version DESC,o.generation DESC LIMIT 1`,
       { quotationId, cycleId },
     );
     return operation?.permission ?? PERMISSIONS.QUOTATIONS_UPDATE;

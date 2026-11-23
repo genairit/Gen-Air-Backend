@@ -86,6 +86,7 @@ import { PRIORITY_SYNC_STATUSES } from '@Modules/customer/constants/priority-syn
 import { DRIVE_FOLDER_LINK } from '@Modules/project-drive-link/constants/drive-folder-link.constant';
 import { IProjectMemberAssignment } from '@Modules/project-member/interfaces/project-member.interface';
 import { IExistingDriveFolder } from '@Modules/project-drive-link/interfaces/drive-folder-link.interface';
+import { publicationProjectLockKey } from '@Modules/quotation-publication/utilities/publication-lock.utility';
 import { assertUniqueProjectContactRoles } from '@Modules/project-contact/utilities/project-contact-role.utility';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 
@@ -138,6 +139,7 @@ export class ProjectService {
     if (!project) {
       throw new NotFoundException('Project not found');
     }
+
     return this.projectApartmentService.resolveForRead(project);
   }
 
@@ -429,12 +431,48 @@ export class ProjectService {
   async setDriveFolderId(
     projectId: string,
     driveFolderId: string,
+    transaction?: Transaction,
   ): Promise<void> {
+    if (transaction) {
+      await this.persistDriveFolderId(projectId, driveFolderId, transaction);
+      return;
+    }
+
+    await this.withDriveRootLock(
+      projectId,
+      async (transaction): Promise<void> => {
+        await this.persistDriveFolderId(projectId, driveFolderId, transaction);
+      },
+    );
+  }
+  async withDriveRootLock<T>(
+    projectId: string,
+    work: (transaction: Transaction) => Promise<T>,
+  ): Promise<T> {
+    return this.databaseTransactionService.run(
+      async (transaction): Promise<T> => {
+        await this.databaseTransactionService.lockKey(
+          publicationProjectLockKey(projectId),
+          transaction,
+        );
+        return work(transaction);
+      },
+    );
+  }
+  private async persistDriveFolderId(
+    projectId: string,
+    driveFolderId: string,
+    transaction: Transaction,
+  ): Promise<void> {
+    await this.databaseTransactionService.lockKey(
+      publicationProjectLockKey(projectId),
+      transaction,
+    );
     const isUpdated = await this.projectRepository.updateDriveFolderId(
       projectId,
       driveFolderId,
+      transaction,
     );
-
     if (!isUpdated) {
       throw new NotFoundException(`Project ${projectId} was not found`);
     }

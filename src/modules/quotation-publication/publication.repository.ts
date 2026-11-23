@@ -9,8 +9,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { QueryTypes, Transaction } from 'sequelize';
 import { ProviderNames } from '@Providers/database/provider-names';
 
-const CYCLE_COLUMNS = `id,quotation_id AS "quotationId",project_id AS "projectId",root_id AS "rootId",file_id AS "fileId",terminal,generation,desired_kind AS "desiredKind",source_version AS "sourceVersion",state,reason,updated_at::text AS "updatedAt",destination_label AS "destinationLabel",actual_folder_id AS "actualFolderId",actual_hash AS "actualHash"`;
-const OPERATION_COLUMNS = `id,cycle_id AS "cycleId",lifecycle_event_id AS "lifecycleEventId",generation,kind,source_version AS "sourceVersion",source_hash AS "sourceHash",snapshot,state,job_id AS "jobId",attempt,pdf,hash,md5_hash AS "md5Hash",revision_id AS "revisionId",effect_started AS "effectStarted",dispatched_at AS "dispatchedAt",reason,updated_at::text AS "updatedAt"`;
+const CYCLE_COLUMNS = `id,quotation_id AS "quotationId",project_id AS "projectId",root_id AS "rootId",file_id AS "fileId",root_context AS "rootContext",terminal,generation,desired_kind AS "desiredKind",source_version AS "sourceVersion",state,reason,updated_at::text AS "updatedAt",destination_label AS "destinationLabel",actual_folder_id AS "actualFolderId",actual_hash AS "actualHash"`;
+const OPERATION_COLUMNS = `id,cycle_id AS "cycleId",lifecycle_event_id AS "lifecycleEventId",generation,kind,source_version AS "sourceVersion",source_hash AS "sourceHash",snapshot,state,job_id AS "jobId",attempt,pdf,hash,md5_hash AS "md5Hash",revision_id AS "revisionId",effect_started AS "effectStarted",destination_label AS "destinationLabel",destination_folder_id AS "destinationFolderId",dispatched_at AS "dispatchedAt",reason,updated_at::text AS "updatedAt"`;
 const FOLDER_COLUMNS = `project_id AS "projectId",role,root_id AS "rootId",folder_id AS "folderId",label,confirmed`;
 
 @Injectable()
@@ -84,12 +84,13 @@ export class PublicationRepository {
   }
   async folder(
     projectId: string,
+    rootId: string,
     role: string,
     transaction: Transaction,
   ): Promise<IPublicationFolder | null> {
     const [folder] = await this.select<IPublicationFolder>(
-      `SELECT ${FOLDER_COLUMNS} FROM quotation_publication_folders WHERE project_id=$projectId AND role=$role`,
-      { projectId, role },
+      `SELECT ${FOLDER_COLUMNS} FROM quotation_publication_folders WHERE project_id=$projectId AND root_id=$rootId AND role=$role`,
+      { projectId, rootId, role },
       transaction,
     );
     return folder ?? null;

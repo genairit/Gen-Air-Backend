@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
 import { Readable } from 'node:stream';
+import { Sequelize, Transaction } from 'sequelize';
 import { mkdtemp, writeFile, access } from 'node:fs/promises';
 import { ProjectDriveService } from './project-drive.service';
 import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
@@ -45,12 +46,26 @@ const TEMPLATE_TREE = [
 ];
 
 const createService = async () => {
+  const transaction = new Transaction(
+    new Sequelize({ dialect: 'postgres', logging: false }),
+    {},
+  );
   const projectService = {
     getById: jest.fn().mockResolvedValue(PROJECT),
+    quotationSnapshot: jest.fn(),
+    withDriveRootLock: jest.fn(
+      (
+        projectId: string,
+        work: (transaction: Transaction) => Promise<unknown>,
+      ): Promise<unknown> => work(transaction),
+    ),
     inspectLinkedDriveFolder: jest.fn().mockResolvedValue(['CAD']),
     setDriveFolderId: jest.fn().mockResolvedValue(null),
     setSharedDocumentFileId: jest.fn().mockResolvedValue(null),
   };
+  projectService.quotationSnapshot.mockImplementation(
+    (id: string): Promise<unknown> => projectService.getById(id),
+  );
   const googleDriveService = {
     isConfigured: jest.fn().mockReturnValue(true),
     getProjectsRootFolderId: jest.fn().mockReturnValue(ROOT_ID),
@@ -351,6 +366,7 @@ describe('ProjectDriveService.provision', () => {
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       apartment.id,
       'id:דירה 101',
+      expect.anything(),
     );
     expect(projectService.setDriveFolderId).toHaveBeenCalledTimes(2);
   });
@@ -521,6 +537,7 @@ describe('ProjectDriveService.provision', () => {
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       PROJECT.id,
       'id:מגדל בבלי',
+      expect.anything(),
     );
     expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
       '01_אכ-48213',
@@ -580,6 +597,7 @@ describe('ProjectDriveService.provision', () => {
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       PROJECT.id,
       'id:מגדל בבלי',
+      expect.anything(),
     );
     expect(
       googleDriveService.ensureFolder.mock.calls.map(([name]) => name),
@@ -626,6 +644,7 @@ describe('ProjectDriveService.provision', () => {
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       PROJECT.id,
       PROJECT_FOLDER_ID,
+      expect.anything(),
     );
   });
 
@@ -741,6 +760,7 @@ describe('ProjectDriveService.provision', () => {
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       'project-2',
       expect.any(String),
+      expect.anything(),
     );
   });
 

@@ -11,6 +11,11 @@ import {
   PUBLICATION_REASON,
 } from './constants/publication.constant';
 
+import {
+  PUBLICATION_PROTOCOL,
+  PUBLICATION_BROKER_EVENT,
+} from './constants/publication.constant';
+
 import { connect } from 'amqplib';
 import { Transaction } from 'sequelize';
 import { createHash } from 'node:crypto';
@@ -33,6 +38,7 @@ export class PublicationBrokerService
     PublicationBrokerService.name,
   );
   private connection: ChannelModel | null = null;
+  private readonly closing = new Set<Promise<void>>();
   private consumerTag: string | null = null;
   private channel: ConfirmChannel | null = null;
   private readonly scheduler = new AsyncInterval({
@@ -67,12 +73,15 @@ export class PublicationBrokerService
       this.consumerTag = null;
     }
     await Promise.all(this.results);
-    if (this.channel) {
-      await this.channel.close();
+    const channel = this.channel;
+    const connection = this.connection;
+    this.channel = null;
+    this.connection = null;
+    this.consumerTag = null;
+    if (connection) {
+      await this.closeResources(channel, connection);
     }
-    if (this.connection) {
-      await this.connection.close();
-    }
+    await Promise.all(this.closing);
   }
   async tick(): Promise<void> {
     if (this.stopping || this.running) {
@@ -129,61 +138,119 @@ export class PublicationBrokerService
       return;
     }
 
+    const prefix = this.prefix();
+    const parsedUrl = new URL(url);
+    const supportedProtocol =
+      parsedUrl.protocol === PUBLICATION_PROTOCOL.AMQP_SCHEME ||
+      parsedUrl.protocol === PUBLICATION_PROTOCOL.AMQPS_SCHEME;
+    if (!supportedProtocol) {
+      throw new Error('Invalid publication broker protocol');
+    }
+
     const connection = await connect(url, {
       timeout: PUBLICATION_LIMITS.DRIVE_TIMEOUT_MS,
     });
-    connection.on('error', (): void => {
+    const setup: { channel: ConfirmChannel | null; closed: boolean } = {
+      channel: null,
+      closed: false,
+    };
+    connection.on(PUBLICATION_BROKER_EVENT.ERROR, (): void => {
       this.logger.warn({ message: 'Publication broker connection failed' });
     });
-    connection.on('close', (): void => {
-      this.channel = null;
+    connection.on(PUBLICATION_BROKER_EVENT.CLOSE, (): void => {
+      setup.closed = true;
+      if (this.connection !== connection) {
+        return;
+      }
+
       this.connection = null;
-    });
-    this.connection = connection;
-    const channel = await connection.createConfirmChannel();
-    channel.on('error', (): void => {
-      this.logger.warn({ message: 'Publication broker channel failed' });
-    });
-    channel.on('close', (): void => {
       this.channel = null;
+      this.consumerTag = null;
     });
-    const durable = {
-      durable: true,
-      arguments: {
-        'x-queue-type': 'quorum',
-        'x-delivery-limit': -1,
-        'x-overflow': 'reject-publish',
-        'x-max-length-bytes': 64 * 1024 * 1024,
-      },
-    };
-    await channel.assertQueue(`${this.prefix()}.pdf.results`, durable);
-    await channel.assertQueue(`${this.prefix()}.pdf.jobs`, {
-      ...durable,
-      arguments: {
-        ...durable.arguments,
-        'x-delivery-limit': 10,
-        'x-dead-letter-strategy': 'at-least-once',
-        'x-dead-letter-exchange': '',
-        'x-dead-letter-routing-key': `${this.prefix()}.failures`,
-      },
-    });
-    await channel.prefetch(1);
-    const consumer = await channel.consume(
-      `${this.prefix()}.pdf.results`,
-      (message): void => {
-        if (!message) {
+    try {
+      const channel = await connection.createConfirmChannel();
+      setup.channel = channel;
+      channel.on(PUBLICATION_BROKER_EVENT.ERROR, (): void => {
+        this.logger.warn({ message: 'Publication broker channel failed' });
+      });
+      channel.on(PUBLICATION_BROKER_EVENT.CLOSE, (): void => {
+        setup.closed = true;
+        if (this.channel !== channel || this.connection !== connection) {
           return;
         }
 
-        const tracked = this.consume(channel, message).finally((): void => {
-          this.results.delete(tracked);
-        });
-        this.results.add(tracked);
-      },
-      { noAck: false },
-    );
-    this.consumerTag = consumer.consumerTag;
-    this.channel = channel;
+        this.channel = null;
+        this.consumerTag = null;
+        const closing = this.closeResources(null, connection).finally(
+          (): void => {
+            this.closing.delete(closing);
+          },
+        );
+        this.closing.add(closing);
+      });
+      const durable = {
+        durable: true,
+        arguments: {
+          'x-queue-type': PUBLICATION_PROTOCOL.QUEUE_TYPE,
+          'x-delivery-limit': -1,
+          'x-overflow': 'reject-publish',
+          'x-max-length-bytes': 64 * 1024 * 1024,
+        },
+      };
+      await channel.assertQueue(`${prefix}.pdf.results`, durable);
+      await channel.assertQueue(`${prefix}.pdf.jobs`, {
+        ...durable,
+        arguments: {
+          ...durable.arguments,
+          'x-delivery-limit': 10,
+          'x-dead-letter-strategy': 'at-least-once',
+          'x-dead-letter-exchange': '',
+          'x-dead-letter-routing-key': `${prefix}.failures`,
+        },
+      });
+      await channel.prefetch(1);
+      const consumer = await channel.consume(
+        `${prefix}.pdf.results`,
+        (message): void => {
+          if (!message) {
+            return;
+          }
+
+          const tracked = this.consume(channel, message).finally((): void => {
+            this.results.delete(tracked);
+          });
+          this.results.add(tracked);
+        },
+        { noAck: false },
+      );
+      if (setup.closed || this.stopping) {
+        throw new Error('Publication setup closed before adoption');
+      }
+
+      this.consumerTag = consumer.consumerTag;
+      this.connection = connection;
+      this.channel = channel;
+    } catch (error: unknown) {
+      await this.closeResources(setup.channel, connection);
+      throw error;
+    }
+  }
+  private async closeResources(
+    channel: ConfirmChannel | null,
+    connection: ChannelModel,
+  ): Promise<void> {
+    try {
+      await channel?.close();
+    } catch {
+      this.logger.warn({ message: 'Publication setup channel already closed' });
+    }
+    try {
+      await connection.close();
+    } catch {
+      this.logger.warn({
+        message: 'Publication setup connection already closed',
+      });
+    }
   }
   private async consume(
     channel: ConfirmChannel,
@@ -310,7 +377,7 @@ export class PublicationBrokerService
             continue;
           }
           const envelope = {
-            version: 1,
+            version: PUBLICATION_PROTOCOL.VERSION,
             jobId: operation.jobId,
             tenantId: PUBLICATION_POLICY.TENANT,
             jobType: PUBLICATION_POLICY.RENDERER,
@@ -357,14 +424,18 @@ export class PublicationBrokerService
         clearTimeout(timer);
         reject(new Error('PDF job queue unavailable'));
       };
-      channel.once('return', returned);
+      channel.once(PUBLICATION_BROKER_EVENT.RETURN, returned);
       channel.sendToQueue(
         `${this.prefix()}.pdf.jobs`,
         bytes,
-        { mandatory: true, persistent: true, contentType: 'application/json' },
+        {
+          mandatory: true,
+          persistent: true,
+          contentType: PUBLICATION_PROTOCOL.CONTENT_TYPE,
+        },
         (error: unknown): void => {
           clearTimeout(timer);
-          channel.removeListener('return', returned);
+          channel.removeListener(PUBLICATION_BROKER_EVENT.RETURN, returned);
           if (error) {
             reject(new Error('PDF broker rejected publication'));
             return;

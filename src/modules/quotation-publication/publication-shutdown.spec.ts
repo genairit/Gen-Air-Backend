@@ -10,7 +10,7 @@ it('drains an active broker task through real Nest SIGTERM shutdown hooks', asyn
     const { ConfigService } = require('@nestjs/config');
     const { PublicationBrokerService } = require('./src/modules/quotation-publication/publication-broker.service');
     const broker = new PublicationBrokerService(new ConfigService({}),{},
-      {pending:()=>new Promise((done)=>setTimeout(()=>done([]),300))},{stop:()=>{}},{});
+      {pending:()=>new Promise((done)=>setTimeout(()=>done([]),${(TIME_UNITS.SECOND_MS * 3) / 10}))},{stop:()=>{}},{});
     const original = broker.beforeApplicationShutdown.bind(broker);
     broker.beforeApplicationShutdown=async()=>{await original();process.stdout.write('DRAINED\\n');};
     class TestModule {}

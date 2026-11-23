@@ -61,3 +61,16 @@ export const PUBLICATION_RESULT_STATUS = {
 } as const;
 export type PublicationResultStatusType =
   (typeof PUBLICATION_RESULT_STATUS)[keyof typeof PUBLICATION_RESULT_STATUS];
+
+export const PUBLICATION_BROKER_EVENT = {
+  ERROR: 'error',
+  CLOSE: 'close',
+  RETURN: 'return',
+} as const;
+export const PUBLICATION_PROTOCOL = {
+  VERSION: 1,
+  CONTENT_TYPE: 'application/json',
+  QUEUE_TYPE: 'quorum',
+  AMQP_SCHEME: 'amqp:',
+  AMQPS_SCHEME: 'amqps:',
+} as const;

@@ -67,6 +67,7 @@ export interface IPublicationCycle {
   actualFolderId: string | null;
   destinationLabel: string | null;
   desiredKind: PublicationKindType;
+  rootContext: IPublicationRootContext;
 }
 export interface IPublicationOperation {
   id: string;
@@ -85,8 +86,10 @@ export interface IPublicationOperation {
   revisionId: string | null;
   dispatchedAt: Date | null;
   state: PublicationStateType;
+  destinationLabel: string | null;
   lifecycleEventId: string | null;
   kind: PublicationKindType | null;
+  destinationFolderId: string | null;
   snapshot: IPublicationSnapshot | null;
 }
 export interface IPublicationFolder {
@@ -108,4 +111,27 @@ export interface IPublicationResult {
   status: PublicationResultStatusType;
   correlation: IPublicationCorrelation;
   output: { pdfBase64: string; sha256: string; byteLength: number } | null;
+}
+
+export interface IPublicationRootContext {
+  linked: boolean;
+  projectLabel: string;
+  parentRootId: string | null;
+  parentProjectId: string | null;
+}
+export interface IPublicationRootConfiguration extends IPublicationRootContext {
+  rootId: string | null;
+}
+export interface IPublicationEffectPlan {
+  cycleId: string;
+  terminal: boolean;
+  generation: number;
+  operationId: string;
+  folder: IPublicationFolder;
+}
+export interface IPublicationFolderIdentity {
+  id: string;
+}
+export interface IPublicationTemplate {
+  name: string;
 }

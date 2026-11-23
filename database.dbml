@@ -910,7 +910,7 @@ Table quotation_publication_folders {
   label text [not null]
   confirmed boolean [not null, default: false]
   indexes {
-    (project_id, role) [pk]
+    (project_id,root_id,role) [pk]
     role
   }
 }
@@ -919,6 +919,7 @@ Table quotation_publication_cycles {
   quotation_id uuid [not null, ref: > quotations.id]
   project_id uuid [not null, ref: > projects.id]
   root_id text
+  root_context jsonb [not null, note: 'Frozen linked policy, project label and original building root; populated atomically with first non-null root']
   file_id text [unique]
   terminal boolean [not null, default: false]
   generation integer [not null]
@@ -953,6 +954,8 @@ Table quotation_publication_operations {
   hash text [note: 'Immutable first accepted SHA256 survives byte release']
   md5_hash text [note: 'Immutable accepted Drive checksum authority']
   revision_id text
+  destination_label text [note: 'Immutable verified project/folder context for this stage']
+  destination_folder_id text
   effect_started boolean [not null, default: false]
   dispatched_at timestamptz
   reason text

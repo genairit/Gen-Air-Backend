@@ -9,10 +9,11 @@ import type {
   IPublicationCycle,
   IPublicationFolder,
   IPublicationOperation,
+  IPublicationEffectPlan,
+  IPublicationFolderIdentity,
 } from './interfaces/publication.interface';
 
 import { Transaction } from 'sequelize';
-import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { PublicationService } from './publication.service';
 import { Meta, TypedLogger } from '@Logger/logger.service';
@@ -40,13 +41,7 @@ export class PublicationExecutorService {
   }
   async execute(quotationId: string): Promise<void> {
     const plan = await this.transactions.run(
-      async (
-        transaction,
-      ): Promise<{
-        cycleId: string;
-        operationId: string;
-        folder: IPublicationFolder;
-      } | null> => {
+      async (transaction): Promise<IPublicationEffectPlan | null> => {
         await this.publication.lock(quotationId, transaction);
         const cycles = await this.repository.cycles(quotationId, transaction);
         for (const cycle of cycles) {
@@ -73,6 +68,12 @@ export class PublicationExecutorService {
             continue;
           }
           if (next.state === PUBLICATION_STATE.FAILED) {
+            await this.fail(
+              cycle.id,
+              next.id,
+              next.reason ?? PUBLICATION_REASON.DRIVE,
+              transaction,
+            );
             return null;
           }
 
@@ -94,7 +95,9 @@ export class PublicationExecutorService {
             continue;
           }
           const role =
-            next.kind === null ? PUBLICATION_ROLE.ARCHIVE : next.kind;
+            cycle.terminal || next.kind === null
+              ? PUBLICATION_ROLE.ARCHIVE
+              : cycle.desiredKind;
           try {
             const folder = await this.destinations.prepare(
               cycle,
@@ -112,7 +115,7 @@ export class PublicationExecutorService {
                 id: cycle.id,
                 rootId: folder.rootId,
                 fileId,
-                label: folder.label,
+                label: `${cycle.rootContext.projectLabel} / ${folder.label}`,
                 state:
                   next.kind === null
                     ? PUBLICATION_STATE.ARCHIVING
@@ -125,7 +128,13 @@ export class PublicationExecutorService {
               { id: next.id, state: PUBLICATION_STATE.RECONCILING },
               transaction,
             );
-            return { cycleId: cycle.id, operationId: next.id, folder };
+            return {
+              cycleId: cycle.id,
+              operationId: next.id,
+              generation: cycle.generation,
+              terminal: cycle.terminal,
+              folder,
+            };
           } catch (error: unknown) {
             await this.fail(
               cycle.id,
@@ -150,7 +159,40 @@ export class PublicationExecutorService {
         plan.operationId,
         transaction,
       );
-      if (!operation) {
+      const completed =
+        operation?.state === PUBLICATION_STATE.PUBLISHED ||
+        operation?.state === PUBLICATION_STATE.ARCHIVED;
+      const changed =
+        cycle.generation !== plan.generation ||
+        cycle.terminal !== plan.terminal;
+      const failed = operation?.state === PUBLICATION_STATE.FAILED;
+      const desiredRole = cycle.terminal
+        ? PUBLICATION_ROLE.ARCHIVE
+        : cycle.desiredKind;
+      const matchesDesired = plan.folder.role === desiredRole;
+      const invalidGeneration =
+        operation !== null && operation.generation > cycle.generation;
+      if (
+        !operation ||
+        completed ||
+        failed ||
+        changed ||
+        !matchesDesired ||
+        invalidGeneration
+      ) {
+        return;
+      }
+
+      const operations = await this.repository.operations(
+        cycle.id,
+        transaction,
+      );
+      const blocker = operations.find(
+        (saved): boolean =>
+          saved.state !== PUBLICATION_STATE.PUBLISHED &&
+          saved.state !== PUBLICATION_STATE.ARCHIVED,
+      );
+      if (blocker?.id !== operation.id) {
         return;
       }
 
@@ -183,19 +225,19 @@ export class PublicationExecutorService {
 
     if (
       !cycle.fileId ||
-      !operation.pdf ||
+      !operation.md5Hash ||
       !operation.hash ||
       !operation.snapshot
     ) {
       throw new Error(PUBLICATION_REASON.DRIVE);
     }
 
-    const expectedMd5 = createHash('md5').update(operation.pdf).digest('hex');
+    const expectedMd5 = operation.md5Hash;
     const existing = await this.drive.inspectPublicationFile(cycle.fileId);
     if (existing) {
       this.assertIdentity(existing, cycle);
     }
-    if (!existing && cycle.actualHash) {
+    if (!existing && (cycle.actualHash || operation.revisionId)) {
       throw new Error(PUBLICATION_REASON.MISSING);
     }
 
@@ -232,21 +274,27 @@ export class PublicationExecutorService {
     }
 
     await this.repository.execute(
-      `UPDATE quotation_publication_operations SET state='published',reason=NULL,updated_at=now() WHERE id=$id`,
-      { id: operation.id },
+      `UPDATE quotation_publication_operations SET state='published',destination_label=COALESCE(destination_label,$label),destination_folder_id=COALESCE(destination_folder_id,$folderId),reason=NULL,updated_at=now() WHERE id=$id`,
+      {
+        id: operation.id,
+        label: `${cycle.rootContext.projectLabel} / ${folder.label}`,
+        folderId: folder.folderId,
+      },
       transaction,
     );
     const isCurrent =
       operation.generation === cycle.generation && !cycle.terminal;
+    const pendingState = cycle.terminal
+      ? PUBLICATION_STATE.ARCHIVING
+      : PUBLICATION_STATE.QUEUED;
+    const cycleState = isCurrent ? PUBLICATION_STATE.PUBLISHED : pendingState;
     await this.repository.execute(
       `UPDATE quotation_publication_cycles SET actual_folder_id=$folderId,actual_hash=$hash,state=$state,reason=NULL,updated_at=now() WHERE id=$id`,
       {
         id: cycle.id,
         folderId: folder.folderId,
         hash: operation.hash,
-        state: isCurrent
-          ? PUBLICATION_STATE.PUBLISHED
-          : PUBLICATION_STATE.ARCHIVING,
+        state: cycleState,
       },
       transaction,
     );
@@ -352,37 +400,44 @@ export class PublicationExecutorService {
     folder: IPublicationFolder,
     transaction: Transaction,
   ): Promise<void> {
-    if (cycle.fileId) {
-      const file = await this.drive.inspectPublicationFile(cycle.fileId);
-      if (!file) {
-        throw new Error(PUBLICATION_REASON.MISSING);
-      }
-
-      this.assertIdentity(file, cycle);
-      await this.assertPlacement(file, cycle, transaction);
-      const stages = await this.repository.operations(cycle.id, transaction);
-      const finalStage = stages
-        .filter(
-          (stage): boolean =>
-            stage.hash !== null && stage.state === PUBLICATION_STATE.PUBLISHED,
-        )
-        .at(-1);
-      if (!finalStage || finalStage.md5Hash !== file.md5) {
-        throw new Error(PUBLICATION_REASON.RECONCILING);
-      }
-
-      await this.move(cycle, file, folder);
-      const actual = await this.drive.inspectPublicationFile(cycle.fileId);
-      const sameBytes = actual?.md5 === file.md5;
-      const archived =
-        actual?.parents.length === 1 && actual.parents[0] === folder.folderId;
-      if (!sameBytes || !archived) {
-        throw new Error(PUBLICATION_REASON.RECONCILING);
-      }
+    if (!cycle.fileId) {
+      throw new Error(PUBLICATION_REASON.MISSING);
     }
+
+    const file = await this.drive.inspectPublicationFile(cycle.fileId);
+    if (!file) {
+      throw new Error(PUBLICATION_REASON.MISSING);
+    }
+
+    this.assertIdentity(file, cycle);
+    await this.assertPlacement(file, cycle, transaction);
+    const stages = await this.repository.operations(cycle.id, transaction);
+    const finalStage = stages
+      .filter(
+        (stage): boolean =>
+          stage.hash !== null && stage.state === PUBLICATION_STATE.PUBLISHED,
+      )
+      .at(-1);
+    if (!finalStage || finalStage.md5Hash !== file.md5) {
+      throw new Error(PUBLICATION_REASON.RECONCILING);
+    }
+
+    await this.move(cycle, file, folder);
+    const actual = await this.drive.inspectPublicationFile(cycle.fileId);
+    const sameBytes = actual?.md5 === file.md5;
+    const archived =
+      actual?.parents.length === 1 && actual.parents[0] === folder.folderId;
+    if (!sameBytes || !archived) {
+      throw new Error(PUBLICATION_REASON.RECONCILING);
+    }
+
     await this.repository.execute(
-      `UPDATE quotation_publication_operations SET state='archived',pdf=NULL,reason=NULL,updated_at=now() WHERE id=$id`,
-      { id: operation.id },
+      `UPDATE quotation_publication_operations SET state='archived',pdf=NULL,destination_label=COALESCE(destination_label,$label),destination_folder_id=COALESCE(destination_folder_id,$folderId),reason=NULL,updated_at=now() WHERE id=$id`,
+      {
+        id: operation.id,
+        label: `${cycle.rootContext.projectLabel} / ${folder.label}`,
+        folderId: folder.folderId,
+      },
       transaction,
     );
     await this.repository.execute(
@@ -411,7 +466,7 @@ export class PublicationExecutorService {
     cycle: IPublicationCycle,
     transaction: Transaction,
   ): Promise<void> {
-    const folders = await this.repository.select<{ id: string }>(
+    const folders = await this.repository.select<IPublicationFolderIdentity>(
       `SELECT folder_id AS id FROM quotation_publication_folders WHERE project_id=$projectId AND root_id=$rootId AND confirmed`,
       { projectId: cycle.projectId, rootId: cycle.rootId },
       transaction,

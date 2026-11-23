@@ -91,6 +91,7 @@ export class GoogleDriveService {
     if (!data.nextPageToken) {
       return files;
     }
+
     return [
       ...files,
       ...(await this.listPublicationChildren(folderId, data.nextPageToken)),
@@ -106,6 +107,7 @@ export class GoogleDriveService {
     if (!id) {
       throw new Error('Drive did not reserve an identity');
     }
+
     return id;
   }
   async inspectPublicationFile(
@@ -125,6 +127,7 @@ export class GoogleDriveService {
       if (!data.id || !data.mimeType) {
         throw new Error('Incomplete Drive metadata');
       }
+
       return {
         id: data.id,
         name: data.name ?? '',
@@ -139,6 +142,7 @@ export class GoogleDriveService {
       if (isDriveNotFoundError(error)) {
         return null;
       }
+
       throw error;
     }
   }
