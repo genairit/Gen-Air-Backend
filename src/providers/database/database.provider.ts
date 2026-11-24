@@ -29,9 +29,11 @@ import { ProjectBoqRevision } from '@Modules/project-boq/entities/project-boq-re
 import { QuotationSection } from '@Modules/quotation-section/entities/quotation-section.entity';
 import { QuotationProject } from '@Modules/quotation-project/entities/quotation-project.entity';
 import { CatalogueItemMaterial } from '@Modules/material/entities/catalogue-item-material.entity';
+import { QuotationCloneCommand } from '@Modules/quotation/entities/quotation-clone-command.entity';
 import { PurchaseRecordLine } from '@Modules/purchase-record/entities/purchase-record-line.entity';
 import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 import { PurchaseRecordEvent } from '@Modules/purchase-record/entities/purchase-record-event.entity';
+import { QuotationLifecycleEvent } from '@Modules/quotation/entities/quotation-lifecycle-event.entity';
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
 import { ExecutionPlanTemplate } from '@Modules/execution-plan/entities/execution-plan-template.entity';
 import { PurchaseOrderLineTerm } from '@Modules/purchase-record/entities/purchase-order-line-term.entity';
@@ -101,6 +103,8 @@ export const DatabaseProvider: Provider = {
 
     sequelize.addModels([
       Quotation,
+      QuotationCloneCommand,
+      QuotationLifecycleEvent,
       QuotationSection,
       QuotationProject,
       QuotationItem,

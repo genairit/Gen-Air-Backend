@@ -5,6 +5,10 @@ import {
 
 import { isObject } from './object.utility';
 import { HttpException } from '@nestjs/common';
+import { getHttpErrorPayload } from './http-error-payload.utility';
+import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
+import { isDatabaseCheckConstraint } from './database-constraint.utility';
+import { DATABASE_CHECK_CONSTRAINTS } from '@Constants/database-constraint.constant';
 
 type TSafeResponse = Record<string, unknown>;
 type TPublicErrorMessage = string | string[];
@@ -66,6 +70,18 @@ const extractErrorCode = (error: HttpException): HttpErrorCodeType | null => {
 };
 
 export const getHttpErrorResponse = (error: unknown): IHttpErrorResponse => {
+  if (
+    isDatabaseCheckConstraint(
+      error,
+      DATABASE_CHECK_CONSTRAINTS.TASK_QUOTATION_CONTEXT,
+    )
+  ) {
+    return {
+      statusCode: 409,
+      ...getHttpErrorPayload(HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_LOCKED),
+    };
+  }
+
   if (!(error instanceof HttpException)) {
     return { statusCode: 500, message: 'Internal Server Error' };
   }

@@ -40,6 +40,8 @@ import { GetProjectQuotationsDto } from './dto/get-project-quotations.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
+import { RetryQuotationPublicationDto } from './dto/retry-quotation-publication.dto';
+import { RecommendedCloneQuotationDto } from './dto/recommended-clone-quotation.dto';
 
 @Controller('quotation')
 export class QuotationController {
@@ -105,6 +107,23 @@ export class QuotationController {
   ): ReturnType<QuotationService['getForActor']> {
     return this.service.getForActor(id, user);
   }
+  @Get(':id/publication')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
+  publication(
+    @Param('id', ParseUUIDPipe) id: string,
+    @AuthenticatedUser() actor: IAuthorizedUser,
+  ): ReturnType<QuotationService['publicationSummary']> {
+    return this.service.publicationSummary(id, actor);
+  }
+  @Post(':id/publication/retry')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
+  retryPublication(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: RetryQuotationPublicationDto,
+    @AuthenticatedUser() actor: IAuthorizedUser,
+  ): ReturnType<QuotationService['retryPublication']> {
+    return this.service.retryPublication(id, input, actor);
+  }
   @Post(':id/pdf')
   @Header('Access-Control-Expose-Headers', 'Content-Disposition')
   @HttpCode(HttpStatus.OK)
@@ -128,6 +147,19 @@ export class QuotationController {
   ): ReturnType<QuotationService['create']> {
     const quotation = await this.service.create(input, user);
     return this.service.projectDetailsForActor(quotation, user);
+  }
+  @Post(':id/clone-recommended')
+  @RequirePermissions(
+    PERMISSIONS.QUOTATIONS_READ,
+    PERMISSIONS.QUOTATIONS_CREATE,
+    PERMISSIONS.PROJECTS_READ,
+  )
+  cloneRecommended(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: RecommendedCloneQuotationDto,
+    @AuthenticatedUser() user: IAuthorizedUser,
+  ): ReturnType<QuotationService['cloneRecommended']> {
+    return this.service.cloneRecommended(id, input, user);
   }
   @Post(':id/clone')
   @RequirePermissions(
@@ -206,7 +238,7 @@ export class QuotationController {
     @AuthenticatedUser()
     user: IAuthorizedUser,
   ): ReturnType<QuotationService['transition']> {
-    const quotation = await this.service.transition(id, input, user.id);
+    const quotation = await this.service.transition(id, input, user);
     return this.service.projectDetailsForActor(quotation, user);
   }
   @Post(':id/reject')

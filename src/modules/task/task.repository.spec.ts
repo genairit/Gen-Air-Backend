@@ -7,7 +7,11 @@ import { Task } from './entities/task.entity';
 import { Op, fn, col, where } from 'sequelize';
 import { Transaction, Sequelize } from 'sequelize';
 import { TaskRepository } from './task.repository';
+import { BadRequestException } from '@nestjs/common';
 import { ITaskFilter } from './interfaces/task.interface';
+import { TASK_SORTS } from './constants/task-sort.constant';
+import { TASK_ORDER } from './constants/task-order.constant';
+import { encodeTaskCursor } from './utilities/task-cursor.utility';
 import { PROTECTED_TASK_TYPES } from './constants/task-type.constant';
 
 const PROJECT_ID = '00000000-0000-4000-8000-000000000002';
@@ -102,5 +106,82 @@ describe('task repository link queries', () => {
       include: TASK_COUNT_INCLUDES,
       where: { [Op.and]: [CUSTOMER_WHERE] },
     });
+  });
+});
+
+describe('task repository sort contract', () => {
+  const repository = new TaskRepository();
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each([
+    {
+      sort: TASK_SORTS.DEFAULT,
+      order: [
+        ['isUrgent', 'DESC'],
+        ['dueDate', 'ASC NULLS LAST'],
+        ['id', 'ASC'],
+      ],
+    },
+    {
+      sort: TASK_SORTS.DUE_DATE_ASC,
+      order: [
+        ['dueDate', 'ASC NULLS LAST'],
+        ['id', 'ASC'],
+      ],
+    },
+    {
+      sort: TASK_SORTS.DUE_DATE_DESC,
+      order: [
+        ['dueDate', 'DESC NULLS LAST'],
+        ['id', 'ASC'],
+      ],
+    },
+  ])(
+    'orders $sort on the server before applying the batch limit',
+    async ({ sort, order }) => {
+      const findAll = jest.spyOn(Task, 'findAll').mockResolvedValue([]);
+      const result = await repository.findByFilter(
+        { ...EMPTY_FILTER, sort, assigneeId: PROJECT_ID, isUrgent: false },
+        { batchSize: 2, batchCursor: null },
+      );
+
+      expect(findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          limit: 3,
+          order,
+          where: {
+            [Op.and]: [{ assigneeId: PROJECT_ID }, { isUrgent: false }],
+          },
+        }),
+      );
+      expect(result).toEqual({ items: [], nextCursor: null });
+    },
+  );
+
+  it('uses the unchanged urgent-first order when sort is omitted', async () => {
+    const findAll = jest.spyOn(Task, 'findAll').mockResolvedValue([]);
+    await repository.findByFilter(EMPTY_FILTER, {
+      batchSize: 2,
+      batchCursor: null,
+    });
+    expect(findAll).toHaveBeenCalledWith(
+      expect.objectContaining({ order: TASK_ORDER }),
+    );
+  });
+
+  it('rejects a cursor from another sort before reading rows', async () => {
+    const findAll = jest.spyOn(Task, 'findAll').mockResolvedValue([]);
+    const cursor = encodeTaskCursor(
+      { id: PROJECT_ID, dueDate: null, isUrgent: false },
+      TASK_SORTS.DUE_DATE_ASC,
+    );
+    await expect(
+      repository.findByFilter(
+        { ...EMPTY_FILTER, sort: TASK_SORTS.DUE_DATE_DESC },
+        { batchSize: 2, batchCursor: cursor },
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(findAll).not.toHaveBeenCalled();
   });
 });

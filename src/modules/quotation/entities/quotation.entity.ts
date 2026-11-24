@@ -17,7 +17,7 @@ import type {
 
 import type { IQuotation } from '../interfaces/quotation.interface';
 import type { PaymentTermsType } from '@Constants/payment-terms.constant';
-import type { IPaymentStage } from '../interfaces/quotation-document.interface';
+import type { IPaymentStage } from '@Interfaces/payment-configuration.interface';
 import type { IQuotationRule } from '@Modules/quotation-rule/interfaces/quotation-rule.interface';
 
 @Table({ tableName: 'quotations', paranoid: true })

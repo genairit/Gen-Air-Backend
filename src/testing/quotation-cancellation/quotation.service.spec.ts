@@ -14,17 +14,23 @@ import { mock } from 'jest-mock-extended';
 import { readFile } from 'node:fs/promises';
 import type { Transaction } from 'sequelize';
 import { PGlite } from '@electric-sql/pglite';
+import { authorizedUser } from '../authorization.fixture';
 import { USER_ROLES } from '@Constants/user-role.constant';
+import type { UserService } from '@Modules/user/user.service';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { quotationDocumentFixture } from '../quotation.fixture';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
 import type { ProjectService } from '@Modules/project/project.service';
 import type { CustomerService } from '@Modules/customer/customer.service';
+import type { UserRoleService } from '@Modules/user-role/user-role.service';
 import { QuotationService } from '../../modules/quotation/quotation.service';
 import type { SaveQuotationDto } from '@Modules/quotation/dto/save-quotation.dto';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import type { QuotationRepository } from '../../modules/quotation/quotation.repository';
 import type { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
+import type { TaskQuotationLinksService } from '@Modules/quotation/task-quotation-links.service';
 import type { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import type { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
 import type { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
@@ -95,24 +101,38 @@ const createService = (
   const links = mock<QuotationProjectService>();
   const transactions = mock<DatabaseTransactionService>();
 
-  transactions.run.mockImplementation(async (work) => {
-    await getDatabase().exec('BEGIN');
-    try {
-      const result = await work(transaction);
-      await getDatabase().exec('COMMIT');
-      return result;
-    } catch (error) {
-      await getDatabase().exec('ROLLBACK');
-      throw error;
-    }
-  });
+  transactions.run.mockImplementation(
+    async (work): Promise<Awaited<ReturnType<typeof work>>> => {
+      await getDatabase().exec('BEGIN');
+      try {
+        const result = await work(transaction);
+        await getDatabase().exec('COMMIT');
+        return result;
+      } catch (error) {
+        await getDatabase().exec('ROLLBACK');
+        throw error;
+      }
+    },
+  );
   rules.configuration.mockResolvedValue({
     rules: quotation.ruleConfiguration,
     fingerprint: quotation.ruleConfigFingerprint,
   });
   catalogue.getByIds.mockResolvedValue([]);
   items.persistCatalogueStatuses.mockResolvedValue();
-  repository.update.mockImplementation(async (id, changes) => {
+  repository.appendLifecycleEvent.mockImplementation(
+    async (event): Promise<void> => {
+      await getDatabase().query(
+        'INSERT INTO lifecycle_test_events (quotation_id, version, evidence) VALUES ($1,$2,$3::jsonb)',
+        [
+          event.quotationId,
+          event.quotationVersion,
+          JSON.stringify(event.evidence),
+        ],
+      );
+    },
+  );
+  repository.update.mockImplementation(async (id, changes): Promise<void> => {
     const hasCancellationHistory = 'cancellationHistory' in changes;
     const hasCancelledFromStatus = 'cancelledFromStatus' in changes;
     await getDatabase().query(
@@ -149,6 +169,10 @@ const createService = (
     projects,
     links,
     transactions,
+    mock<UserService>(),
+    mock<UserRoleService>(),
+    mock<TaskQuotationLinksService>(),
+    mock<PublicationService>(),
   );
   jest.spyOn(service, 'document').mockResolvedValue(quotation);
   jest
@@ -182,14 +206,14 @@ const saveInput = (quotation: IQuotationDocument): SaveQuotationDto => ({
   sections: [],
 });
 
-beforeEach(async () => {
+beforeEach(async (): Promise<void> => {
   databaseState.database = new PGlite();
   const statusValues = [
     QUOTATION_STATUS.DRAFT,
     QUOTATION_STATUS.REVIEW,
     QUOTATION_STATUS.APPROVED,
   ]
-    .map((status) => `'${status}'`)
+    .map((status): string => `'${status}'`)
     .join(', ');
   await getDatabase().exec(`
     CREATE TABLE quotations (
@@ -204,24 +228,27 @@ beforeEach(async () => {
     )
   `);
   await getDatabase().exec(await readFile(cancellationMigrationPath, 'utf8'));
+  await getDatabase().exec(
+    'CREATE TABLE lifecycle_test_events (quotation_id text, version integer, evidence jsonb, UNIQUE (quotation_id, version))',
+  );
   await seedSiblings();
 });
 
-afterEach(async () => {
+afterEach(async (): Promise<void> => {
   await getDatabase().close();
   databaseState.database = null;
   jest.restoreAllMocks();
 });
 
-describe('quotation order transaction orchestration', () => {
-  test('approving a quotation keeps other project quotations unchanged', async () => {
+describe('quotation order transaction orchestration', (): void => {
+  test('approving a quotation keeps other project quotations unchanged', async (): Promise<void> => {
     const quotation = quotationForOrder();
     const { service, repository } = createService(quotation);
 
     await service.transition(
       quotationId,
       { version: quotation.version, status: QUOTATION_STATUS.APPROVED },
-      actorId,
+      authorizedUser([PERMISSIONS.QUOTATIONS_APPROVE]),
     );
 
     expect(repository.update.mock.calls[0]?.[0]).toBe(quotationId);
@@ -241,7 +268,7 @@ describe('quotation order transaction orchestration', () => {
     ]);
   });
 
-  test('manual cancellation rejects actors without an engineering or admin role', async () => {
+  test('manual cancellation rejects actors without an engineering or admin role', async (): Promise<void> => {
     const quotation = quotationForOrder();
     const { service, transactions, repository } = createService(quotation);
     const nonManager = mock<IUser>({
@@ -261,7 +288,7 @@ describe('quotation order transaction orchestration', () => {
     expect(repository.update.mock.calls).toHaveLength(0);
   });
 
-  test('purchasing role cannot cancel or restore quotations', async () => {
+  test('purchasing role cannot cancel or restore quotations', async (): Promise<void> => {
     const quotation = quotationForOrder();
     const { service, transactions, repository } = createService(quotation);
     const purchaser = mock<IUser>({
@@ -284,7 +311,7 @@ describe('quotation order transaction orchestration', () => {
     expect(repository.update.mock.calls).toHaveLength(0);
   });
 
-  test('manual cancellation rejects a quotation that is already cancelled', async () => {
+  test('manual cancellation rejects a quotation that is already cancelled', async (): Promise<void> => {
     const quotation = quotationForOrder({
       status: QUOTATION_STATUS.CANCELLED,
       cancelledFromStatus: QUOTATION_STATUS.REVIEW,
@@ -309,7 +336,7 @@ describe('quotation order transaction orchestration', () => {
     expect(repository.update.mock.calls).toHaveLength(0);
   });
 
-  test('manual cancellation rejects a missing reason before updating', async () => {
+  test('manual cancellation rejects a missing reason before updating', async (): Promise<void> => {
     const quotation = quotationForOrder();
     const { service, transactions, repository } = createService(quotation);
     const manager = mock<IUser>({
@@ -329,7 +356,7 @@ describe('quotation order transaction orchestration', () => {
     expect(repository.update.mock.calls).toHaveLength(0);
   });
 
-  test('authorized manual cancellation records status, version and history', async () => {
+  test('authorized manual cancellation records status, version and history', async (): Promise<void> => {
     const quotation = quotationForOrder({
       status: QUOTATION_STATUS.REVIEW,
       version: 3,
@@ -394,7 +421,7 @@ describe('quotation order transaction orchestration', () => {
     expect(typeof rows[0]?.cancellation_history[0]?.cancelledAt).toBe('string');
   });
 
-  test('authorized restoration records status, version and restoration history', async () => {
+  test('authorized restoration records status, version and restoration history', async (): Promise<void> => {
     const cancellationHistory = [
       {
         fromStatus: QUOTATION_STATUS.REVIEW,
@@ -479,7 +506,7 @@ describe('quotation order transaction orchestration', () => {
     expect(typeof rows[0]?.cancellation_history[0]?.restoredAt).toBe('string');
   });
 
-  test('restoration rejects a history whose prior status differs from the cancelled status', async () => {
+  test('restoration rejects a history whose prior status differs from the cancelled status', async (): Promise<void> => {
     const quotation = quotationForOrder({
       status: QUOTATION_STATUS.CANCELLED,
       cancelledFromStatus: QUOTATION_STATUS.REVIEW,
@@ -511,7 +538,7 @@ describe('quotation order transaction orchestration', () => {
     expect(repository.update.mock.calls).toHaveLength(0);
   });
 
-  test('restoration rejects a cancelled quotation without history', async () => {
+  test('restoration rejects a cancelled quotation without history', async (): Promise<void> => {
     const quotation = quotationForOrder({
       status: QUOTATION_STATUS.CANCELLED,
       cancelledFromStatus: QUOTATION_STATUS.REVIEW,
@@ -531,7 +558,7 @@ describe('quotation order transaction orchestration', () => {
     expect(repository.update.mock.calls).toHaveLength(0);
   });
 
-  test('restoration rejects actors without an active admin role', async () => {
+  test('restoration rejects actors without an active admin role', async (): Promise<void> => {
     const quotation = quotationForOrder({
       status: QUOTATION_STATUS.CANCELLED,
       cancelledFromStatus: QUOTATION_STATUS.REVIEW,
@@ -551,7 +578,7 @@ describe('quotation order transaction orchestration', () => {
     expect(repository.update.mock.calls).toHaveLength(0);
   });
 
-  test('saving a cancelled quotation is rejected without updating it', async () => {
+  test('saving a cancelled quotation is rejected without updating it', async (): Promise<void> => {
     const quotation = quotationForOrder({
       projectId: null,
       status: QUOTATION_STATUS.CANCELLED,
@@ -560,13 +587,13 @@ describe('quotation order transaction orchestration', () => {
     const { service, repository } = createService(quotation);
 
     await expect(
-      service.save(quotationId, saveInput(quotation), actorId),
+      service.save(quotationId, saveInput(quotation), authorizedUser()),
     ).rejects.toBeInstanceOf(ConflictException);
 
     expect(repository.update.mock.calls).toHaveLength(0);
   });
 
-  test('acknowledging warnings on a cancelled quotation is rejected without updating it', async () => {
+  test('acknowledging warnings on a cancelled quotation is rejected without updating it', async (): Promise<void> => {
     const quotation = quotationForOrder({
       status: QUOTATION_STATUS.CANCELLED,
       cancelledFromStatus: QUOTATION_STATUS.REVIEW,
@@ -584,7 +611,26 @@ describe('quotation order transaction orchestration', () => {
     expect(repository.update.mock.calls).toHaveLength(0);
   });
 
-  test('migration replaces the existing status constraint and accepts cancelled', async () => {
+  test('audit insertion and quotation mutation roll back together on a failed update', async (): Promise<void> => {
+    const quotation = quotationForOrder();
+    const { service, repository } = createService(quotation);
+    repository.update.mockRejectedValueOnce(
+      new Error('forced persistence failure'),
+    );
+    await expect(
+      service.cancel(
+        quotationId,
+        { version: quotation.version, reason: 'Withdrawn' },
+        mock<IUser>({ id: actorId, role: USER_ROLES.ENGINEER }),
+      ),
+    ).rejects.toThrow('forced persistence failure');
+    const { rows } = await getDatabase().query<{ count: number }>(
+      'SELECT count(*)::integer AS count FROM lifecycle_test_events',
+    );
+    expect(rows[0]?.count).toBe(0);
+  });
+
+  test('migration replaces the existing status constraint and accepts cancelled', async (): Promise<void> => {
     const { rows } = await getDatabase().query<{
       constraint_definition: string;
     }>(

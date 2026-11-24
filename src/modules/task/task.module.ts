@@ -5,9 +5,16 @@ import { TaskDataModule } from './task-data.module';
 import { UserModule } from '@Modules/user/user.module';
 import { ProjectModule } from '@Modules/project/project.module';
 import { DatabaseModule } from '@Providers/database/database.module';
+import { QuotationModule } from '@Modules/quotation/quotation.module';
 
 @Module({
-  imports: [DatabaseModule, TaskDataModule, ProjectModule, UserModule],
+  imports: [
+    QuotationModule,
+    DatabaseModule,
+    TaskDataModule,
+    ProjectModule,
+    UserModule,
+  ],
   controllers: [TaskController],
   providers: [TaskService],
   exports: [TaskService],

@@ -8,6 +8,11 @@ import {
 } from 'class-validator';
 
 import {
+  TASK_SORT_VALUES,
+  type TaskSortType,
+} from '../constants/task-sort.constant';
+
+import {
   TASK_STATUS_VALUES,
   type TaskStatusType,
 } from '../constants/task-status.constant';
@@ -16,18 +21,21 @@ import { Type } from 'class-transformer';
 import { Transform } from 'class-transformer';
 import { PAGINATION } from '@Constants/pagination.constant';
 import { FIELD_LENGTHS } from '@Constants/field-length.constant';
-import { decodeTaskCursor } from '../utilities/task-cursor.utility';
 import { toTaskUrgencyFilter } from '../utilities/task-query.utility';
 import { IsOptional, IsUUID, IsIn, IsBoolean } from 'class-validator';
+import { isTaskCursorForFilter } from '../utilities/task-cursor.utility';
 
 export class GetTasksByFilterDto {
+  @IsOptional()
+  @IsIn(TASK_SORT_VALUES)
+  declare sort?: TaskSortType;
   @IsOptional()
   @IsString()
   @ValidateBy({
     name: 'taskCursor',
     validator: {
-      validate: (value: unknown) =>
-        typeof value === 'string' && decodeTaskCursor(value) !== null,
+      validate: (value: unknown, arguments_) =>
+        isTaskCursorForFilter(value, arguments_?.object ?? null),
       defaultMessage: () =>
         'batchCursor must be a task cursor returned by a previous page',
     },

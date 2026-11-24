@@ -34,6 +34,11 @@ import {
 } from './utilities/quotation-cursor.utility';
 
 import {
+  ITaskQuotationResult,
+  ITaskQuotationContextResponse,
+} from './interfaces/task-quotation.interface';
+
+import {
   quotationItemSnapshot,
   validateQuotationAccessories,
 } from './utilities/quotation-selection.utility';
@@ -75,12 +80,11 @@ import {
 
 import Decimal from 'decimal.js';
 import { Transaction } from 'sequelize';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Quotation } from './entities/quotation.entity';
 import { UserService } from '@Modules/user/user.service';
 import { QuotationRepository } from './quotation.repository';
 import { CloneQuotationDto } from './dto/clone-quotation.dto';
-import { PERMISSIONS } from '@Constants/authorization.constant';
 import type { GetQuotationsDto } from './dto/get-quotations.dto';
 import { CATALOGUE_STATUS } from './constants/quotation.constant';
 import { QUOTATION_BRANDS } from './constants/quotation.constant';
@@ -90,30 +94,42 @@ import type { IQuotation } from './interfaces/quotation.interface';
 import type { DeleteQuotationDto } from './dto/delete-quotation.dto';
 import { CustomerService } from '@Modules/customer/customer.service';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
+import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
 import { UserRoleService } from '@Modules/user-role/user-role.service';
 import type { SetApartmentLinksDto } from './dto/set-apartment-links.dto';
 import { QuotationSelectionService } from './quotation-selection.service';
+import { TaskQuotationLinksService } from './task-quotation-links.service';
+import { getHttpErrorPayload } from '@Utilities/http-error-payload.utility';
 import type { GetQuotationCountsDto } from './dto/get-quotation-counts.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import type { IQuotationSalesAgent } from './interfaces/quotation.interface';
 import { toProjectQuotationView } from './utilities/quotation-sharing.utility';
 import { quotationPaymentIssues } from './utilities/quotation-payment.utility';
+import { PERMISSIONS, PermissionType } from '@Constants/authorization.constant';
 import type { GetProjectQuotationsDto } from './dto/get-project-quotations.dto';
 import { resolveQuotationBrandGroups } from './utilities/quotation-brand.utility';
 import { salesAgentDisplayName } from './utilities/quotation-sales-agent.utility';
 import { QUOTATION_SHARING_MESSAGES } from './constants/quotation-sharing.constant';
+import { RecommendedCloneQuotationDto } from './dto/recommended-clone-quotation.dto';
+import { QUOTATION_LIFECYCLE_ACTION } from './constants/quotation-lifecycle.constant';
+import { IQuotationCloneIssue } from './interfaces/quotation-clone-command.interface';
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import { isCompatible } from '@Modules/catalogue-item/utilities/catalogue-ranking.utility';
+import type { QuotationLifecycleActionType } from './constants/quotation-lifecycle.constant';
 import type { IQuotationStatusCounts } from './interfaces/quotation-status-counts.interface';
 import { CUSTOMER_PROJECT_KINDS } from '@Modules/project/constants/customer-project.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { customerPaymentSnapshot } from '@Modules/customer/utilities/customer-payment.utility';
 import { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
 import { validateRuleConfiguration } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
+import type { IPublicationSummary } from '@Modules/quotation-publication/interfaces/publication.interface';
 import type { IQuotationPrimaryProject } from '@Modules/quotation-project/interfaces/quotation-project.interface';
+import type { IQuotationCloneTransactionRequest } from './interfaces/quotation-clone-transaction-request.interface';
 
 type TQuotationCancellationRecord = Pick<
   IQuotation,
@@ -128,6 +144,16 @@ interface ICancelQuotationInput {
   transaction: Transaction;
   kind: TQuotationCancellationKind;
   quotation: TQuotationCancellationRecord;
+}
+
+interface IQuotationLifecycleInput {
+  actor: IUser;
+  reason?: string | null;
+  transaction: Transaction;
+  toStatus: TQuotationStatus;
+  permission?: PermissionType;
+  current: IQuotationDocument;
+  action: QuotationLifecycleActionType;
 }
 
 @Injectable()
@@ -145,6 +171,8 @@ export class QuotationService {
     private readonly transactions: DatabaseTransactionService,
     private readonly users: UserService,
     private readonly userRoles: UserRoleService,
+    private readonly taskLinks: TaskQuotationLinksService,
+    private readonly publications: PublicationService,
   ) {}
   statusCounts(query: GetQuotationCountsDto): Promise<IQuotationStatusCounts> {
     return this.repository.statusCounts(query.search ?? '');
@@ -221,6 +249,9 @@ export class QuotationService {
     id: string,
     transaction?: Transaction,
   ): Promise<IQuotationDocument> {
+    if (transaction) {
+      await this.publications.lock(id, transaction);
+    }
     const quotation = await this.requireQuotation(id, transaction);
     const primaryProject = await this.links.primaryProject(id, transaction);
     const sections = await this.sections.list([id], transaction);
@@ -272,11 +303,44 @@ export class QuotationService {
               ? quotation.acknowledgedWarnings
               : [],
         }),
+        lifecycleHistory: await this.repository.lifecycleHistory(
+          id,
+          transaction,
+        ),
         primaryProject,
         apartmentLinks: apartmentLinks.get(id) ?? [],
         salesAgentName: salesAgent ? salesAgentDisplayName(salesAgent) : null,
       };
     });
+  }
+  async publicationSummary(
+    id: string,
+    actor: IAuthorizedUser,
+  ): Promise<IPublicationSummary> {
+    const quotation = await this.getForActor(id, actor);
+    const mayReadFiles =
+      hasPermission(actor, PERMISSIONS.PROJECTS_READ) &&
+      hasPermission(actor, PERMISSIONS.DRIVE_READ);
+    return this.publications.summary(
+      id,
+      quotation.projectId,
+      mayReadFiles,
+      actor.permissions,
+    );
+  }
+  async retryPublication(
+    id: string,
+    input: { cycleId: string; generation: number },
+    actor: IAuthorizedUser,
+  ): Promise<IPublicationSummary> {
+    await this.getForActor(id, actor);
+    await this.publications.retry(
+      id,
+      input.cycleId,
+      input.generation,
+      actor.permissions,
+    );
+    return this.publicationSummary(id, actor);
   }
   async getForActor(
     id: string,
@@ -285,15 +349,21 @@ export class QuotationService {
     const quotation = await this.getById(id);
     return this.projectDetailsForActor(quotation, actor);
   }
-  projectDetailsForActor(
+  async projectDetailsForActor(
     quotation: IQuotationDetailView,
     actor: IAuthorizedUser,
-  ): IQuotationDetailView {
+  ): Promise<IQuotationDetailView> {
+    const metadata = await this.taskLinks.metadata(quotation.id, actor);
     if (hasPermission(actor, PERMISSIONS.PROJECTS_READ)) {
-      return quotation;
+      return { ...quotation, ...metadata };
     }
 
-    return { ...quotation, primaryProject: null, apartmentLinks: [] };
+    return {
+      ...quotation,
+      ...metadata,
+      primaryProject: null,
+      apartmentLinks: [],
+    };
   }
   async apartmentOptions(id: string): Promise<IQuotationApartmentOptions> {
     await this.requireQuotation(id);
@@ -351,53 +421,103 @@ export class QuotationService {
     input: CreateQuotationDto,
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
-    const customer = await this.customers.getById(input.customerId);
-    await this.validateProject(input.customerId, input.projectId ?? null);
-    await this.validateSalesAgent(input.salesAgentId ?? null, actor);
-    const id = randomUUID();
-    await this.transactions.run(async (transaction) => {
-      const configuration = await this.rules.configuration(transaction);
-      const date = new Date().toISOString().slice(0, 10);
-      const prefix = date.slice(2, 7).replace('-', '');
-      await this.transactions.lockKey(
-        `quotation-number:${prefix}`,
-        transaction,
-      );
-      await this.repository.create(
-        {
-          id,
-          ruleConfiguration: configuration.rules,
-          number: await this.repository.nextNumber(prefix, transaction),
-          customerId: customer.id,
-          salesAgentId: input.salesAgentId ?? null,
-          status: QUOTATION_STATUS.DRAFT,
-          cancelledFromStatus: null,
-          cancellationHistory: [],
-          rejectionHistory: [],
-          date,
-          brand: '',
-          brands: [],
-          warningScopeVersion: WARNING_SCOPE_VERSION.PER_SYSTEM,
-          paymentTerms: customer.paymentTerms ?? null,
-          paymentTermsNote: '',
-          paymentSchedule: [],
-          discountPercent: '0',
-          targetPretaxAmount: null,
-          vatRate: DEFAULT_VAT_RATE,
-          internalNotes: '',
-          version: 1,
-          acknowledgedWarnings: [],
-          createdById: actor.id,
-          issuerName: `${actor.firstName} ${actor.lastName}`.trim(),
-          updatedById: actor.id,
-          approvedById: null,
-          approvedAt: null,
-        },
-        transaction,
-      );
-      await this.links.replacePrimary(id, input.projectId ?? null, transaction);
-    });
+    const id = await this.transactions.run((transaction) =>
+      this.createDraft(input, actor, transaction),
+    );
     return this.getById(id);
+  }
+  async createDraft(
+    input: CreateQuotationDto,
+    actor: IAuthorizedUser,
+    transaction: Transaction,
+  ): Promise<string> {
+    await this.validateSalesAgent(
+      input.salesAgentId ?? null,
+      actor,
+      transaction,
+    );
+    const customer = await this.customers.getById(
+      input.customerId,
+      transaction,
+    );
+    const payment = customerPaymentSnapshot(customer);
+    await this.validateProject(
+      input.customerId,
+      input.projectId ?? null,
+      transaction,
+    );
+    const id = randomUUID();
+    const configuration = await this.rules.configuration(transaction);
+    const date = new Date().toISOString().slice(0, 10);
+    const prefix = date.slice(2, 7).replace('-', '');
+    await this.transactions.lockKey(`quotation-number:${prefix}`, transaction);
+    await this.repository.create(
+      {
+        id,
+        ruleConfiguration: configuration.rules,
+        number: await this.repository.nextNumber(prefix, transaction),
+        customerId: customer.id,
+        salesAgentId: input.salesAgentId ?? null,
+        status: QUOTATION_STATUS.DRAFT,
+        cancelledFromStatus: null,
+        cancellationHistory: [],
+        rejectionHistory: [],
+        date,
+        brand: '',
+        brands: [],
+        warningScopeVersion: WARNING_SCOPE_VERSION.PER_SYSTEM,
+        ...payment,
+        paymentTermsNote: '',
+        discountPercent: '0',
+        targetPretaxAmount: null,
+        vatRate: DEFAULT_VAT_RATE,
+        internalNotes: '',
+        version: 1,
+        acknowledgedWarnings: [],
+        createdById: actor.id,
+        issuerName: `${actor.firstName} ${actor.lastName}`.trim(),
+        updatedById: actor.id,
+        approvedById: null,
+        approvedAt: null,
+      },
+      transaction,
+    );
+    await this.links.replacePrimary(id, input.projectId ?? null, transaction);
+    return id;
+  }
+  async taskQuotations(
+    taskId: string,
+    actor: IAuthorizedUser,
+  ): Promise<ITaskQuotationContextResponse> {
+    return this.taskLinks.read(taskId, actor);
+  }
+  async createForTask(
+    taskId: string,
+    actor: IAuthorizedUser,
+  ): Promise<ITaskQuotationResult> {
+    assertPermissions(
+      actor,
+      PERMISSIONS.TASKS_READ,
+      PERMISSIONS.QUOTATIONS_READ,
+    );
+    return this.transactions.run(async (transaction) => {
+      const context = await this.taskLinks.context(taskId, transaction);
+      const existing = (await this.taskLinks.list(taskId, transaction))[0];
+      if (existing) {
+        await this.taskLinks.attachPrimary(taskId, existing.id, transaction);
+        return { quotationId: existing.id, created: false };
+      }
+      this.taskLinks.assertAvailable(context);
+      this.taskLinks.assertContextPermissions(context, actor);
+      assertPermissions(actor, PERMISSIONS.QUOTATIONS_CREATE);
+      const quotationId = await this.createDraft(
+        { customerId: context.customerId!, projectId: context.projectId },
+        actor,
+        transaction,
+      );
+      await this.taskLinks.attachPrimary(taskId, quotationId, transaction);
+      return { quotationId, created: true };
+    });
   }
   async clone(
     sourceId: string,
@@ -407,215 +527,408 @@ export class QuotationService {
     const id = randomUUID();
     await this.transactions.run(async (transaction) => {
       const source = await this.document(sourceId, transaction);
-      this.assertVersion(source, input.sourceVersion);
-      const brands = [
-        ...new Set(
-          source.sections
-            .map((section) => section.brand)
-            .filter((brand): brand is string => Boolean(brand)),
-        ),
-      ];
-      if (
-        source.brands.length !== 1 ||
-        brands.length !== 1 ||
-        brands[0] !== source.brands[0]
-      ) {
-        throw new BadRequestException(
-          'ניתן לשכפל לחברה אחרת רק הצעה עם חברת מיזוג אחת',
-        );
-      }
-      const targetBrand = input.targetBrand.trim();
-      if (
-        !QUOTATION_BRANDS.some((brand) => brand === targetBrand) ||
-        targetBrand !== input.targetBrand ||
-        targetBrand === brands[0]
-      ) {
-        throw new BadRequestException('יש לבחור חברת מיזוג אחרת');
-      }
-      const sourceCatalogue = await this.catalogue.getByIds(
-        source.sections.flatMap((section) =>
-          section.items.map((item) => item.catalogueItemId),
-        ),
-        transaction,
-      );
-      const sourceById = new Map(
-        sourceCatalogue.map((item) => [item.id, item]),
-      );
-      const replaceable = source.sections.flatMap((section) =>
-        section.items.filter(
-          (item) =>
-            section.brand !== null &&
-            sourceById.get(item.catalogueItemId)?.brand !== '',
-        ),
-      );
-      const mapping = new Map(
-        input.mappings.map((row) => [
-          row.sourceLineId,
-          row.targetCatalogueItemId,
-        ]),
-      );
-      if (
-        mapping.size !== replaceable.length ||
-        input.mappings.length !== replaceable.length ||
-        replaceable.some((item) => !mapping.has(item.id))
-      ) {
-        throw new BadRequestException('יש לבחור פריט חלופי לכל שורת חברה');
-      }
-      const targets = await this.catalogue.getByIds(
-        [...mapping.values()],
-        transaction,
-      );
-      const targetById = new Map(targets.map((item) => [item.id, item]));
-      const sectionIds = new Map(
-        source.sections.map((section) => [section.id, randomUUID()]),
-      );
-      const lineIds = new Map(
-        source.sections.flatMap((section) =>
-          section.items.map((item) => [item.id, randomUUID()] as const),
-        ),
-      );
-      const snapshots: IQuotationItem[] = [];
-      for (const section of source.sections) {
-        for (const item of section.items) {
-          const sourceItem = sourceById.get(item.catalogueItemId);
-          const mappedId = mapping.get(item.id);
-          if (
-            (section.brand === null && sourceItem && sourceItem.brand !== '') ||
-            (section.brand !== null &&
-              sourceItem &&
-              sourceItem.brand !== '' &&
-              sourceItem.brand !== brands[0])
-          ) {
-            throw new BadRequestException(
-              'הצעת המקור כוללת פריט בחברת מיזוג לא תואמת',
-            );
-          }
-          const sectionId = sectionIds.get(section.id)!;
-          const parentItemId = item.parentItemId
-            ? (lineIds.get(item.parentItemId) ?? null)
-            : null;
-          if (!mappedId) {
-            snapshots.push({
-              ...item,
-              id: lineIds.get(item.id)!,
-              sectionId,
-              parentItemId,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-              deletedAt: null,
-            });
-            continue;
-          }
-          const target = targetById.get(mappedId);
-          if (
-            !target ||
-            target.status !== CATALOGUE_STATUS.ACTIVE ||
-            target.brand !== targetBrand ||
-            target.equipmentRole !== item.equipmentRole ||
-            !isCompatible(target, section.systemType) ||
-            (item.capacityBtu !== null &&
-              item.capacityBtu > 0 &&
-              (!target.capacityBtu || target.capacityBtu <= 0)) ||
-            (item.equipmentType !== null &&
-              !target.equipmentTypes.includes(item.equipmentType))
-          ) {
-            throw new BadRequestException(
-              `הפריט החלופי לשורה ${item.sku} אינו תואם או אינו זמין`,
-            );
-          }
-          const snapshot = quotationItemSnapshot({
-            item: {
-              ...item,
-              id: lineIds.get(item.id)!,
-              parentItemId,
-              catalogueItemId: target.id,
-              description: target.description,
-              quotedPrice: target.price,
-            },
-            catalogue: target,
-            previous: null,
-            sectionId,
-            displayOrder: item.displayOrder,
-          });
-          snapshots.push({
-            ...snapshot,
-            equipmentType: item.equipmentType ?? snapshot.equipmentType,
-          });
-        }
-      }
-      validateQuotationAccessories(snapshots);
-      await this.validateProject(source.customerId, source.projectId);
-      const configuration = await this.rules.configuration(transaction);
-      const date = new Date().toISOString().slice(0, 10);
-      const prefix = date.slice(2, 7).replace('-', '');
-      await this.transactions.lockKey(
-        `quotation-number:${prefix}`,
-        transaction,
-      );
-      await this.repository.create(
-        {
-          id,
-          ruleConfiguration: configuration.rules,
-          number: await this.repository.nextNumber(prefix, transaction),
-          customerId: source.customerId,
-          salesAgentId: source.salesAgentId,
-          status: QUOTATION_STATUS.DRAFT,
-          cancelledFromStatus: null,
-          cancellationHistory: [],
-          rejectionHistory: [],
-          date,
-          brand: targetBrand,
-          brands: [targetBrand],
-          warningScopeVersion: WARNING_SCOPE_VERSION.PER_SYSTEM,
-          paymentTerms: source.paymentTerms,
-          paymentTermsNote: source.paymentTermsNote,
-          paymentSchedule: source.paymentSchedule,
-          discountPercent: '0',
-          targetPretaxAmount: null,
-          vatRate: source.vatRate,
-          internalNotes: source.internalNotes,
-          version: 1,
-          acknowledgedWarnings: [],
-          createdById: actor.id,
-          issuerName: `${actor.firstName} ${actor.lastName}`.trim(),
-          updatedById: actor.id,
-          approvedById: null,
-          approvedAt: null,
-        },
-        transaction,
-      );
-      await this.sections.insert(
-        source.sections.map((section) => ({
-          id: sectionIds.get(section.id)!,
-          quotationId: id,
-          title: section.title,
-          brand: section.brand === null ? null : targetBrand,
-          systemType: section.systemType,
-          displayOrder: section.displayOrder,
-        })),
-        transaction,
-      );
-      await this.items.insert(
-        snapshots.map(({ createdAt, updatedAt, deletedAt, ...item }) => {
-          void createdAt;
-          void updatedAt;
-          void deletedAt;
-          return item;
-        }),
-        transaction,
-      );
-      await this.links.replacePrimary(id, source.projectId, transaction);
-      const apartmentLinks = await this.links.apartmentLinks(
-        [sourceId],
-        transaction,
-      );
-      await this.links.replaceApartmentLinks(
-        id,
-        (apartmentLinks.get(sourceId) ?? []).map((link) => link.apartmentId),
-        transaction,
-      );
+      await this.cloneInTransaction({ id, source, input, actor, transaction });
     });
     return this.getById(id);
+  }
+  async cloneRecommended(
+    sourceId: string,
+    input: RecommendedCloneQuotationDto,
+    actor: IAuthorizedUser,
+  ): Promise<IQuotationDetailView> {
+    assertPermissions(
+      actor,
+      PERMISSIONS.QUOTATIONS_READ,
+      PERMISSIONS.QUOTATIONS_CREATE,
+      PERMISSIONS.PROJECTS_READ,
+    );
+    const payloadHash = createHash('sha256')
+      .update(
+        JSON.stringify([
+          sourceId.toLowerCase(),
+          input.sourceVersion,
+          input.targetBrand,
+        ]),
+      )
+      .digest('hex');
+    const command = {
+      actorId: actor.id,
+      idempotencyKey: input.idempotencyKey.toLowerCase(),
+      payloadHash,
+    };
+    const id = await this.transactions.run(async (transaction) => {
+      await this.transactions.lockKey(
+        `quotation-clone:${actor.id}:${command.idempotencyKey}`,
+        transaction,
+      );
+      const saved = await this.repository.findCloneCommand(
+        command,
+        transaction,
+      );
+      if (saved && saved.payloadHash !== payloadHash) {
+        throw new ConflictException(
+          getHttpErrorPayload(
+            HTTP_ERROR_CODES.QUOTATION_CLONE_COMMAND_CONFLICT,
+          ),
+        );
+      }
+      if (saved) {
+        await this.requireQuotation(saved.quotationId, transaction);
+        return saved.quotationId;
+      }
+      const source = await this.document(sourceId, transaction);
+      await this.assertCloneContext(source, transaction);
+      if (source.version !== input.sourceVersion) {
+        throw new ConflictException(
+          getHttpErrorPayload(HTTP_ERROR_CODES.QUOTATION_CLONE_SOURCE_CHANGED),
+        );
+      }
+      this.cloneTargetBrand(source, input);
+      const mappings = await this.recommendedMappings(
+        source,
+        input.targetBrand,
+        actor.id,
+        transaction,
+      );
+      const quotationId = randomUUID();
+      try {
+        await this.cloneInTransaction({
+          id: quotationId,
+          source,
+          input: { ...input, mappings },
+          actor,
+          transaction,
+        });
+      } catch (error) {
+        if (!(error instanceof BadRequestException)) {
+          throw error;
+        }
+        throw new BadRequestException({
+          ...getHttpErrorPayload(
+            HTTP_ERROR_CODES.QUOTATION_CLONE_MAPPING_FAILED,
+          ),
+          safeResponse: {
+            issues: source.sections.flatMap((section) =>
+              section.items.map((item) => ({
+                sku: item.sku,
+                description: item.description,
+                reason: error.message,
+              })),
+            ),
+          },
+        });
+      }
+      await this.repository.insertCloneCommand(
+        { ...command, quotationId },
+        transaction,
+      );
+      return quotationId;
+    });
+    return this.getForActor(id, actor);
+  }
+  private async assertCloneContext(
+    source: IQuotationDocument,
+    transaction: Transaction,
+  ): Promise<void> {
+    await this.customers.getById(source.customerId, transaction);
+    await this.validateProject(
+      source.customerId,
+      source.projectId,
+      transaction,
+    );
+    await this.taskLinks.assertQuotationContext(
+      source.id,
+      source.customerId,
+      source.projectId,
+      transaction,
+    );
+  }
+  private cloneTargetBrand(
+    source: IQuotationDocument,
+    input: Pick<CloneQuotationDto, 'targetBrand'>,
+  ): string {
+    const brands = [
+      ...new Set(
+        source.sections
+          .map((section) => section.brand)
+          .filter((brand): brand is string => Boolean(brand)),
+      ),
+    ];
+    const hasSingleBrand =
+      source.brands.length === 1 &&
+      brands.length === 1 &&
+      brands[0] === source.brands[0];
+    if (!hasSingleBrand) {
+      throw new BadRequestException(
+        'ניתן לשכפל לחברה אחרת רק הצעה עם חברת מיזוג אחת',
+      );
+    }
+    const targetBrand = input.targetBrand.trim();
+    const isSupportedTarget = QUOTATION_BRANDS.some(
+      (brand) => brand === targetBrand,
+    );
+    const isExactTarget = targetBrand === input.targetBrand;
+    const isDifferentTarget = targetBrand !== brands[0];
+    if (!isSupportedTarget || !isExactTarget || !isDifferentTarget) {
+      throw new BadRequestException('יש לבחור חברת מיזוג אחרת');
+    }
+    return targetBrand;
+  }
+  private async recommendedMappings(
+    source: IQuotationDocument,
+    targetBrand: string,
+    userId: string,
+    transaction: Transaction,
+  ): Promise<CloneQuotationDto['mappings']> {
+    const catalogue = await this.catalogue.getByIds(
+      source.sections.flatMap((section) =>
+        section.items.map((item) => item.catalogueItemId),
+      ),
+      transaction,
+    );
+    const sourceById = new Map(catalogue.map((item) => [item.id, item]));
+    const mappings: CloneQuotationDto['mappings'] = [];
+    const issues: IQuotationCloneIssue[] = [];
+    for (const section of source.sections) {
+      for (const item of section.items) {
+        const original = sourceById.get(item.catalogueItemId);
+        if (!original) {
+          issues.push({
+            sku: item.sku,
+            description: item.description,
+            reason: 'פריט המקור חסר בקטלוג; יש לעדכן את הצעת המקור',
+          });
+          continue;
+        }
+        if (original.brand === '') {
+          continue;
+        }
+        const capacityBtu = item.capacityBtu ?? 0;
+        const hasPositiveCapacity = capacityBtu > 0;
+        const [target] = await this.catalogue.recommended(
+          {
+            brand: targetBrand,
+            equipmentRole: item.equipmentRole,
+            systemType: section.systemType,
+            ...(item.equipmentType
+              ? { equipmentType: item.equipmentType }
+              : {}),
+            ...(hasPositiveCapacity ? { capacityBtu } : {}),
+          },
+          userId,
+          transaction,
+        );
+        if (!target) {
+          issues.push({
+            sku: item.sku,
+            description: item.description,
+            reason: 'לא נמצא פריט פעיל תואם בחברה שנבחרה',
+          });
+          continue;
+        }
+        mappings.push({
+          sourceLineId: item.id,
+          targetCatalogueItemId: target.id,
+        });
+      }
+    }
+    if (issues.length > 0) {
+      throw new BadRequestException({
+        ...getHttpErrorPayload(HTTP_ERROR_CODES.QUOTATION_CLONE_MAPPING_FAILED),
+        safeResponse: { issues },
+      });
+    }
+    return mappings;
+  }
+  private async cloneInTransaction(
+    request: IQuotationCloneTransactionRequest,
+  ): Promise<void> {
+    const { id, source, input, actor, transaction } = request;
+    const sourceId = source.id;
+    this.assertVersion(source, input.sourceVersion);
+    const targetBrand = this.cloneTargetBrand(source, input);
+    const sourceCatalogue = await this.catalogue.getByIds(
+      source.sections.flatMap((section) =>
+        section.items.map((item) => item.catalogueItemId),
+      ),
+      transaction,
+    );
+    const sourceById = new Map(sourceCatalogue.map((item) => [item.id, item]));
+    const replaceable = source.sections.flatMap((section) =>
+      section.items.filter(
+        (item) =>
+          section.brand !== null &&
+          sourceById.get(item.catalogueItemId)?.brand !== '',
+      ),
+    );
+    const mapping = new Map(
+      input.mappings.map((row) => [
+        row.sourceLineId,
+        row.targetCatalogueItemId,
+      ]),
+    );
+    if (
+      mapping.size !== replaceable.length ||
+      input.mappings.length !== replaceable.length ||
+      replaceable.some((item) => !mapping.has(item.id))
+    ) {
+      throw new BadRequestException('יש לבחור פריט חלופי לכל שורת חברה');
+    }
+    const targets = await this.catalogue.getByIds(
+      [...mapping.values()],
+      transaction,
+    );
+    const targetById = new Map(targets.map((item) => [item.id, item]));
+    const sectionIds = new Map(
+      source.sections.map((section) => [section.id, randomUUID()]),
+    );
+    const lineIds = new Map(
+      source.sections.flatMap((section) =>
+        section.items.map((item) => [item.id, randomUUID()] as const),
+      ),
+    );
+    const snapshots: IQuotationItem[] = [];
+    for (const section of source.sections) {
+      for (const item of section.items) {
+        const sourceItem = sourceById.get(item.catalogueItemId);
+        const mappedId = mapping.get(item.id);
+        if (
+          (section.brand === null && sourceItem && sourceItem.brand !== '') ||
+          (section.brand !== null &&
+            sourceItem &&
+            sourceItem.brand !== '' &&
+            sourceItem.brand !== source.brands[0])
+        ) {
+          throw new BadRequestException(
+            'הצעת המקור כוללת פריט בחברת מיזוג לא תואמת',
+          );
+        }
+        const sectionId = sectionIds.get(section.id)!;
+        const parentItemId = item.parentItemId
+          ? (lineIds.get(item.parentItemId) ?? null)
+          : null;
+        if (!mappedId) {
+          snapshots.push({
+            ...item,
+            id: lineIds.get(item.id)!,
+            sectionId,
+            parentItemId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            deletedAt: null,
+          });
+          continue;
+        }
+        const target = targetById.get(mappedId);
+        if (
+          !target ||
+          target.status !== CATALOGUE_STATUS.ACTIVE ||
+          target.brand !== targetBrand ||
+          target.equipmentRole !== item.equipmentRole ||
+          !isCompatible(target, section.systemType) ||
+          (item.capacityBtu !== null &&
+            item.capacityBtu > 0 &&
+            (!target.capacityBtu || target.capacityBtu <= 0)) ||
+          (item.equipmentType !== null &&
+            !target.equipmentTypes.includes(item.equipmentType))
+        ) {
+          throw new BadRequestException(
+            `הפריט החלופי לשורה ${item.sku} אינו תואם או אינו זמין`,
+          );
+        }
+        const snapshot = quotationItemSnapshot({
+          item: {
+            ...item,
+            id: lineIds.get(item.id)!,
+            parentItemId,
+            catalogueItemId: target.id,
+            description: target.description,
+            quotedPrice: target.price,
+          },
+          catalogue: target,
+          previous: null,
+          sectionId,
+          displayOrder: item.displayOrder,
+        });
+        snapshots.push({
+          ...snapshot,
+          equipmentType: item.equipmentType ?? snapshot.equipmentType,
+        });
+      }
+    }
+    validateQuotationAccessories(snapshots);
+    await this.validateProject(
+      source.customerId,
+      source.projectId,
+      transaction,
+    );
+    const configuration = await this.rules.configuration(transaction);
+    const date = new Date().toISOString().slice(0, 10);
+    const prefix = date.slice(2, 7).replace('-', '');
+    await this.transactions.lockKey(`quotation-number:${prefix}`, transaction);
+    await this.repository.create(
+      {
+        id,
+        ruleConfiguration: configuration.rules,
+        number: await this.repository.nextNumber(prefix, transaction),
+        customerId: source.customerId,
+        salesAgentId: source.salesAgentId,
+        status: QUOTATION_STATUS.DRAFT,
+        cancelledFromStatus: null,
+        cancellationHistory: [],
+        rejectionHistory: [],
+        date,
+        brand: targetBrand,
+        brands: [targetBrand],
+        warningScopeVersion: WARNING_SCOPE_VERSION.PER_SYSTEM,
+        paymentTerms: source.paymentTerms,
+        paymentTermsNote: source.paymentTermsNote,
+        paymentSchedule: source.paymentSchedule,
+        discountPercent: '0',
+        targetPretaxAmount: null,
+        vatRate: source.vatRate,
+        internalNotes: source.internalNotes,
+        version: 1,
+        acknowledgedWarnings: [],
+        createdById: actor.id,
+        issuerName: `${actor.firstName} ${actor.lastName}`.trim(),
+        updatedById: actor.id,
+        approvedById: null,
+        approvedAt: null,
+      },
+      transaction,
+    );
+    await this.sections.insert(
+      source.sections.map((section) => ({
+        id: sectionIds.get(section.id)!,
+        quotationId: id,
+        title: section.title,
+        brand: section.brand === null ? null : targetBrand,
+        systemType: section.systemType,
+        displayOrder: section.displayOrder,
+      })),
+      transaction,
+    );
+    await this.items.insert(
+      snapshots.map(({ createdAt, updatedAt, deletedAt, ...item }) => {
+        void createdAt;
+        void updatedAt;
+        void deletedAt;
+        return item;
+      }),
+      transaction,
+    );
+    await this.links.replacePrimary(id, source.projectId, transaction);
+    await this.taskLinks.copy(sourceId, id, transaction);
+    const apartmentLinks = await this.links.apartmentLinks(
+      [sourceId],
+      transaction,
+    );
+    await this.links.replaceApartmentLinks(
+      id,
+      (apartmentLinks.get(sourceId) ?? []).map((link) => link.apartmentId),
+      transaction,
+    );
   }
   async delete(
     id: string,
@@ -625,6 +938,7 @@ export class QuotationService {
     await this.transactions.run(async (transaction) => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
+      await this.publications.deleted(id, transaction);
       await this.repository.update(
         id,
         {
@@ -642,7 +956,7 @@ export class QuotationService {
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
     await this.customers.getById(input.customerId);
-    await this.transactions.run(async (transaction) => {
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       if (
@@ -657,11 +971,21 @@ export class QuotationService {
           : current.salesAgentId;
 
       if (salesAgentId !== current.salesAgentId) {
-        await this.validateSalesAgent(salesAgentId, actor);
+        await this.validateSalesAgent(salesAgentId, actor, transaction);
       }
 
       await this.assertSharingKeepsContext(current, input, transaction);
-      await this.validateProject(input.customerId, input.projectId);
+      await this.taskLinks.assertQuotationContext(
+        id,
+        input.customerId,
+        input.projectId,
+        transaction,
+      );
+      await this.validateProject(
+        input.customerId,
+        input.projectId,
+        transaction,
+      );
       if (!input.brands && current.brands.length > 1) {
         throw new ConflictException(
           'יש לרענן את העורך כדי לשמור הצעה עם מספר חברות',
@@ -678,6 +1002,7 @@ export class QuotationService {
         userId: actor.id,
         transaction,
       });
+
       const oldIds = current.sections.map((section) => section.id);
       await this.items.remove(oldIds, transaction);
       await this.sections.remove([id], transaction);
@@ -715,6 +1040,16 @@ export class QuotationService {
       if (projectId !== current.projectId) {
         await this.links.replacePrimary(id, projectId, transaction);
       }
+      if (current.status === QUOTATION_STATUS.REVIEW) {
+        await this.auditLifecycle({
+          current,
+          actor,
+          toStatus: QUOTATION_STATUS.DRAFT,
+          action: QUOTATION_LIFECYCLE_ACTION.RETURN,
+          permission: PERMISSIONS.QUOTATIONS_UPDATE,
+          transaction,
+        });
+      }
     });
     return this.getById(id);
   }
@@ -730,7 +1065,7 @@ export class QuotationService {
         throw new ConflictException('לא ניתן לעדכן הצעת מחיר מבוטלת');
       }
       if (input.salesAgentId !== current.salesAgentId) {
-        await this.validateSalesAgent(input.salesAgentId, actor);
+        await this.validateSalesAgent(input.salesAgentId, actor, transaction);
       }
 
       await this.repository.update(
@@ -749,14 +1084,18 @@ export class QuotationService {
   async transition(
     id: string,
     input: QuotationTransitionDto,
-    userId: string,
+    actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
-    await this.transactions.run(async (transaction) => {
+    assertPermissions(actor, PERMISSIONS.QUOTATIONS_APPROVE);
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       const allowed: Record<TQuotationStatus, TQuotationStatus[]> = {
         [QUOTATION_STATUS.DRAFT]: [QUOTATION_STATUS.REVIEW],
-        [QUOTATION_STATUS.REVIEW]: [QUOTATION_STATUS.APPROVED],
+        [QUOTATION_STATUS.REVIEW]: [
+          QUOTATION_STATUS.APPROVED,
+          QUOTATION_STATUS.DRAFT,
+        ],
         [QUOTATION_STATUS.APPROVED]: [QUOTATION_STATUS.DRAFT],
         [QUOTATION_STATUS.CANCELLED]: [],
       };
@@ -773,6 +1112,22 @@ export class QuotationService {
         );
       }
 
+      const returning = input.status === QUOTATION_STATUS.DRAFT;
+      const reviewReturn =
+        returning && current.status === QUOTATION_STATUS.REVIEW;
+      if (reviewReturn) {
+        this.assertReviewReturnActor(actor);
+      }
+      const transitionActions: Record<
+        TQuotationStatus,
+        QuotationLifecycleActionType
+      > = {
+        [QUOTATION_STATUS.DRAFT]: QUOTATION_LIFECYCLE_ACTION.RETURN,
+        [QUOTATION_STATUS.REVIEW]: QUOTATION_LIFECYCLE_ACTION.SUBMIT,
+        [QUOTATION_STATUS.APPROVED]: QUOTATION_LIFECYCLE_ACTION.APPROVE,
+        [QUOTATION_STATUS.CANCELLED]: QUOTATION_LIFECYCLE_ACTION.CANCEL,
+      };
+      const action = transitionActions[input.status];
       const configuration = await this.rules.configuration(transaction);
       const checked = {
         ...(await this.currentCatalogueState(current, transaction)),
@@ -784,7 +1139,7 @@ export class QuotationService {
       };
       if (
         input.status === QUOTATION_STATUS.REVIEW &&
-        !current.sections.some((section) => section.items.length)
+        !current.sections.some((section): number => section.items.length)
       ) {
         throw new BadRequestException('יש להוסיף פריטים לפני בדיקה');
       }
@@ -801,31 +1156,43 @@ export class QuotationService {
       }
       if (
         input.status === QUOTATION_STATUS.APPROVED &&
-        quotationWarnings(checked).some((warning) => !warning.acknowledged)
+        quotationWarnings(checked).some(
+          (warning): boolean => !warning.acknowledged,
+        )
       ) {
         throw new ConflictException('יש לטפל בכל ההתראות או לאשר אותן');
       }
       const approved = input.status === QUOTATION_STATUS.APPROVED;
       if (approved) {
         await this.items.persistCatalogueStatuses(
-          checked.sections.flatMap((section) => section.items),
+          checked.sections.flatMap(
+            (section): IQuotationItem[] => section.items,
+          ),
           transaction,
         );
       }
+
       await this.repository.update(
         id,
         {
           status: input.status,
           ruleConfiguration: configuration.rules,
-          acknowledgedWarnings: checked.acknowledgedWarnings,
+          acknowledgedWarnings: returning ? [] : checked.acknowledgedWarnings,
           version: current.version + 1,
-          updatedById: userId,
-          approvedById: approved ? userId : null,
+          updatedById: actor.id,
+          approvedById: approved ? actor.id : null,
           approvedAt: approved ? new Date() : null,
           cancelledFromStatus: null,
         },
         transaction,
       );
+      await this.auditLifecycle({
+        current,
+        actor,
+        toStatus: input.status,
+        action,
+        transaction,
+      });
     });
     return this.getById(id);
   }
@@ -834,29 +1201,26 @@ export class QuotationService {
     input: RejectQuotationDto,
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
-    if (
-      !actor.assignedRoles.some(
-        (role) =>
-          role === USER_ROLES.SYSTEM_ADMIN ||
-          role === USER_ROLES.ENGINEERING_LEAD,
-      )
-    ) {
-      throw new ForbiddenException('אין הרשאה להחזיר הצעה לתיקון');
-    }
+    assertPermissions(actor, PERMISSIONS.QUOTATIONS_APPROVE);
+    this.assertReviewReturnActor(actor);
     const reason = input.reason.trim();
     if (!reason || reason.length > MAX_QUOTATION_CANCELLATION_REASON_LENGTH) {
       throw new BadRequestException('יש להזין סיבת דחייה');
     }
-    await this.transactions.run(async (transaction) => {
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       if (current.status !== QUOTATION_STATUS.REVIEW) {
         throw new ConflictException('ניתן להחזיר לתיקון רק הצעה בבדיקה');
       }
+
       await this.repository.update(
         id,
         {
           status: QUOTATION_STATUS.DRAFT,
+          approvedAt: null,
+          approvedById: null,
+          acknowledgedWarnings: [],
           version: current.version + 1,
           updatedById: actor.id,
           rejectionHistory: [
@@ -873,6 +1237,14 @@ export class QuotationService {
         },
         transaction,
       );
+      await this.auditLifecycle({
+        current,
+        actor,
+        toStatus: QUOTATION_STATUS.DRAFT,
+        action: QUOTATION_LIFECYCLE_ACTION.REJECT,
+        transaction,
+        reason,
+      });
     });
     return this.getById(id);
   }
@@ -881,7 +1253,7 @@ export class QuotationService {
     input: QuotationVersionDto,
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
-    await this.transactions.run(async (transaction) => {
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       const latest = current.rejectionHistory.at(-1);
@@ -892,9 +1264,10 @@ export class QuotationService {
       ) {
         throw new ConflictException('ההצעה אינה ממתינה לשליחה מחדש');
       }
-      if (!current.sections.some((section) => section.items.length)) {
+      if (!current.sections.some((section): number => section.items.length)) {
         throw new BadRequestException('יש להוסיף פריטים לפני בדיקה');
       }
+
       await this.repository.update(
         id,
         {
@@ -912,6 +1285,13 @@ export class QuotationService {
         },
         transaction,
       );
+      await this.auditLifecycle({
+        current,
+        actor,
+        toStatus: QUOTATION_STATUS.REVIEW,
+        action: QUOTATION_LIFECYCLE_ACTION.RESUBMIT,
+        transaction,
+      });
     });
     return this.getById(id);
   }
@@ -927,7 +1307,7 @@ export class QuotationService {
         `יש להזין סיבת ביטול עד ${MAX_QUOTATION_CANCELLATION_REASON_LENGTH} תווים`,
       );
     }
-    await this.transactions.run(async (transaction) => {
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
 
@@ -944,6 +1324,14 @@ export class QuotationService {
         cancelledAt: new Date().toISOString(),
         transaction,
       });
+      await this.auditLifecycle({
+        current,
+        actor: user,
+        toStatus: QUOTATION_STATUS.CANCELLED,
+        action: QUOTATION_LIFECYCLE_ACTION.CANCEL,
+        transaction,
+        reason,
+      });
     });
 
     return this.getById(id);
@@ -956,7 +1344,7 @@ export class QuotationService {
     if (user.role !== USER_ROLES.SYSTEM_ADMIN) {
       throw new ForbiddenException('רק מנהל מערכת רשאי לשחזר הצעת מחיר');
     }
-    await this.transactions.run(async (transaction) => {
+    await this.transactions.run(async (transaction): Promise<void> => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
       const restored = restoreQuotationCancellation({
@@ -973,6 +1361,7 @@ export class QuotationService {
       ) {
         throw new ConflictException('לא ניתן לשחזר את הצעת המחיר');
       }
+
       await this.repository.update(
         id,
         {
@@ -984,6 +1373,13 @@ export class QuotationService {
         },
         transaction,
       );
+      await this.auditLifecycle({
+        current,
+        actor: user,
+        toStatus: restored.status,
+        action: QUOTATION_LIFECYCLE_ACTION.RESTORE,
+        transaction,
+      });
     });
 
     return this.getById(id);
@@ -1192,6 +1588,81 @@ export class QuotationService {
       })),
     };
   }
+  private assertReviewReturnActor(actor: IAuthorizedUser): void {
+    const mayReturnReview = actor.assignedRoles.some(
+      (role): boolean =>
+        role === USER_ROLES.SYSTEM_ADMIN ||
+        role === USER_ROLES.ENGINEERING_LEAD,
+    );
+    if (!mayReturnReview) {
+      throw new ForbiddenException('אין הרשאה להחזיר הצעה לתיקון');
+    }
+  }
+  private async auditLifecycle(input: IQuotationLifecycleInput): Promise<void> {
+    const { current, actor, toStatus, action, transaction } = input;
+    const reason = input.reason ?? null;
+    const {
+      approvedAt,
+      approvedById,
+      acknowledgedWarnings,
+      ruleConfiguration,
+      paymentTerms,
+      paymentTermsNote,
+      paymentSchedule,
+      rejectionHistory,
+      cancellationHistory,
+    } = current;
+    const eventId = randomUUID();
+    await this.repository.appendLifecycleEvent(
+      {
+        id: eventId,
+        quotationId: current.id,
+        action,
+        fromStatus: current.status,
+        toStatus,
+        actorId: actor.id,
+        actorName: quotationActorName(actor),
+        occurredAt: new Date().toISOString(),
+        quotationVersion: current.version + 1,
+        reason,
+        evidence: {
+          approvedAt,
+          approvedById,
+          acknowledgedWarnings,
+          ruleConfiguration,
+          paymentTerms,
+          paymentTermsNote,
+          paymentSchedule,
+          rejectionHistory,
+          cancellationHistory,
+        },
+      },
+      transaction,
+    );
+    const approvalActions: QuotationLifecycleActionType[] = [
+      QUOTATION_LIFECYCLE_ACTION.SUBMIT,
+      QUOTATION_LIFECYCLE_ACTION.APPROVE,
+      QUOTATION_LIFECYCLE_ACTION.RETURN,
+      QUOTATION_LIFECYCLE_ACTION.REJECT,
+    ];
+    const defaultPermission = approvalActions.includes(action)
+      ? PERMISSIONS.QUOTATIONS_APPROVE
+      : PERMISSIONS.QUOTATIONS_UPDATE;
+    const publicationPermission = input.permission ?? defaultPermission;
+    const publishes =
+      toStatus === QUOTATION_STATUS.REVIEW ||
+      toStatus === QUOTATION_STATUS.APPROVED;
+    const publicationDocument = publishes
+      ? await this.document(current.id, transaction)
+      : { ...current, status: toStatus, version: current.version + 1 };
+    await this.publications.lifecycle({
+      eventId,
+      permission: publicationPermission,
+      actorId: actor.id,
+      transaction,
+      document: publicationDocument,
+    });
+  }
   private assertVersion(current: IQuotationDocument, version: number): void {
     if (current.version !== version) {
       throw new ConflictException('ההצעה עודכנה במקביל. יש לרענן לפני שמירה');
@@ -1235,11 +1706,15 @@ export class QuotationService {
   private async validateProject(
     customerId: string,
     projectId: string | null,
+    transaction: Transaction,
   ): Promise<void> {
     if (!projectId) {
       return;
     }
-    const project = await this.projects.getById(projectId);
+    const project = await this.projects.quotationContext(
+      projectId,
+      transaction,
+    );
     if (project.customerId !== customerId) {
       throw new BadRequestException('הפרויקט אינו משויך ללקוח שנבחר');
     }
@@ -1248,6 +1723,7 @@ export class QuotationService {
   private async validateSalesAgent(
     salesAgentId: string | null,
     actor: IAuthorizedUser,
+    transaction: Transaction,
   ): Promise<void> {
     if (salesAgentId === null) {
       return;
@@ -1255,7 +1731,7 @@ export class QuotationService {
 
     assertPermissions(actor, PERMISSIONS.EMPLOYEES_READ);
 
-    const salesAgent = await this.users.findById(salesAgentId);
+    const salesAgent = await this.users.findById(salesAgentId, transaction);
     const hasEligibleRole = QUOTATION_AGENT_ELIGIBLE_ROLES.some((role) =>
       salesAgent?.assignedRoles?.includes(role),
     );

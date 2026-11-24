@@ -11,17 +11,23 @@ import {
   FOLDER_CONTENT_STATUS,
 } from './constants/project-drive.constant';
 
+import {
+  IDriveUpload,
+  IDriveFileMetadata,
+} from '@Interfaces/google-drive.interface';
+
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
 import { Readable } from 'node:stream';
+import { Sequelize, Transaction } from 'sequelize';
 import { mkdtemp, writeFile, access } from 'node:fs/promises';
 import { ProjectDriveService } from './project-drive.service';
 import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { ProjectService } from '@Modules/project/project.service';
-import { IDriveFileMetadata } from '@Interfaces/google-drive.interface';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
 import { DriveTemplateFolderService } from '@Modules/drive-template-folder/drive-template-folder.service';
+import { PublicationDestinationService } from '@Modules/quotation-publication/publication-destination.service';
 
 const ROOT_ID = 'projects-root';
 const PROJECT_FOLDER_ID = 'project-folder';
@@ -41,15 +47,43 @@ const TEMPLATE_TREE = [
 ];
 
 const createService = async () => {
+  const transaction = new Transaction(
+    new Sequelize({ dialect: 'postgres', logging: false }),
+    {},
+  );
   const projectService = {
     getById: jest.fn().mockResolvedValue(PROJECT),
+    quotationSnapshot: jest.fn(),
+    lockDriveRootCandidate: jest.fn((): Promise<void> => Promise.resolve()),
+    withDriveRootLock: jest.fn(
+      (
+        projectId: string,
+        work: (transaction: Transaction) => Promise<unknown>,
+      ): Promise<unknown> => work(transaction),
+    ),
+    inspectLinkedDriveFolder: jest.fn().mockResolvedValue(['CAD']),
     setDriveFolderId: jest.fn().mockResolvedValue(null),
     setSharedDocumentFileId: jest.fn().mockResolvedValue(null),
   };
+  projectService.setDriveFolderId.mockImplementation(
+    (id: string, folderId: string): Promise<null> => {
+      projectService.getById.mockResolvedValue({
+        ...PROJECT,
+        id,
+        driveFolderId: folderId,
+      });
+      return Promise.resolve(null);
+    },
+  );
+  projectService.quotationSnapshot.mockImplementation(
+    (id: string): Promise<unknown> => projectService.getById(id),
+  );
   const googleDriveService = {
     isConfigured: jest.fn().mockReturnValue(true),
     getProjectsRootFolderId: jest.fn().mockReturnValue(ROOT_ID),
-    ensureFolder: jest.fn((name: string) => Promise.resolve(`id:${name}`)),
+    ensureFolder: jest.fn((name: string): Promise<string> =>
+      Promise.resolve(`id:${name}`),
+    ),
     findParentIds: jest.fn().mockResolvedValue([]),
     listChildren: jest.fn().mockResolvedValue([]),
     getFileMetadata: jest.fn((id: string): Promise<IDriveFileMetadata | null> =>
@@ -63,7 +97,9 @@ const createService = async () => {
     moveFile: jest.fn(async (): Promise<void> => {}),
     trashFile: jest.fn(async (): Promise<void> => {}),
     countDescendantFiles: jest.fn().mockResolvedValue(new Map()),
-    uploadFile: jest.fn().mockResolvedValue({ id: 'uploaded' }),
+    uploadFile: jest
+      .fn<Promise<{ id: string }>, [IDriveUpload]>()
+      .mockResolvedValue({ id: 'uploaded' }),
   };
 
   const driveTemplateFolderService = {
@@ -73,6 +109,17 @@ const createService = async () => {
   const moduleRef = await Test.createTestingModule({
     providers: [
       ProjectDriveService,
+      {
+        provide: PublicationDestinationService,
+        useValue: {
+          prepareTemplateRoleFolder: jest.fn().mockResolvedValue(null),
+          prepareRoleFolder: jest
+            .fn()
+            .mockResolvedValue({ folderId: 'id:הצעות מחיר' }),
+          completeReservedTemplateFolder: jest.fn().mockResolvedValue(null),
+          ensureRoleFolder: jest.fn().mockResolvedValue('id:הצעות מחיר'),
+        },
+      },
       { provide: ProjectService, useValue: projectService },
       { provide: GoogleDriveService, useValue: googleDriveService },
       {
@@ -308,6 +355,15 @@ describe('ProjectDriveService.provision', () => {
       ...TEMPLATE_TREE,
       { id: 'tenants', name: 'דיירים', children: [] },
     ]);
+    context.googleDriveService.getFileMetadata.mockImplementation(
+      (id: string): Promise<IDriveFileMetadata | null> =>
+        Promise.resolve({
+          id,
+          mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+          parents: id === 'id:דירה 101' ? ['id:דיירים'] : [],
+          trashed: false,
+        }),
+    );
     return { ...context, projects };
   };
 
@@ -344,6 +400,7 @@ describe('ProjectDriveService.provision', () => {
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       apartment.id,
       'id:דירה 101',
+      expect.anything(),
     );
     expect(projectService.setDriveFolderId).toHaveBeenCalledTimes(2);
   });
@@ -352,22 +409,22 @@ describe('ProjectDriveService.provision', () => {
     const { service, googleDriveService, projects } =
       await createApartmentService();
     const failed = { once: false };
-    googleDriveService.ensureFolder.mockImplementation(async (name: string) => {
+    googleDriveService.ensureFolder.mockImplementation((name: string) => {
       const apartmentRootCreated =
         googleDriveService.ensureFolder.mock.calls.some(
           ([folderName]) => folderName === apartment.name,
         );
       if (name === 'CAD' && apartmentRootCreated && !failed.once) {
         failed.once = true;
-        throw new Error('temporary failure');
+        return Promise.reject(new Error('temporary failure'));
       }
-      return `id:${name}`;
+      return Promise.resolve(`id:${name}`);
     });
 
     await expect(service.provision(apartment.id)).rejects.toThrow(
       BadGatewayException,
     );
-    expect(projects.get(apartment.id)?.driveFolderId).toBeNull();
+    expect(projects.get(apartment.id)?.driveFolderId).toBe('id:דירה 101');
 
     await service.provision(apartment.id);
 
@@ -514,6 +571,7 @@ describe('ProjectDriveService.provision', () => {
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       PROJECT.id,
       'id:מגדל בבלי',
+      expect.anything(),
     );
     expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
       '01_אכ-48213',
@@ -547,25 +605,27 @@ describe('ProjectDriveService.provision', () => {
     },
   );
 
-  it('does not link a partially created template and retries the existing folders', async () => {
+  it('commits the stable root before template effects and retries existing folders', async (): Promise<void> => {
     const { service, projectService, googleDriveService } =
       await createService();
     const folders = new Map<string, string>();
-    googleDriveService.ensureFolder.mockImplementation(async (name: string) => {
-      if (name === 'CAD' && !folders.has('failed-once')) {
-        folders.set('failed-once', 'true');
-        throw new Error('temporary failure');
-      }
+    googleDriveService.ensureFolder.mockImplementation(
+      (name: string): Promise<string> => {
+        if (name === 'CAD' && !folders.has('failed-once')) {
+          folders.set('failed-once', 'true');
+          return Promise.reject(new Error('temporary failure'));
+        }
 
-      const folderId = folders.get(name) ?? `id:${name}`;
-      folders.set(name, folderId);
-      return folderId;
-    });
+        const folderId = folders.get(name) ?? `id:${name}`;
+        folders.set(name, folderId);
+        return Promise.resolve(folderId);
+      },
+    );
 
     await expect(service.provision(PROJECT.id)).rejects.toThrow(
       BadGatewayException,
     );
-    expect(projectService.setDriveFolderId).not.toHaveBeenCalled();
+    expect(projectService.setDriveFolderId).toHaveBeenCalledTimes(1);
 
     await service.provision(PROJECT.id);
 
@@ -573,17 +633,11 @@ describe('ProjectDriveService.provision', () => {
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       PROJECT.id,
       'id:מגדל בבלי',
+      expect.anything(),
     );
     expect(
       googleDriveService.ensureFolder.mock.calls.map(([name]) => name),
-    ).toEqual([
-      'מגדל בבלי',
-      '01_אכ-48213',
-      'CAD',
-      'מגדל בבלי',
-      '01_אכ-48213',
-      'CAD',
-    ]);
+    ).toEqual(['מגדל בבלי', '01_אכ-48213', 'CAD', '01_אכ-48213', 'CAD']);
     expect(folders.size).toBe(4);
   });
 
@@ -600,6 +654,7 @@ describe('ProjectDriveService.provision', () => {
     projectService.getById.mockResolvedValue({
       ...PROJECT,
       name: 'Renamed project',
+      driveFolderId: PROJECT_FOLDER_ID,
     });
     googleDriveService.ensureFolder.mockResolvedValue(PROJECT_FOLDER_ID);
 
@@ -610,7 +665,7 @@ describe('ProjectDriveService.provision', () => {
       ROOT_ID,
       PROJECT.id,
     );
-    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
+    expect(googleDriveService.ensureFolder).not.toHaveBeenCalledWith(
       'Renamed project',
       ROOT_ID,
       PROJECT.id,
@@ -619,16 +674,22 @@ describe('ProjectDriveService.provision', () => {
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       PROJECT.id,
       PROJECT_FOLDER_ID,
+      expect.anything(),
     );
   });
 
-  it('links the project only after every template folder succeeds', async () => {
+  it('commits the project root before creating template folders', async (): Promise<void> => {
     const { service, projectService, googleDriveService } =
       await createService();
-    googleDriveService.ensureFolder.mockImplementation(async (name: string) => {
-      expect(projectService.setDriveFolderId).not.toHaveBeenCalled();
-      return `id:${name}`;
-    });
+    googleDriveService.ensureFolder.mockImplementation(
+      (name: string): Promise<string> => {
+        if (name !== PROJECT.name) {
+          expect(projectService.setDriveFolderId).toHaveBeenCalledTimes(1);
+        }
+
+        return Promise.resolve(`id:${name}`);
+      },
+    );
 
     await service.provision(PROJECT.id);
 
@@ -656,8 +717,12 @@ describe('ProjectDriveService.provision', () => {
       googleDriveService,
       driveTemplateFolderService,
     } = await createService();
-    const pending = {
-      release: (_folderId: string) => {},
+    const pending: {
+      release: (folderId: string) => void;
+      started: () => void;
+      settled: boolean;
+    } = {
+      release: () => {},
       started: () => {},
       settled: false,
     };
@@ -671,7 +736,7 @@ describe('ProjectDriveService.provision', () => {
       { id: 'failed', name: 'failed', children: [] },
       { id: 'pending', name: 'pending', children: [] },
     ]);
-    googleDriveService.ensureFolder.mockImplementation(async (name: string) => {
+    googleDriveService.ensureFolder.mockImplementation((name: string) => {
       if (name === 'failed') {
         throw new Error('template failed');
       }
@@ -681,7 +746,7 @@ describe('ProjectDriveService.provision', () => {
         return pendingFolder;
       }
 
-      return `id:${name}`;
+      return Promise.resolve(`id:${name}`);
     });
     const provisioning = service
       .provision(PROJECT.id)
@@ -708,16 +773,18 @@ describe('ProjectDriveService.provision', () => {
       expect.any(BadGatewayException),
       expect.any(BadGatewayException),
     ]);
-    expect(projectService.setDriveFolderId).not.toHaveBeenCalled();
+    expect(projectService.setDriveFolderId).toHaveBeenCalledTimes(1);
   });
 
   it('provisions different projects independently', async () => {
     const { service, projectService, googleDriveService } =
       await createService();
-    projectService.getById.mockImplementation(async (id: string) => ({
-      ...PROJECT,
-      id,
-    }));
+    projectService.getById.mockImplementation((id: string) =>
+      Promise.resolve({
+        ...PROJECT,
+        id,
+      }),
+    );
 
     await Promise.all([
       service.provision(PROJECT.id),
@@ -728,6 +795,7 @@ describe('ProjectDriveService.provision', () => {
     expect(projectService.setDriveFolderId).toHaveBeenCalledWith(
       'project-2',
       expect.any(String),
+      expect.anything(),
     );
   });
 
@@ -738,16 +806,17 @@ describe('ProjectDriveService.provision', () => {
     { response: { status: 401 } },
   ])(
     'reports credential failures as an actionable service-unavailable response',
-    async (error) => {
+    async (error: unknown) => {
       const { service, projectService, googleDriveService } =
         await createService();
       googleDriveService.ensureFolder.mockRejectedValue(error);
 
+      const expectedResponse: unknown = expect.objectContaining({
+        code: 'DRIVE_AUTHENTICATION_FAILED',
+      });
       await expect(service.provision(PROJECT.id)).rejects.toMatchObject({
         status: 503,
-        response: expect.objectContaining({
-          code: 'DRIVE_AUTHENTICATION_FAILED',
-        }),
+        response: expectedResponse,
       });
       expect(projectService.setDriveFolderId).not.toHaveBeenCalled();
     },
@@ -950,12 +1019,14 @@ describe('ProjectDriveService.getContents', () => {
     const { service, googleDriveService, projectService } =
       await createService();
 
+    const sanitizedMessage: unknown = expect.not.stringContaining(PROJECT.id);
+    const expectedResponse: unknown = expect.objectContaining({
+      code: 'PROJECT_DRIVE_NOT_PROVISIONED',
+      message: sanitizedMessage,
+    });
     await expect(service.getContents(PROJECT.id, {})).rejects.toMatchObject({
       status: 409,
-      response: expect.objectContaining({
-        code: 'PROJECT_DRIVE_NOT_PROVISIONED',
-        message: expect.not.stringContaining(PROJECT.id),
-      }),
+      response: expectedResponse,
     });
     expect(googleDriveService.ensureFolder).not.toHaveBeenCalled();
     expect(projectService.setDriveFolderId).not.toHaveBeenCalled();
@@ -1041,10 +1112,11 @@ describe('ProjectDriveService.uploadQuotationPdf', () => {
       Buffer.from('%PDF-1.7'),
     );
     expect(result).toEqual({ id: 'uploaded' });
-    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
-      'הצעות מחיר',
-      PROJECT_FOLDER_ID,
+    expect(projectService.withDriveRootLock).toHaveBeenCalledWith(
+      PROJECT.id,
+      expect.any(Function),
     );
+    expect(googleDriveService.ensureFolder).not.toHaveBeenCalled();
     const upload = googleDriveService.uploadFile.mock.calls[0][0];
     expect(upload).toMatchObject({
       parentId: 'id:הצעות מחיר',
@@ -1081,19 +1153,21 @@ describe('ProjectDriveService file management', () => {
       driveFolderId: PROJECT_FOLDER_ID,
     });
     context.googleDriveService.getFileMetadata.mockImplementation(
-      async (id: string) => ({
-        id,
-        trashed: false,
-        mimeType:
-          id === fileId ? 'application/pdf' : GOOGLE_DRIVE.FOLDER_MIME_TYPE,
-        parents: id === fileId ? [sourceFolderId] : [PROJECT_FOLDER_ID],
-      }),
+      (id: string) =>
+        Promise.resolve({
+          id,
+          trashed: false,
+          mimeType:
+            id === fileId ? 'application/pdf' : GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+          parents: id === fileId ? [sourceFolderId] : [PROJECT_FOLDER_ID],
+        }),
     );
-    context.googleDriveService.findParentIds.mockImplementation(
-      async (id: string) =>
+    context.googleDriveService.findParentIds.mockImplementation((id: string) =>
+      Promise.resolve(
         id === sourceFolderId || id === destinationFolderId
           ? [PROJECT_FOLDER_ID]
           : [],
+      ),
     );
     return context;
   };
@@ -1315,5 +1389,108 @@ describe('ProjectDriveService file management', () => {
       BadRequestException,
     );
     expect(googleDriveService.trashFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectDriveService linked legacy roots', () => {
+  const linked = {
+    ...PROJECT,
+    driveFolderId: PROJECT_FOLDER_ID,
+    driveFolderLinked: true,
+    parentProjectId: null,
+  };
+
+  it('does not create or mutate any folders when linked project creation provisions', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    projectService.getById.mockResolvedValue(linked);
+    await service.provision(PROJECT.id);
+    expect(projectService.inspectLinkedDriveFolder).toHaveBeenCalledWith(
+      linked,
+    );
+    expect(googleDriveService.ensureFolder).not.toHaveBeenCalled();
+    expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+    expect(googleDriveService.trashFile).not.toHaveBeenCalled();
+  });
+
+  it('reports missing template folders during reads without completing them', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    projectService.getById.mockResolvedValue(linked);
+    const contents = await service.getContents(PROJECT.id, {});
+    expect(contents.missingTemplateFolders).toEqual(['CAD']);
+    expect(googleDriveService.ensureFolder).not.toHaveBeenCalled();
+  });
+
+  it('only completes the template through the explicit command and retains the linked root', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    projectService.getById.mockResolvedValue(linked);
+    await Promise.all([
+      service.completeTemplate(PROJECT.id),
+      service.completeTemplate(PROJECT.id),
+    ]);
+    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
+      `01_${PROJECT.code}`,
+      PROJECT_FOLDER_ID,
+    );
+    expect(googleDriveService.ensureFolder).not.toHaveBeenCalledWith(
+      PROJECT.name,
+      ROOT_ID,
+      PROJECT.id,
+    );
+    expect(projectService.setDriveFolderId).not.toHaveBeenCalled();
+    expect(googleDriveService.moveFile).not.toHaveBeenCalled();
+    expect(googleDriveService.trashFile).not.toHaveBeenCalled();
+  });
+
+  it('runs queued completion after a failed provision and keeps later callers on the queued operation', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    projectService.getById.mockResolvedValue(linked);
+    const controls: {
+      rejectFirst: (reason: Error) => void;
+      finishSecond: () => void;
+    } = {
+      rejectFirst: () => {},
+      finishSecond: () => {},
+    };
+    const firstInspection = new Promise<string[]>((_resolve, reject) => {
+      controls.rejectFirst = reject;
+    });
+    const secondInspection = new Promise<string[]>((resolve) => {
+      controls.finishSecond = () => resolve(['CAD']);
+    });
+    projectService.inspectLinkedDriveFolder
+      .mockReturnValueOnce(firstInspection)
+      .mockReturnValueOnce(secondInspection);
+    const first = service.provision(PROJECT.id);
+    const firstFailure = expect(first).rejects.toThrow(
+      'first inspection failed',
+    );
+    const completion = service.completeTemplate(PROJECT.id);
+    controls.rejectFirst(new Error('first inspection failed'));
+    await firstFailure;
+    expect(service.provision(PROJECT.id)).toBe(completion);
+    controls.finishSecond();
+    await expect(completion).resolves.toMatchObject(linked);
+    expect(projectService.inspectLinkedDriveFolder).toHaveBeenCalledTimes(2);
+    expect(googleDriveService.ensureFolder).toHaveBeenCalledWith(
+      `01_${PROJECT.code}`,
+      PROJECT_FOLDER_ID,
+    );
+  });
+
+  it('stops completion before mutating an ambiguous or relocated linked folder', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    projectService.getById.mockResolvedValue(linked);
+    projectService.inspectLinkedDriveFolder.mockRejectedValue(
+      new ConflictException('ambiguous folder'),
+    );
+    await expect(service.completeTemplate(PROJECT.id)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(googleDriveService.ensureFolder).not.toHaveBeenCalled();
   });
 });

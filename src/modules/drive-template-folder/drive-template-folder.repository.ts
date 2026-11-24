@@ -5,8 +5,8 @@ import { TDriveTemplateFolderCreationAttributes } from './interfaces/drive-templ
 
 @Injectable()
 export class DriveTemplateFolderRepository {
-  findAll(): Promise<DriveTemplateFolder[]> {
-    return DriveTemplateFolder.findAll();
+  findAll(transaction?: Transaction): Promise<DriveTemplateFolder[]> {
+    return DriveTemplateFolder.findAll({ transaction });
   }
 
   findById(id: string): Promise<DriveTemplateFolder | null> {

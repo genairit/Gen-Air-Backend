@@ -35,6 +35,13 @@ export class CatalogueItemService {
   search(query: CatalogueQueryDto, userId: string): Promise<CatalogueItem[]> {
     return this.repository.search(query, userId);
   }
+  recommended(
+    query: CatalogueQueryDto,
+    userId: string,
+    transaction: Transaction,
+  ): Promise<CatalogueItem[]> {
+    return this.repository.recommended(query, userId, transaction);
+  }
   listForMaintenance(
     query: GetCatalogueMaintenanceDto,
   ): ReturnType<CatalogueItemRepository['listForMaintenance']> {

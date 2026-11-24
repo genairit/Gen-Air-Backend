@@ -21,16 +21,12 @@ import {
   resolveTaskCustomerId,
 } from './utilities/task-link.utility';
 
-import {
-  USER_ROLES,
-  ENGINEERING_USER_ROLES,
-} from '@Constants/user-role.constant';
-
 import { TaskRepository } from './task.repository';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { UserService } from '@Modules/user/user.service';
+import { TASK_SORTS } from './constants/task-sort.constant';
 import { GetTasksByFilterDto } from './dto/get-by-filter.dto';
 import { Transaction, UniqueConstraintError } from 'sequelize';
 import { isDueDateBeforeToday } from '@Utilities/date.utility';
@@ -43,6 +39,7 @@ import { TaskStatusType } from './constants/task-status.constant';
 import { assertPermissions } from '@Utilities/permission.utility';
 import { isProtectedTaskType } from './utilities/task-type.utility';
 import { TASK_TYPES, TaskType } from './constants/task-type.constant';
+import { ENGINEERING_USER_ROLES } from '@Constants/user-role.constant';
 import { findChangedAssigneeId } from './utilities/task-assignee.utility';
 import { EMPTY_TASK_STATUS_COUNTS } from './constants/task-status.constant';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
@@ -84,6 +81,7 @@ export class TaskService {
 
   getByFilter(filter: GetTasksByFilterDto): Promise<ICursorPage<ITask>> {
     const scopedFilter: ITaskFilter = {
+      sort: filter.sort ?? TASK_SORTS.DEFAULT,
       search: filter.search ?? null,
       projectId: filter.projectId ?? null,
       customerId: filter.customerId ?? null,

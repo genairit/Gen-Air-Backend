@@ -3,6 +3,7 @@ import {
   IDriveTemplateFolderNode,
 } from './interfaces/drive-template-folder.interface';
 
+import type { Transaction } from 'sequelize';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { buildFolderTree } from './utilities/drive-template-tree.utility';
 import { DriveTemplateFolderRepository } from './drive-template-folder.repository';
@@ -15,8 +16,11 @@ export class DriveTemplateFolderService {
     private readonly driveTemplateFolderRepository: DriveTemplateFolderRepository,
   ) {}
 
-  async getTree(): Promise<IDriveTemplateFolderNode[]> {
-    const folders = await this.driveTemplateFolderRepository.findAll();
+  async getTree(
+    transaction?: Transaction,
+  ): Promise<IDriveTemplateFolderNode[]> {
+    const folders =
+      await this.driveTemplateFolderRepository.findAll(transaction);
 
     return buildFolderTree(folders);
   }

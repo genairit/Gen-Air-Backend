@@ -19,9 +19,11 @@ import type { UserRoleService } from '@Modules/user-role/user-role.service';
 import type { SaveQuotationDto } from '../modules/quotation/dto/save-quotation.dto';
 import type { QuotationRepository } from '../modules/quotation/quotation.repository';
 import { QUOTATION_STATUS } from '../modules/quotation/constants/quotation.constant';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import type { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
+import { TaskQuotationLinksService } from '@Modules/quotation/task-quotation-links.service';
 import type { QuotationSelectionService } from '../modules/quotation/quotation-selection.service';
 import type { IQuotationView } from '../modules/quotation/interfaces/quotation-document.interface';
 import type { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
@@ -93,6 +95,8 @@ const createService = (
     transactions,
     users,
     userRoles,
+    mock<TaskQuotationLinksService>(),
+    mock<PublicationService>(),
   );
   jest.spyOn(service, 'document').mockResolvedValue(quotation);
   jest.spyOn(service, 'getById').mockResolvedValue(mock<IQuotationView>());
@@ -197,7 +201,7 @@ describe('approved quotation sales-agent updates', () => {
       actorWithEmployeeRead,
     );
 
-    expect(repository.update).toHaveBeenCalled();
+    expect(repository.update.mock.calls.length).toBeGreaterThan(0);
   });
 
   test('rejects changes to cancelled quotations before looking up an employee', async () => {

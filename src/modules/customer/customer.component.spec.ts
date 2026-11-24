@@ -2,12 +2,15 @@ import request from 'supertest';
 import { Server } from 'node:http';
 import { Test } from '@nestjs/testing';
 import { APP_GUARD } from '@nestjs/core';
+import { mock } from 'jest-mock-extended';
 import { AuthGuard } from '@Guards/auth.guard';
 import { CustomerService } from './customer.service';
+import { Customer } from './entities/customer.entity';
 import { AuthService } from '@Modules/auth/auth.service';
 import { CustomerController } from './customer.controller';
 import { CustomerRepository } from './customer.repository';
 import { USER_ROLES } from '@Constants/user-role.constant';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { baselinePermissions } from '../../testing/authorization.fixture';
 import { CustomerProjectLinkService } from './customer-project-link.service';
@@ -58,7 +61,10 @@ describe('CRM-only customer creation API', () => {
               Promise.resolve({
                 role,
                 id: 'trusted-user',
-                permissions: baselinePermissions(role),
+                permissions:
+                  role === 'own-details-editor'
+                    ? [PERMISSIONS.CUSTOMERS_READ, PERMISSIONS.CUSTOMERS_UPDATE]
+                    : baselinePermissions(role),
               }),
           },
         },
@@ -76,6 +82,7 @@ describe('CRM-only customer creation API', () => {
   });
   beforeEach(() => jest.clearAllMocks());
   afterAll(async () => application.app?.close());
+  afterEach(() => jest.restoreAllMocks());
 
   it('rejects anonymous creation', async () => {
     await request(application.app!.getHttpServer())
@@ -116,6 +123,7 @@ describe('CRM-only customer creation API', () => {
           phone: null,
           email: null,
           paymentTerms: null,
+          paymentSchedule: [],
           createdById: 'trusted-user',
         },
         dependencies.transaction,
@@ -146,5 +154,61 @@ describe('CRM-only customer creation API', () => {
       .send({ ...CUSTOMER_INPUT, taxId: '514287938' })
       .expect(400);
     expect(customerRepository.create).not.toHaveBeenCalled();
+  });
+  it.each([
+    { phone: null, email: 'customer@example.com' },
+    { phone: '+442071838750', email: null },
+    { phone: null, email: null },
+  ])(
+    'accepts optional own details without a separate contact name: %j',
+    async (details) => {
+      await request(application.app!.getHttpServer())
+        .post('/customer')
+        .auth(USER_ROLES.SYSTEM_ADMIN, { type: 'bearer' })
+        .send({ ...CUSTOMER_INPUT, contactName: null, ...details })
+        .expect(201);
+      expect(dependencies.ownContact.setDetails).toHaveBeenCalledWith(
+        STORED_CUSTOMER,
+        details,
+        dependencies.transaction,
+      );
+    },
+  );
+
+  it('permits own-details editing with only customer permissions and supports explicit null clearing', async () => {
+    const customer = mock<Customer>({ ...STORED_CUSTOMER });
+    customer.update.mockResolvedValue(customer);
+    jest.spyOn(Customer, 'findByPk').mockResolvedValue(customer);
+    await request(application.app!.getHttpServer())
+      .patch('/customer/11111111-1111-4111-8111-111111111111')
+      .auth('own-details-editor', { type: 'bearer' })
+      .send({ phone: '+442071838750', email: null })
+      .expect(200);
+    expect(dependencies.ownContact.setDetails).toHaveBeenCalledWith(
+      customer,
+      { phone: '+442071838750', email: null },
+      dependencies.transaction,
+    );
+  });
+
+  it.each([{ email: 'invalid' }, { phone: '123' }])(
+    'rejects invalid own details before any customer mutation: %j',
+    async (changes) => {
+      await request(application.app!.getHttpServer())
+        .patch('/customer/11111111-1111-4111-8111-111111111111')
+        .auth('own-details-editor', { type: 'bearer' })
+        .send(changes)
+        .expect(400);
+      expect(dependencies.ownContact.setDetails).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects an engineering account without customer-update permission', async () => {
+    await request(application.app!.getHttpServer())
+      .patch('/customer/11111111-1111-4111-8111-111111111111')
+      .auth(USER_ROLES.ENGINEER, { type: 'bearer' })
+      .send({ email: 'new@example.com' })
+      .expect(403);
+    expect(dependencies.ownContact.setDetails).not.toHaveBeenCalled();
   });
 });
