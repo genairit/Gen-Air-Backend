@@ -6,6 +6,7 @@ import { QuotationPdfService } from './quotation-pdf.service';
 import { ProjectService } from '@Modules/project/project.service';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { quotationDocumentFixture } from '../../testing/quotation.fixture';
+import { QuotationPdfSnapshotService } from './quotation-pdf-snapshot.service';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
 
 const pdf = Buffer.from('%PDF-1.7\nquotation');
@@ -50,6 +51,7 @@ beforeAll(async () => {
   const module = await Test.createTestingModule({
     providers: [
       QuotationPdfService,
+      QuotationPdfSnapshotService,
       { provide: ConfigService, useValue: config },
       { provide: QuotationService, useValue: quotation },
       {
@@ -58,7 +60,7 @@ beforeAll(async () => {
       },
       {
         provide: ProjectService,
-        useValue: { getById: jest.fn().mockResolvedValue(project) },
+        useValue: { quotationSnapshot: jest.fn().mockResolvedValue(project) },
       },
       {
         provide: UserService,
@@ -102,17 +104,13 @@ it('returns a downloadable PDF without a Drive upload when no project is linked'
   );
 });
 
-it('uploads a linked quotation before returning the same PDF bytes', async () => {
+it('downloads a linked quotation without Drive publication', async (): Promise<void> => {
   document.projectId = project.id;
   const result = await exportPdf();
   expect(result.filename).toBe(
     'הצעת מחיר 2610-000001_לקוח_P-204_12_אלקטרה.pdf',
   );
-  expect(drive.uploadQuotationPdf).toHaveBeenCalledWith(
-    project.id,
-    result.filename,
-    pdf,
-  );
+  expect(drive.uploadQuotationPdf).not.toHaveBeenCalled();
   expect(result.pdf).toEqual(pdf);
 });
 
@@ -138,10 +136,11 @@ it('rejects invalid worker output and never uploads', async () => {
   expect(drive.uploadQuotationPdf).not.toHaveBeenCalled();
 });
 
-it('does not return a linked quotation when its Drive upload fails', async () => {
+it('preserves manual download while Drive is unavailable', async (): Promise<void> => {
   document.projectId = project.id;
   drive.uploadQuotationPdf.mockRejectedValue(new Error('Drive unavailable'));
-  await expect(exportPdf()).rejects.toThrow('Drive unavailable');
+  expect((await exportPdf()).pdf).toEqual(pdf);
+  expect(drive.uploadQuotationPdf).not.toHaveBeenCalled();
 });
 
 it('renders the explicit customer primary contact rather than unrelated or legacy customer details', async () => {

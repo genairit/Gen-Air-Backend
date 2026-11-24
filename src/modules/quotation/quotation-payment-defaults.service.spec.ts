@@ -13,6 +13,7 @@ import type { UserRoleService } from '@Modules/user-role/user-role.service';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import type { QuotationSelectionService } from './quotation-selection.service';
 import type { ICustomer } from '@Modules/customer/interfaces/customer.interface';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import type { IPaymentConfiguration } from '@Interfaces/payment-configuration.interface';
 import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
@@ -71,6 +72,7 @@ const setup = (configuration: IPaymentConfiguration) => {
     users,
     userRoles,
     mock<TaskQuotationLinksService>(),
+    mock<PublicationService>(),
   );
   jest.spyOn(service, 'getById').mockResolvedValue(mock({ id: randomUUID() }));
   jest.spyOn(service, 'document').mockResolvedValue(current);

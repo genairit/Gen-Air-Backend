@@ -24,8 +24,21 @@ import {
   TFileCountByFolderId,
 } from '@Interfaces/google-drive.interface';
 
+import type {
+  IProjectDriveContents,
+  IProjectDriveProvisioning,
+  IProjectDriveTemplateContext,
+  IProjectDriveTemplateFolders,
+} from './interfaces/project-drive.interface';
+
+import type {
+  IPublicationFolder,
+  IPublicationFolderScope,
+} from '@Modules/quotation-publication/interfaces/publication.interface';
+
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Transaction } from 'sequelize';
 import { OnEvent } from '@nestjs/event-emitter';
 import { DriveFolderDto } from './dto/drive-folder.dto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -37,7 +50,6 @@ import { decodeUploadedFileName } from '@Utilities/upload.utility';
 import { IProject } from '@Modules/project/interfaces/project.interface';
 import { ISharedDocument } from './interfaces/shared-document.interface';
 import { ApartmentFolderRepairDto } from './dto/apartment-folder-repair.dto';
-import { IProjectDriveContents } from './interfaces/project-drive.interface';
 import { SHARED_DOCUMENT_STATUS } from './constants/shared-document.constant';
 import { renderDriveFolderName } from './utilities/drive-folder-name.utility';
 import { toProjectDriveFolder } from './utilities/drive-folder-status.utility';
@@ -45,13 +57,14 @@ import type { IProjectCreatedEvent } from '@Interfaces/domain-event.interface';
 import { validateDriveUploads } from '@Utilities/validate-drive-upload.utility';
 import { GoogleDriveService } from '@Providers/google-drive/google-drive.service';
 import { IApartmentFolderRepair } from './interfaces/apartment-folder-repair.interface';
+import { PUBLICATION_ROLE } from '@Modules/quotation-publication/constants/publication.constant';
 import { PreviewDriveFolderDto } from '@Modules/project-drive-link/dto/preview-drive-folder.dto';
 import { DRIVE_CONNECTION_STATUS } from '@Providers/google-drive/constants/drive-connection.constant';
 import { getDriveConnectionFailure } from '@Providers/google-drive/utilities/drive-connection.utility';
 import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
 import { IExistingDriveFolder } from '@Modules/project-drive-link/interfaces/drive-folder-link.interface';
 import { DriveTemplateFolderService } from '@Modules/drive-template-folder/drive-template-folder.service';
-import { IDriveTemplateFolderNode } from '@Modules/drive-template-folder/interfaces/drive-template-folder.interface';
+import { PublicationDestinationService } from '@Modules/quotation-publication/publication-destination.service';
 
 type TPendingApartmentFolderRepair = {
   sourceFolderId: string;
@@ -70,6 +83,7 @@ export class ProjectDriveService {
     private readonly projectService: ProjectService,
     private readonly googleDriveService: GoogleDriveService,
     private readonly driveTemplateFolderService: DriveTemplateFolderService,
+    private readonly publicationDestinations: PublicationDestinationService,
   ) {}
 
   checkConnection(): Promise<IDriveConnectionResult> {
@@ -82,8 +96,21 @@ export class ProjectDriveService {
     pdf: Buffer,
   ): Promise<IDriveItem> {
     const projectFolderId = await this.resolveProjectFolder(projectId, {});
-    const quotationsFolderId = await this.callDrive(() =>
-      this.googleDriveService.ensureFolder('הצעות מחיר', projectFolderId),
+    await this.projectService.withDriveRootLock(
+      projectId,
+      (transaction): Promise<string> =>
+        this.prepareQuotationRoleFolder(
+          { projectId, rootId: projectFolderId },
+          transaction,
+        ),
+    );
+    const quotationsFolderId = await this.projectService.withDriveRootLock(
+      projectId,
+      (transaction): Promise<string> =>
+        this.confirmQuotationRoleFolder(
+          { projectId, rootId: projectFolderId },
+          transaction,
+        ),
     );
     const temporaryDirectory = await mkdtemp(
       join(tmpdir(), 'genair-quotation-'),
@@ -126,6 +153,49 @@ export class ProjectDriveService {
     }
   }
 
+  private async quotationRoleScope(
+    context: Pick<IPublicationFolderScope, 'projectId' | 'rootId'>,
+    transaction: Transaction,
+  ): Promise<IPublicationFolderScope> {
+    const project = await this.projectService.quotationSnapshot(
+      context.projectId,
+      transaction,
+    );
+    if (project.driveFolderId !== context.rootId) {
+      throw new ConflictException(
+        'Project Drive root changed; refresh before uploading',
+      );
+    }
+
+    return { ...context, linked: project.driveFolderLinked === true };
+  }
+  private async prepareQuotationRoleFolder(
+    context: Pick<IPublicationFolderScope, 'projectId' | 'rootId'>,
+    transaction: Transaction,
+  ): Promise<string> {
+    const scope = await this.quotationRoleScope(context, transaction);
+    const folder = await this.callDrive((): Promise<IPublicationFolder> =>
+      this.publicationDestinations.prepareRoleFolder(
+        scope,
+        PUBLICATION_ROLE.QUOTATION,
+        transaction,
+      ),
+    );
+    return folder.folderId;
+  }
+  private async confirmQuotationRoleFolder(
+    context: Pick<IPublicationFolderScope, 'projectId' | 'rootId'>,
+    transaction: Transaction,
+  ): Promise<string> {
+    const scope = await this.quotationRoleScope(context, transaction);
+    return this.callDrive((): Promise<string> =>
+      this.publicationDestinations.ensureRoleFolder(
+        scope,
+        PUBLICATION_ROLE.QUOTATION,
+        transaction,
+      ),
+    );
+  }
   previewExistingFolder(
     input: PreviewDriveFolderDto,
   ): Promise<IExistingDriveFolder> {
@@ -153,7 +223,35 @@ export class ProjectDriveService {
     mode: DriveProvisioningModeType,
   ): Promise<IProject> {
     const previous = this.provisioning.get(projectId) ?? Promise.resolve(null);
-    const run = () => this.provisionProject(projectId, mode);
+    const run = async (): Promise<IProject> => {
+      const project = await this.projectService.getById(projectId);
+      if (project.driveFolderLinked) {
+        await this.projectService.inspectLinkedDriveFolder(project);
+      }
+      if (project.parentProjectId) {
+        await this.provision(project.parentProjectId);
+      }
+      const prepared = await this.projectService.withDriveRootLock(
+        projectId,
+        (transaction): Promise<IProject> =>
+          this.prepareProjectFolders({
+            projectId,
+            mode,
+            transaction,
+            expectedRootId: project.driveFolderId,
+          }),
+      );
+      return this.projectService.withDriveRootLock(
+        projectId,
+        (transaction): Promise<IProject> =>
+          this.confirmProjectFolders({
+            projectId,
+            mode,
+            transaction,
+            expectedRootId: prepared.driveFolderId,
+          }),
+      );
+    };
     // Each queued request runs independently of the previous caller's outcome.
     const operation = previous.then(run, run).finally(() => {
       if (this.provisioning.get(projectId) === operation) {
@@ -166,9 +264,13 @@ export class ProjectDriveService {
 
   async getApartmentFolderRepair(
     projectId: string,
+    transaction?: Transaction,
   ): Promise<IApartmentFolderRepair> {
     this.assertDriveConfigured();
-    const apartment = await this.projectService.getById(projectId);
+    const apartment = await this.projectService.quotationSnapshot(
+      projectId,
+      transaction,
+    );
     if (!apartment.parentProjectId) {
       throw new BadRequestException('Select an apartment project');
     }
@@ -177,8 +279,9 @@ export class ProjectDriveService {
       throw new ConflictException('Provision this apartment first');
     }
 
-    const building = await this.projectService.getById(
+    const building = await this.projectService.quotationSnapshot(
       apartment.parentProjectId,
+      transaction,
     );
     const buildingFolderId = building.driveFolderId;
     if (!buildingFolderId) {
@@ -299,26 +402,33 @@ export class ProjectDriveService {
     projectId: string,
     repair: ApartmentFolderRepairDto,
   ): Promise<IProject> {
-    const preview = await this.getApartmentFolderRepair(projectId);
-    const matchesSource = preview.sourceFolderId === repair.sourceFolderId;
-    const matchesDestination =
-      preview.destinationFolderId === repair.destinationFolderId;
-    if (!matchesSource || !matchesDestination) {
-      throw new ConflictException(
-        'The apartment folder repair plan has changed',
-      );
-    }
+    await this.projectService.withDriveRootLock(
+      projectId,
+      async (transaction): Promise<void> => {
+        const preview = await this.getApartmentFolderRepair(
+          projectId,
+          transaction,
+        );
+        const matchesSource = preview.sourceFolderId === repair.sourceFolderId;
+        const matchesDestination =
+          preview.destinationFolderId === repair.destinationFolderId;
+        if (!matchesSource || !matchesDestination) {
+          throw new ConflictException(
+            'The apartment folder repair plan has changed',
+          );
+        }
 
-    if (preview.status === 'needs_move') {
-      await this.callDrive(() =>
-        this.googleDriveService.moveFile({
-          fileId: preview.sourceFolderId,
-          parentIds: [this.getProjectsRootFolderId()],
-          destinationFolderId: preview.destinationFolderId,
-        }),
-      );
-    }
-
+        if (preview.status === 'needs_move') {
+          await this.callDrive((): ReturnType<GoogleDriveService['moveFile']> =>
+            this.googleDriveService.moveFile({
+              fileId: preview.sourceFolderId,
+              parentIds: [this.getProjectsRootFolderId()],
+              destinationFolderId: preview.destinationFolderId,
+            }),
+          );
+        }
+      },
+    );
     return this.provision(projectId);
   }
 
@@ -538,27 +648,108 @@ export class ProjectDriveService {
     return item;
   }
 
-  private async provisionProject(
-    projectId: string,
-    mode: DriveProvisioningModeType,
+  private async prepareProjectFolders(
+    context: IProjectDriveProvisioning,
   ): Promise<IProject> {
+    const prepared = await this.prepareProjectTemplateContext(context);
+    if (!prepared) {
+      return this.projectService.quotationSnapshot(
+        context.projectId,
+        context.transaction,
+      );
+    }
+
+    const { project, projectFolderId, templateNodes } = prepared;
+    for (const templateNode of templateNodes) {
+      await this.callDrive((): Promise<void> =>
+        this.publicationDestinations.prepareTemplateRoleFolder(
+          project.id,
+          projectFolderId,
+          templateNode.id,
+          context.transaction,
+        ),
+      );
+    }
+    if (!project.driveFolderId) {
+      await this.projectService.setDriveFolderId(
+        project.id,
+        projectFolderId,
+        context.transaction,
+      );
+    }
+
+    return this.projectService.quotationSnapshot(
+      context.projectId,
+      context.transaction,
+    );
+  }
+  private async confirmProjectFolders(
+    context: IProjectDriveProvisioning,
+  ): Promise<IProject> {
+    const prepared = await this.prepareProjectTemplateContext(context);
+    if (!prepared) {
+      return this.projectService.quotationSnapshot(
+        context.projectId,
+        context.transaction,
+      );
+    }
+
+    const { project, projectFolderId, templateNodes } = prepared;
+    await this.callDrive((): Promise<void> =>
+      this.createRootTemplateFolders({
+        project,
+        templateNodes,
+        parentFolderId: projectFolderId,
+        transaction: context.transaction,
+      }),
+    );
+    const needsApartmentsFolder =
+      !project.parentProjectId && project.projectType?.canHaveApartments;
+    if (needsApartmentsFolder) {
+      await this.callDrive((): Promise<string> =>
+        this.googleDriveService.ensureFolder(
+          APARTMENTS_FOLDER_NAME,
+          projectFolderId,
+        ),
+      );
+    }
+    if (!project.driveFolderId) {
+      await this.projectService.setDriveFolderId(
+        project.id,
+        projectFolderId,
+        context.transaction,
+      );
+    }
+
+    return this.projectService.quotationSnapshot(
+      context.projectId,
+      context.transaction,
+    );
+  }
+  private async prepareProjectTemplateContext(
+    context: IProjectDriveProvisioning,
+  ): Promise<IProjectDriveTemplateContext | null> {
+    const { projectId, mode, transaction, expectedRootId } = context;
     const projectsRootFolderId = this.getProjectsRootFolderId();
     const [project, templateTree] = await Promise.all([
-      this.projectService.getById(projectId),
-      this.driveTemplateFolderService.getTree(),
+      this.projectService.quotationSnapshot(projectId, transaction),
+      this.driveTemplateFolderService.getTree(transaction),
     ]);
-    if (project.driveFolderLinked) {
-      await this.projectService.inspectLinkedDriveFolder(project);
+    if (project.driveFolderId !== expectedRootId) {
+      throw new ConflictException(
+        'Project Drive root changed; refresh before provisioning',
+      );
     }
+
     if (
       project.driveFolderLinked &&
       mode !== DRIVE_PROVISIONING_MODE.COMPLETE_TEMPLATE
     ) {
-      return project;
+      return null;
     }
 
     const parentFolderId = project.parentProjectId
-      ? await this.getApartmentsFolderId(project.parentProjectId)
+      ? await this.getApartmentsFolderId(project.parentProjectId, transaction)
       : projectsRootFolderId;
     const projectFolderId = await this.ensureProjectFolder(
       project,
@@ -568,25 +759,15 @@ export class ProjectDriveService {
       await this.assertApartmentFolderLocation(projectFolderId, parentFolderId);
     }
 
+    await this.projectService.lockDriveRootCandidate(
+      project.id,
+      projectFolderId,
+      transaction,
+    );
     const templateNodes = project.parentProjectId
       ? templateTree.filter((node) => node.name !== APARTMENTS_FOLDER_NAME)
       : templateTree;
-    await this.callDrive(() =>
-      this.createTemplateFolders(project, templateNodes, projectFolderId),
-    );
-    if (!project.parentProjectId && project.projectType?.canHaveApartments) {
-      await this.callDrive(() =>
-        this.googleDriveService.ensureFolder(
-          APARTMENTS_FOLDER_NAME,
-          projectFolderId,
-        ),
-      );
-    }
-
-    if (!project.driveFolderId) {
-      await this.projectService.setDriveFolderId(project.id, projectFolderId);
-    }
-    return this.projectService.getById(projectId);
+    return { project, projectFolderId, templateNodes };
   }
 
   private async ensureProjectFolder(
@@ -608,8 +789,14 @@ export class ProjectDriveService {
     return projectFolderId;
   }
 
-  private async getApartmentsFolderId(buildingId: string): Promise<string> {
-    const building = await this.provision(buildingId);
+  private async getApartmentsFolderId(
+    buildingId: string,
+    transaction: Transaction,
+  ): Promise<string> {
+    const building = await this.projectService.quotationSnapshot(
+      buildingId,
+      transaction,
+    );
     const buildingFolderId = building.driveFolderId;
     if (!buildingFolderId) {
       throw new ConflictException('The building Drive folder is unavailable');
@@ -642,26 +829,59 @@ export class ProjectDriveService {
     }
   }
 
-  private async createTemplateFolders(
-    project: IProject,
-    templateNodes: IDriveTemplateFolderNode[],
-    parentFolderId: string,
+  private async createRootTemplateFolders(
+    context: IProjectDriveTemplateFolders,
   ): Promise<void> {
+    const { project, templateNodes, parentFolderId, transaction } = context;
     const results = await Promise.allSettled(
-      templateNodes.map(async (templateNode) => {
+      templateNodes.map(async (templateNode): Promise<void> => {
+        const reservedId =
+          await this.publicationDestinations.completeReservedTemplateFolder(
+            project.id,
+            parentFolderId,
+            templateNode.id,
+            transaction,
+          );
+        const folderId =
+          reservedId ??
+          (await this.googleDriveService.ensureFolder(
+            renderDriveFolderName(templateNode.name, project),
+            parentFolderId,
+          ));
+        await this.createChildTemplateFolders({
+          project,
+          templateNodes: templateNode.children,
+          parentFolderId: folderId,
+        });
+      }),
+    );
+    this.assertTemplateFoldersCompleted(results);
+  }
+  private async createChildTemplateFolders(
+    context: Omit<IProjectDriveTemplateFolders, 'transaction'>,
+  ): Promise<void> {
+    const { project, templateNodes, parentFolderId } = context;
+    const results = await Promise.allSettled(
+      templateNodes.map(async (templateNode): Promise<void> => {
         const folderId = await this.googleDriveService.ensureFolder(
           renderDriveFolderName(templateNode.name, project),
           parentFolderId,
         );
-
-        await this.createTemplateFolders(
+        await this.createChildTemplateFolders({
           project,
-          templateNode.children,
-          folderId,
-        );
+          templateNodes: templateNode.children,
+          parentFolderId: folderId,
+        });
       }),
     );
-    const failure = results.find((result) => result.status === 'rejected');
+    this.assertTemplateFoldersCompleted(results);
+  }
+  private assertTemplateFoldersCompleted(
+    results: PromiseSettledResult<void>[],
+  ): void {
+    const failure = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
     if (failure) {
       throw failure.reason;
     }

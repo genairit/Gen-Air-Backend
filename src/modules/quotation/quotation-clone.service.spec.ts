@@ -15,6 +15,7 @@ import type { CustomerService } from '@Modules/customer/customer.service';
 import type { UserRoleService } from '@Modules/user-role/user-role.service';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import type { QuotationSelectionService } from './quotation-selection.service';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import type { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
@@ -137,6 +138,7 @@ const setup = () => {
     users,
     userRoles,
     mock<TaskQuotationLinksService>(),
+    mock<PublicationService>(),
   );
   jest.spyOn(service, 'document').mockResolvedValue(source);
   jest.spyOn(service, 'getById').mockResolvedValue(mock({ id: randomUUID() }));

@@ -198,3 +198,8 @@ export interface IProjectStageCounts {
   total: number;
   byStage: TProjectCountsByStageId;
 }
+
+export interface IProjectDriveRootLock {
+  projectId: string;
+  candidateRootId: string | null;
+}

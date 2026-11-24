@@ -138,6 +138,32 @@ export class ProjectDriveLinkService {
     );
   }
 
+  async assertRootClaimAvailable(
+    folderId: string,
+    buildingId: string | null,
+    excludedProjectId: string | null,
+    transaction: Transaction,
+  ): Promise<void> {
+    await this.assertOwnershipAvailable(
+      folderId,
+      buildingId,
+      excludedProjectId,
+      transaction,
+    );
+    if (!buildingId) {
+      return;
+    }
+
+    const folder = await this.callDrive(
+      (): Promise<IDriveFileMetadata | null> =>
+        this.drive.getFileMetadata(folderId),
+    );
+    if (!folder || folder.trashed) {
+      throw new NotFoundException('The claimed apartment root is unavailable');
+    }
+
+    await this.assertApartmentLocation(folder, buildingId, transaction);
+  }
   async assertOwnershipAvailable(
     folderId: string,
     buildingId: string | null,
@@ -192,8 +218,9 @@ export class ProjectDriveLinkService {
   private async assertApartmentLocation(
     folder: IDriveFileMetadata,
     buildingId: string,
+    transaction?: Transaction,
   ): Promise<void> {
-    const building = await this.projects.findById(buildingId);
+    const building = await this.projects.findById(buildingId, transaction);
     if (
       !building ||
       building.parentProjectId ||

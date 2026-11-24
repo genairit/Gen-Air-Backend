@@ -85,7 +85,6 @@ import { Quotation } from './entities/quotation.entity';
 import { UserService } from '@Modules/user/user.service';
 import { QuotationRepository } from './quotation.repository';
 import { CloneQuotationDto } from './dto/clone-quotation.dto';
-import { PERMISSIONS } from '@Constants/authorization.constant';
 import type { GetQuotationsDto } from './dto/get-quotations.dto';
 import { CATALOGUE_STATUS } from './constants/quotation.constant';
 import { QUOTATION_BRANDS } from './constants/quotation.constant';
@@ -106,6 +105,7 @@ import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import type { IQuotationSalesAgent } from './interfaces/quotation.interface';
 import { toProjectQuotationView } from './utilities/quotation-sharing.utility';
 import { quotationPaymentIssues } from './utilities/quotation-payment.utility';
+import { PERMISSIONS, PermissionType } from '@Constants/authorization.constant';
 import type { GetProjectQuotationsDto } from './dto/get-project-quotations.dto';
 import { resolveQuotationBrandGroups } from './utilities/quotation-brand.utility';
 import { salesAgentDisplayName } from './utilities/quotation-sales-agent.utility';
@@ -116,6 +116,7 @@ import { IQuotationCloneIssue } from './interfaces/quotation-clone-command.inter
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import { isCompatible } from '@Modules/catalogue-item/utilities/catalogue-ranking.utility';
 import type { QuotationLifecycleActionType } from './constants/quotation-lifecycle.constant';
 import type { IQuotationStatusCounts } from './interfaces/quotation-status-counts.interface';
@@ -126,6 +127,7 @@ import { QuotationProjectService } from '@Modules/quotation-project/quotation-pr
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
 import { validateRuleConfiguration } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
+import type { IPublicationSummary } from '@Modules/quotation-publication/interfaces/publication.interface';
 import type { IQuotationPrimaryProject } from '@Modules/quotation-project/interfaces/quotation-project.interface';
 import type { IQuotationCloneTransactionRequest } from './interfaces/quotation-clone-transaction-request.interface';
 
@@ -149,6 +151,7 @@ interface IQuotationLifecycleInput {
   reason?: string | null;
   transaction: Transaction;
   toStatus: TQuotationStatus;
+  permission?: PermissionType;
   current: IQuotationDocument;
   action: QuotationLifecycleActionType;
 }
@@ -169,6 +172,7 @@ export class QuotationService {
     private readonly users: UserService,
     private readonly userRoles: UserRoleService,
     private readonly taskLinks: TaskQuotationLinksService,
+    private readonly publications: PublicationService,
   ) {}
   statusCounts(query: GetQuotationCountsDto): Promise<IQuotationStatusCounts> {
     return this.repository.statusCounts(query.search ?? '');
@@ -245,6 +249,9 @@ export class QuotationService {
     id: string,
     transaction?: Transaction,
   ): Promise<IQuotationDocument> {
+    if (transaction) {
+      await this.publications.lock(id, transaction);
+    }
     const quotation = await this.requireQuotation(id, transaction);
     const primaryProject = await this.links.primaryProject(id, transaction);
     const sections = await this.sections.list([id], transaction);
@@ -305,6 +312,35 @@ export class QuotationService {
         salesAgentName: salesAgent ? salesAgentDisplayName(salesAgent) : null,
       };
     });
+  }
+  async publicationSummary(
+    id: string,
+    actor: IAuthorizedUser,
+  ): Promise<IPublicationSummary> {
+    const quotation = await this.getForActor(id, actor);
+    const mayReadFiles =
+      hasPermission(actor, PERMISSIONS.PROJECTS_READ) &&
+      hasPermission(actor, PERMISSIONS.DRIVE_READ);
+    return this.publications.summary(
+      id,
+      quotation.projectId,
+      mayReadFiles,
+      actor.permissions,
+    );
+  }
+  async retryPublication(
+    id: string,
+    input: { cycleId: string; generation: number },
+    actor: IAuthorizedUser,
+  ): Promise<IPublicationSummary> {
+    await this.getForActor(id, actor);
+    await this.publications.retry(
+      id,
+      input.cycleId,
+      input.generation,
+      actor.permissions,
+    );
+    return this.publicationSummary(id, actor);
   }
   async getForActor(
     id: string,
@@ -902,6 +938,7 @@ export class QuotationService {
     await this.transactions.run(async (transaction) => {
       const current = await this.document(id, transaction);
       this.assertVersion(current, input.version);
+      await this.publications.deleted(id, transaction);
       await this.repository.update(
         id,
         {
@@ -965,15 +1002,7 @@ export class QuotationService {
         userId: actor.id,
         transaction,
       });
-      if (current.status === QUOTATION_STATUS.REVIEW) {
-        await this.auditLifecycle({
-          current,
-          actor,
-          toStatus: QUOTATION_STATUS.DRAFT,
-          action: QUOTATION_LIFECYCLE_ACTION.RETURN,
-          transaction,
-        });
-      }
+
       const oldIds = current.sections.map((section) => section.id);
       await this.items.remove(oldIds, transaction);
       await this.sections.remove([id], transaction);
@@ -1010,6 +1039,16 @@ export class QuotationService {
       );
       if (projectId !== current.projectId) {
         await this.links.replacePrimary(id, projectId, transaction);
+      }
+      if (current.status === QUOTATION_STATUS.REVIEW) {
+        await this.auditLifecycle({
+          current,
+          actor,
+          toStatus: QUOTATION_STATUS.DRAFT,
+          action: QUOTATION_LIFECYCLE_ACTION.RETURN,
+          permission: PERMISSIONS.QUOTATIONS_UPDATE,
+          transaction,
+        });
       }
     });
     return this.getById(id);
@@ -1132,13 +1171,7 @@ export class QuotationService {
           transaction,
         );
       }
-      await this.auditLifecycle({
-        current,
-        actor,
-        toStatus: input.status,
-        action,
-        transaction,
-      });
+
       await this.repository.update(
         id,
         {
@@ -1153,6 +1186,13 @@ export class QuotationService {
         },
         transaction,
       );
+      await this.auditLifecycle({
+        current,
+        actor,
+        toStatus: input.status,
+        action,
+        transaction,
+      });
     });
     return this.getById(id);
   }
@@ -1173,14 +1213,7 @@ export class QuotationService {
       if (current.status !== QUOTATION_STATUS.REVIEW) {
         throw new ConflictException('ניתן להחזיר לתיקון רק הצעה בבדיקה');
       }
-      await this.auditLifecycle({
-        current,
-        actor,
-        toStatus: QUOTATION_STATUS.DRAFT,
-        action: QUOTATION_LIFECYCLE_ACTION.REJECT,
-        transaction,
-        reason,
-      });
+
       await this.repository.update(
         id,
         {
@@ -1204,6 +1237,14 @@ export class QuotationService {
         },
         transaction,
       );
+      await this.auditLifecycle({
+        current,
+        actor,
+        toStatus: QUOTATION_STATUS.DRAFT,
+        action: QUOTATION_LIFECYCLE_ACTION.REJECT,
+        transaction,
+        reason,
+      });
     });
     return this.getById(id);
   }
@@ -1226,13 +1267,7 @@ export class QuotationService {
       if (!current.sections.some((section): number => section.items.length)) {
         throw new BadRequestException('יש להוסיף פריטים לפני בדיקה');
       }
-      await this.auditLifecycle({
-        current,
-        actor,
-        toStatus: QUOTATION_STATUS.REVIEW,
-        action: QUOTATION_LIFECYCLE_ACTION.RESUBMIT,
-        transaction,
-      });
+
       await this.repository.update(
         id,
         {
@@ -1250,6 +1285,13 @@ export class QuotationService {
         },
         transaction,
       );
+      await this.auditLifecycle({
+        current,
+        actor,
+        toStatus: QUOTATION_STATUS.REVIEW,
+        action: QUOTATION_LIFECYCLE_ACTION.RESUBMIT,
+        transaction,
+      });
     });
     return this.getById(id);
   }
@@ -1273,14 +1315,6 @@ export class QuotationService {
         throw new ConflictException('הצעת המחיר כבר מבוטלת');
       }
 
-      await this.auditLifecycle({
-        current,
-        actor: user,
-        toStatus: QUOTATION_STATUS.CANCELLED,
-        action: QUOTATION_LIFECYCLE_ACTION.CANCEL,
-        transaction,
-        reason,
-      });
       await this.cancelQuotation({
         quotation: current,
         actorId: user.id,
@@ -1289,6 +1323,14 @@ export class QuotationService {
         kind: QUOTATION_CANCELLATION_KIND.MANUAL,
         cancelledAt: new Date().toISOString(),
         transaction,
+      });
+      await this.auditLifecycle({
+        current,
+        actor: user,
+        toStatus: QUOTATION_STATUS.CANCELLED,
+        action: QUOTATION_LIFECYCLE_ACTION.CANCEL,
+        transaction,
+        reason,
       });
     });
 
@@ -1319,13 +1361,7 @@ export class QuotationService {
       ) {
         throw new ConflictException('לא ניתן לשחזר את הצעת המחיר');
       }
-      await this.auditLifecycle({
-        current,
-        actor: user,
-        toStatus: restored.status,
-        action: QUOTATION_LIFECYCLE_ACTION.RESTORE,
-        transaction,
-      });
+
       await this.repository.update(
         id,
         {
@@ -1337,6 +1373,13 @@ export class QuotationService {
         },
         transaction,
       );
+      await this.auditLifecycle({
+        current,
+        actor: user,
+        toStatus: restored.status,
+        action: QUOTATION_LIFECYCLE_ACTION.RESTORE,
+        transaction,
+      });
     });
 
     return this.getById(id);
@@ -1569,9 +1612,10 @@ export class QuotationService {
       rejectionHistory,
       cancellationHistory,
     } = current;
+    const eventId = randomUUID();
     await this.repository.appendLifecycleEvent(
       {
-        id: randomUUID(),
+        id: eventId,
         quotationId: current.id,
         action,
         fromStatus: current.status,
@@ -1595,6 +1639,29 @@ export class QuotationService {
       },
       transaction,
     );
+    const approvalActions: QuotationLifecycleActionType[] = [
+      QUOTATION_LIFECYCLE_ACTION.SUBMIT,
+      QUOTATION_LIFECYCLE_ACTION.APPROVE,
+      QUOTATION_LIFECYCLE_ACTION.RETURN,
+      QUOTATION_LIFECYCLE_ACTION.REJECT,
+    ];
+    const defaultPermission = approvalActions.includes(action)
+      ? PERMISSIONS.QUOTATIONS_APPROVE
+      : PERMISSIONS.QUOTATIONS_UPDATE;
+    const publicationPermission = input.permission ?? defaultPermission;
+    const publishes =
+      toStatus === QUOTATION_STATUS.REVIEW ||
+      toStatus === QUOTATION_STATUS.APPROVED;
+    const publicationDocument = publishes
+      ? await this.document(current.id, transaction)
+      : { ...current, status: toStatus, version: current.version + 1 };
+    await this.publications.lifecycle({
+      eventId,
+      permission: publicationPermission,
+      actorId: actor.id,
+      transaction,
+      document: publicationDocument,
+    });
   }
   private assertVersion(current: IQuotationDocument, version: number): void {
     if (current.version !== version) {

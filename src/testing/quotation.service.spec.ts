@@ -19,6 +19,7 @@ import type { UserRoleService } from '@Modules/user-role/user-role.service';
 import type { SaveQuotationDto } from '../modules/quotation/dto/save-quotation.dto';
 import type { QuotationRepository } from '../modules/quotation/quotation.repository';
 import { QUOTATION_STATUS } from '../modules/quotation/constants/quotation.constant';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import type { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
 import type { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import type { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
@@ -95,6 +96,7 @@ const createService = (
     users,
     userRoles,
     mock<TaskQuotationLinksService>(),
+    mock<PublicationService>(),
   );
   jest.spyOn(service, 'document').mockResolvedValue(quotation);
   jest.spyOn(service, 'getById').mockResolvedValue(mock<IQuotationView>());

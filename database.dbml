@@ -897,3 +897,70 @@ Table quotation_lifecycle_events {
     (quotation_id, quotation_version) [unique]
   }
 }
+
+Table quotation_publication_roles {
+  role text [pk, note: 'quotation/order/archive stable semantic destination']
+  template_id uuid [not null, unique, ref: > drive_template_folders.id]
+}
+Table quotation_publication_folders {
+  project_id uuid [not null, ref: > projects.id]
+  role text [not null, ref: > quotation_publication_roles.role]
+  root_id text [not null]
+  folder_id text [not null, unique]
+  label text [not null]
+  confirmed boolean [not null, default: false]
+  indexes {
+    (project_id,root_id,role) [pk]
+    role
+  }
+}
+Table quotation_publication_cycles {
+  id uuid [pk]
+  quotation_id uuid [not null, ref: > quotations.id]
+  project_id uuid [not null, ref: > projects.id]
+  root_id text
+  root_context jsonb [not null, note: 'Frozen linked policy, project label and original building root; populated atomically with first non-null root']
+  file_id text [unique]
+  terminal boolean [not null, default: false]
+  generation integer [not null]
+  desired_kind text [not null]
+  source_version integer [not null]
+  state text [not null]
+  reason text
+  destination_label text
+  actual_folder_id text
+  actual_hash text
+  updated_at timestamptz [not null, default: `now()`]
+  indexes {
+    quotation_id
+    project_id
+  }
+  Note: 'One nonterminal cycle per quotation. Reserved Google identity and original canonical project never replaced on resubmission.'
+}
+Table quotation_publication_operations {
+  id uuid [pk]
+  cycle_id uuid [not null, ref: > quotation_publication_cycles.id]
+  lifecycle_event_id uuid [unique, ref: > quotation_lifecycle_events.id]
+  generation integer [not null]
+  kind text
+  source_version integer [not null]
+  retry_permission text [not null]
+  source_hash text [not null]
+  snapshot jsonb
+  state text [not null]
+  job_id uuid [not null, unique, note: 'Current server render-attempt identity; rotates only when hash-null retry needs a fresh render']
+  attempt integer [not null, default: 0]
+  pdf bytea [note: 'At most 4MiB per proposal/order stage; released after verified pinned revision, otherwise retained bounded fallback']
+  hash text [note: 'Immutable first accepted SHA256 survives byte release']
+  md5_hash text [note: 'Immutable accepted Drive checksum authority']
+  revision_id text
+  destination_label text [note: 'Immutable verified project/folder context for this stage']
+  destination_folder_id text
+  effect_started boolean [not null, default: false]
+  effect_owner uuid [note: 'Fences a locally unused prepared attempt from another executor attempt']
+  dispatched_at timestamptz
+  reason text
+  updated_at timestamptz [not null, default: `now()`]
+  indexes { (cycle_id,generation) [unique] }
+  Note: 'Transactional outbox and append-only stage history; immutable snapshots and first accepted hashes, no delete/truncate. Lifecycle ID nullable only for soft-delete maintenance.'
+}

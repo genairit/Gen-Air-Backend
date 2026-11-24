@@ -40,6 +40,7 @@ import { GetProjectQuotationsDto } from './dto/get-project-quotations.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
+import { RetryQuotationPublicationDto } from './dto/retry-quotation-publication.dto';
 import { RecommendedCloneQuotationDto } from './dto/recommended-clone-quotation.dto';
 
 @Controller('quotation')
@@ -105,6 +106,23 @@ export class QuotationController {
     user: IAuthorizedUser,
   ): ReturnType<QuotationService['getForActor']> {
     return this.service.getForActor(id, user);
+  }
+  @Get(':id/publication')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
+  publication(
+    @Param('id', ParseUUIDPipe) id: string,
+    @AuthenticatedUser() actor: IAuthorizedUser,
+  ): ReturnType<QuotationService['publicationSummary']> {
+    return this.service.publicationSummary(id, actor);
+  }
+  @Post(':id/publication/retry')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
+  retryPublication(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: RetryQuotationPublicationDto,
+    @AuthenticatedUser() actor: IAuthorizedUser,
+  ): ReturnType<QuotationService['retryPublication']> {
+    return this.service.retryPublication(id, input, actor);
   }
   @Post(':id/pdf')
   @Header('Access-Control-Expose-Headers', 'Content-Disposition')

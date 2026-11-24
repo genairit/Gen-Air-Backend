@@ -5,8 +5,9 @@ import { HttpAdapterHost, NestFactory } from '@nestjs/core';
 import { GeneralFilter } from './filters/http-error.filter';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
-const bootstrap = async () => {
+const bootstrap = async (): Promise<void> => {
   const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
   app.use(morgan('combined'));
 
   app.useGlobalPipes(
