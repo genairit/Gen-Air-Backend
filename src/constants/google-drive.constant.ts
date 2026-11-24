@@ -1,4 +1,5 @@
 export const GOOGLE_DRIVE = {
+  PDF_MIME_TYPE: 'application/pdf',
   PAGE_SIZE: 1000,
   FILE_METADATA_FIELDS: 'id,name,mimeType,parents,trashed,version',
   SHORTCUT_MIME_TYPE: 'application/vnd.google-apps.shortcut',

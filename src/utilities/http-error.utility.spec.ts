@@ -4,8 +4,11 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 
+import { DatabaseError } from 'sequelize';
 import { getHttpErrorResponse } from './http-error.utility';
+import { getHttpErrorPayload } from './http-error-payload.utility';
 import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
+import { DATABASE_CHECK_CONSTRAINTS } from '@Constants/database-constraint.constant';
 
 describe('public HTTP error code boundary', () => {
   it('preserves the explicit import contract without copying arbitrary fields', () => {
@@ -98,5 +101,54 @@ describe('public HTTP error code boundary', () => {
       message: 'bad',
       safeResponse: { remaining: 0 },
     });
+  });
+});
+
+describe('database constraint HTTP boundary', () => {
+  it('maps the named quotation context check with a safe centralized payload', () => {
+    const error = new DatabaseError(
+      Object.assign(new Error('private SQL detail'), {
+        sql: 'private query',
+        code: '23514',
+        constraint: DATABASE_CHECK_CONSTRAINTS.TASK_QUOTATION_CONTEXT,
+      }),
+    );
+    expect(getHttpErrorResponse(error)).toEqual({
+      statusCode: 409,
+      ...getHttpErrorPayload(HTTP_ERROR_CODES.TASK_QUOTATION_CONTEXT_LOCKED),
+    });
+  });
+  it.each([
+    { code: '23514', constraint: 'unrelated_check' },
+    {
+      code: '23505',
+      constraint: DATABASE_CHECK_CONSTRAINTS.TASK_QUOTATION_CONTEXT,
+    },
+  ])('preserves unrelated database error behavior for %p', (details) => {
+    const error = new DatabaseError(
+      Object.assign(new Error('private details'), {
+        sql: 'private query',
+        ...details,
+      }),
+    );
+    expect(getHttpErrorResponse(error)).toEqual({
+      statusCode: 500,
+      message: 'Internal Server Error',
+    });
+  });
+  it('does not treat arbitrary objects or client HTTP payloads as database constraints', () => {
+    const fields = {
+      code: '23514',
+      constraint: DATABASE_CHECK_CONSTRAINTS.TASK_QUOTATION_CONTEXT,
+    };
+    expect(getHttpErrorResponse({ parent: fields })).toEqual({
+      statusCode: 500,
+      message: 'Internal Server Error',
+    });
+    expect(
+      getHttpErrorResponse(
+        new BadRequestException({ ...fields, message: 'invalid' }),
+      ),
+    ).toEqual({ statusCode: 400, message: 'invalid' });
   });
 });

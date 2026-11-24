@@ -11,6 +11,7 @@ import { ProjectApartmentService } from './project-apartment.service';
 import { CustomerProjectController } from './customer-project.controller';
 import { CustomerProjectRepository } from './customer-project.repository';
 import { ProjectTypeModule } from '@Modules/project-type/project-type.module';
+import { GoogleDriveModule } from '@Providers/google-drive/google-drive.module';
 import { ProjectStageModule } from '@Modules/project-stage/project-stage.module';
 import { ProjectApartmentImportService } from './project-apartment-import.service';
 import { ProjectMemberModule } from '@Modules/project-member/project-member.module';
@@ -18,11 +19,15 @@ import { ProjectContactService } from '@Modules/project-contact/project-contact.
 import { ProjectApartmentImportController } from './project-apartment-import.controller';
 import { CustomerContactModule } from '@Modules/customer-contact/customer-contact.module';
 import { ProjectContactController } from '@Modules/project-contact/project-contact.controller';
+import { ProjectDriveLinkService } from '@Modules/project-drive-link/project-drive-link.service';
+import { DriveTemplateFolderModule } from '@Modules/drive-template-folder/drive-template-folder.module';
 import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/project-stage-transition.module';
 
 @Module({
   imports: [
     DatabaseModule,
+    GoogleDriveModule,
+    DriveTemplateFolderModule,
     AddressModule,
     CustomerModule,
     CustomerContactModule,
@@ -39,6 +44,7 @@ import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/
   ],
   providers: [
     ProjectService,
+    ProjectDriveLinkService,
     CustomerProjectService,
     ProjectContactService,
     CustomerProjectRepository,

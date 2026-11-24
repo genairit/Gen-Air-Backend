@@ -10,6 +10,11 @@ import {
   TCustomerSyncStatusCounts,
 } from './interfaces/customer.interface';
 
+import {
+  resolveCustomerPaymentUpdate,
+  validateCustomerPaymentConfiguration,
+} from './utilities/customer-payment.utility';
+
 import { Transaction } from 'sequelize';
 import { TypedLogger } from '@Logger/logger.service';
 import { Customer } from './entities/customer.entity';
@@ -19,9 +24,9 @@ import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toCursorBatch } from '@Utilities/cursor-batch.utility';
 import { GetCustomersByFilterDto } from './dto/get-by-filter.dto';
+import { CustomerOwnContactService } from './customer-own-contact.service';
 import { isCustomerTaxIdConflict } from './utilities/customer-tax-id.utility';
-import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
-import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
+import { copyPaymentConfiguration } from '@Utilities/payment-configuration.utility';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { EMPTY_CUSTOMER_SYNC_STATUS_COUNTS } from './constants/priority-sync-status.constant';
 
@@ -30,12 +35,12 @@ export class CustomerService {
   private readonly logger = new TypedLogger(CustomerService.name);
   constructor(
     private readonly customerRepository: CustomerRepository,
-    private readonly contacts: CustomerContactService,
+    private readonly ownContact: CustomerOwnContactService,
     private readonly transactions: DatabaseTransactionService,
   ) {}
 
-  async getById(id: string): Promise<ICustomer> {
-    const customer = await this.customerRepository.findById(id);
+  async getById(id: string, transaction?: Transaction): Promise<ICustomer> {
+    const customer = await this.customerRepository.findById(id, transaction);
 
     if (!customer) {
       throw new NotFoundException(`Customer ${id} was not found`);
@@ -59,17 +64,16 @@ export class CustomerService {
     customer: CreateCustomerDto,
     createdById: string,
     transaction: Transaction,
-  ): Promise<ICustomer> {
-    const { name, taxId, phone, email, address, contactName, customerType } =
-      customer;
-    if (!contactName && (phone || email)) {
-      throw new BadRequestException(
-        'Contact name is required when contact details are provided',
-      );
-    }
+  ): Promise<Customer> {
+    const { name, taxId, phone, email, address, customerType } = customer;
+    const payment = copyPaymentConfiguration({
+      paymentTerms: customer.paymentTerms ?? null,
+      paymentSchedule: customer.paymentSchedule ?? [],
+    });
+    validateCustomerPaymentConfiguration(payment);
     const created = await this.customerRepository.create(
       {
-        paymentTerms: customer.paymentTerms ?? null,
+        ...payment,
         name,
         taxId,
         phone: null,
@@ -81,24 +85,20 @@ export class CustomerService {
       },
       transaction,
     );
-    if (contactName) {
-      const contact = await this.contacts.resolveDirectoryForImport(
-        {
-          createdById,
-          name: contactName,
-          phone: phone ?? null,
-          email: email ?? null,
-          role: null,
-        },
+    if (customer.primaryContactId) {
+      await this.ownContact.copyDetails(
+        created,
+        customer.primaryContactId,
         transaction,
       );
-      await this.customerRepository.update(
-        created.id,
-        { primaryContactId: contact.id },
-        transaction,
-      );
-      created.primaryContactId = contact.id;
+      return created;
     }
+
+    await this.ownContact.setDetails(
+      created,
+      { phone: phone ?? null, email: email ?? null },
+      transaction,
+    );
     return created;
   }
 
@@ -147,26 +147,6 @@ export class CustomerService {
           createdById,
           transaction,
         );
-        if (customer.primaryContactId) {
-          const contact = await CustomerContact.findByPk(
-            customer.primaryContactId,
-            { transaction },
-          );
-          if (!contact) {
-            throw new NotFoundException(
-              `Contact ${customer.primaryContactId} was not found`,
-            );
-          }
-
-          await this.customerRepository.update(
-            created.id,
-            {
-              primaryContactId: contact.id,
-            },
-            transaction,
-          );
-        }
-
         return created.id;
       });
       return this.getById(createdId);
@@ -182,25 +162,39 @@ export class CustomerService {
   }
 
   async update(id: string, changes: UpdateCustomerDto): Promise<ICustomer> {
-    if (
-      Object.hasOwn(changes, 'contactName') ||
-      Object.hasOwn(changes, 'phone') ||
-      Object.hasOwn(changes, 'email')
-    ) {
+    if ('contactName' in changes) {
       throw new BadRequestException(
-        'Change customer contacts through the contact directory',
+        'Customer contact details use the customer name',
       );
     }
-    const customer = await this.getById(id);
-    const requestedTaxId = changes.taxId ?? null;
-    const isTaxIdChanging =
-      requestedTaxId !== null && requestedTaxId !== customer.taxId;
 
-    if (isTaxIdChanging) {
-      await this.assertTaxIdAvailable(requestedTaxId);
-    }
+    await this.transactions.run(async (transaction) => {
+      const customer = await this.lockCustomer(id, transaction);
+      const requestedTaxId = changes.taxId ?? null;
+      const isTaxIdChanging =
+        requestedTaxId !== null && requestedTaxId !== customer.taxId;
+      if (isTaxIdChanging) {
+        await this.assertTaxIdAvailable(requestedTaxId);
+      }
 
-    await this.customerRepository.update(id, changes);
+      const attributes = { ...changes };
+      delete attributes.phone;
+      delete attributes.email;
+      delete attributes.contactName;
+      Object.assign(
+        attributes,
+        resolveCustomerPaymentUpdate(changes, customer),
+      );
+      await customer.update(attributes, { transaction });
+      const hasOwnDetails = 'phone' in changes || 'email' in changes;
+      if (hasOwnDetails) {
+        await this.ownContact.setDetails(customer, changes, transaction);
+        await customer.update(
+          { phone: null, email: null, contactName: null },
+          { transaction },
+        );
+      }
+    });
 
     return this.getById(id);
   }
@@ -210,28 +204,13 @@ export class CustomerService {
     contactId: string | null,
   ): Promise<ICustomer> {
     await this.transactions.run(async (transaction) => {
-      const customer = await Customer.findByPk(id, {
-        transaction,
-        lock: transaction.LOCK.UPDATE,
-      });
-      if (!customer) {
-        throw new NotFoundException(`Customer ${id} was not found`);
+      const customer = await this.lockCustomer(id, transaction);
+      if (!contactId) {
+        await customer.update({ primaryContactId: null }, { transaction });
+        return;
       }
 
-      const contact = contactId
-        ? await CustomerContact.findByPk(contactId, { transaction })
-        : null;
-      if (contactId && !contact) {
-        throw new NotFoundException(`Contact ${contactId} was not found`);
-      }
-
-      await this.customerRepository.update(
-        id,
-        {
-          primaryContactId: contact?.id ?? null,
-        },
-        transaction,
-      );
+      await this.ownContact.copyDetails(customer, contactId, transaction);
     });
     return this.getById(id);
   }
@@ -242,6 +221,21 @@ export class CustomerService {
     if (!isDeleted) {
       throw new NotFoundException(`Customer ${id} was not found`);
     }
+  }
+
+  private async lockCustomer(
+    id: string,
+    transaction: Transaction,
+  ): Promise<Customer> {
+    const customer = await Customer.findByPk(id, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    if (!customer) {
+      throw new NotFoundException(`Customer ${id} was not found`);
+    }
+
+    return customer;
   }
 
   private async assertTaxIdAvailable(taxId: string): Promise<void> {

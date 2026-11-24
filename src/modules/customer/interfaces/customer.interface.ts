@@ -1,5 +1,6 @@
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import type { PaymentTermsType } from '@Constants/payment-terms.constant';
+import type { IPaymentStage } from '@Interfaces/payment-configuration.interface';
 import { PrioritySyncStatusType } from '../constants/priority-sync-status.constant';
 import { ProjectDetailFieldSetType } from '@Constants/project-detail-field-set.constant';
 import { ICustomerContact } from '@Modules/customer-contact/interfaces/customer-contact.interface';
@@ -23,6 +24,7 @@ export interface ICustomer {
   primaryContactId?: string | null;
   prioritySyncError: string | null;
   primaryContact?: ICustomerContact;
+  paymentSchedule?: IPaymentStage[];
   paymentTerms?: PaymentTermsType | null;
   customerType: ProjectDetailFieldSetType;
   prioritySyncStatus: PrioritySyncStatusType;
@@ -42,6 +44,7 @@ export type TCustomerSyncStatusCounts = Record<PrioritySyncStatusType, number>;
 
 type TCustomerEditableField =
   | 'paymentTerms'
+  | 'paymentSchedule'
   | 'name'
   | 'phone'
   | 'email'

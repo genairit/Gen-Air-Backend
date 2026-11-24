@@ -24,6 +24,14 @@ describe('Drive connection access', () => {
       driveConnectionResult(DRIVE_CONNECTION_STATUS.NOT_CONFIGURED),
     );
   const provision = jest.fn().mockResolvedValue({ id: 'project' });
+  const previewExistingFolder = jest.fn().mockResolvedValue({
+    id: 'legacy-folder',
+    name: 'תיקייה קיימת',
+    missingTemplateFolders: ['CAD'],
+  });
+  const completeTemplate = jest
+    .fn()
+    .mockResolvedValue({ id: 'project', driveFolderLinked: true });
   const moveFile = jest.fn(async (): Promise<void> => {});
   const trashFile = jest.fn(async (): Promise<void> => {});
   const getSharedDocument = jest
@@ -33,6 +41,63 @@ describe('Drive connection access', () => {
     .fn()
     .mockResolvedValue({ status: 'none', file: null });
   const projectId = '92710bd0-68c9-4e20-a4e2-ef75e519f6ce';
+  it('requires authentication before previewing or completing folders', async () => {
+    await request(application.app!.getHttpServer())
+      .post('/project-drive/existing-folder/preview')
+      .send({ reference: 'legacy-folder' })
+      .expect(401);
+    await request(application.app!.getHttpServer())
+      .post(`/project-drive/${projectId}/complete-template`)
+      .expect(401);
+  });
+
+  it('allows project creators to preview a folder and rejects read-only accounts', async () => {
+    const response = await request(application.app!.getHttpServer())
+      .post('/project-drive/existing-folder/preview')
+      .set('Authorization', 'Bearer admin')
+      .send({ reference: 'legacy-folder' })
+      .expect(200);
+    expect(response.body).toMatchObject({
+      id: 'legacy-folder',
+      name: 'תיקייה קיימת',
+    });
+    await request(application.app!.getHttpServer())
+      .post('/project-drive/existing-folder/preview')
+      .set('Authorization', 'Bearer engineer')
+      .send({ reference: 'legacy-folder' })
+      .expect(403);
+  });
+
+  it('uses apartment-create permission only when a building is selected', async () => {
+    await request(application.app!.getHttpServer())
+      .post('/project-drive/existing-folder/preview')
+      .set('Authorization', 'Bearer manager')
+      .send({ reference: 'legacy-folder' })
+      .expect(403);
+    await request(application.app!.getHttpServer())
+      .post('/project-drive/existing-folder/preview')
+      .set('Authorization', 'Bearer manager')
+      .send({ reference: 'legacy-folder', buildingId: projectId })
+      .expect(200);
+  });
+
+  it('validates preview input and protects explicit template completion', async () => {
+    await request(application.app!.getHttpServer())
+      .post('/project-drive/existing-folder/preview')
+      .set('Authorization', 'Bearer admin')
+      .send({ reference: '', buildingId: 'invalid' })
+      .expect(400);
+    await request(application.app!.getHttpServer())
+      .post(`/project-drive/${projectId}/complete-template`)
+      .set('Authorization', 'Bearer engineer')
+      .expect(403);
+    await request(application.app!.getHttpServer())
+      .post(`/project-drive/${projectId}/complete-template`)
+      .set('Authorization', 'Bearer manager')
+      .expect(201);
+    expect(completeTemplate).toHaveBeenCalledWith(projectId);
+  });
+
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       controllers: [ProjectDriveController],
@@ -40,6 +105,8 @@ describe('Drive connection access', () => {
         {
           provide: ProjectDriveService,
           useValue: {
+            previewExistingFolder,
+            completeTemplate,
             checkConnection,
             provision,
             moveFile,

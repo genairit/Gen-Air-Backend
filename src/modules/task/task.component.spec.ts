@@ -20,12 +20,16 @@ import { USER_ROLES } from '@Constants/user-role.constant';
 import { TASK_TYPES } from './constants/task-type.constant';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { IUser } from '@Modules/user/interfaces/user.interface';
+import { TASK_STATUSES } from './constants/task-status.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
+import { encodeTaskCursor } from './utilities/task-cursor.utility';
 import { CustomerService } from '@Modules/customer/customer.service';
+import { QuotationService } from '@Modules/quotation/quotation.service';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { baselinePermissions } from '../../testing/authorization.fixture';
 import { ITask, TTaskUpdateAttributes } from './interfaces/task.interface';
+import { TASK_SORTS, TASK_SORT_VALUES } from './constants/task-sort.constant';
 import { TaskStatusTransitionRepository } from './task-status-transition.repository';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
@@ -135,6 +139,7 @@ describe('Task HTTP permission boundaries', () => {
     const module = await Test.createTestingModule({
       controllers: [TaskController],
       providers: [
+        { provide: QuotationService, useValue: {} },
         TaskService,
         { provide: TaskRepository, useValue: repository },
         { provide: TaskStatusTransitionRepository, useValue: transitions },
@@ -513,6 +518,107 @@ describe('Task HTTP permission boundaries', () => {
       .auth('other', { type: 'bearer' })
       .expect(200);
   });
+  it.each(TASK_SORT_VALUES)(
+    'retains personal scope and filters for %s sorting',
+    async (sort) => {
+      await request(server())
+        .get('/task/my-tasks')
+        .query({
+          sort,
+          assigneeId: OTHER_ID,
+          status: TASK_STATUSES.IN_PROGRESS,
+          isUrgent: false,
+          search: 'test',
+        })
+        .auth('employee', { type: 'bearer' })
+        .expect(200);
+      expect(repository.findByFilter).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          sort,
+          assigneeId: EMPLOYEE_ID,
+          status: TASK_STATUSES.IN_PROGRESS,
+          isUrgent: false,
+          search: 'test',
+        }),
+        expect.anything(),
+      );
+    },
+  );
+
+  it.each(['unknown', '', [TASK_SORTS.DEFAULT, TASK_SORTS.DUE_DATE_ASC]])(
+    'rejects unsupported sort query %j before querying',
+    async (sort) => {
+      await request(server())
+        .get('/task/my-tasks')
+        .query({ sort })
+        .auth('employee', { type: 'bearer' })
+        .expect(400);
+      expect(repository.findByFilter).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a cursor for another requested sort at the HTTP boundary', async () => {
+    const batchCursor = encodeTaskCursor(
+      { id: TASK_ID, isUrgent: false, dueDate: null },
+      TASK_SORTS.DUE_DATE_ASC,
+    );
+    await request(server())
+      .get('/task/my-tasks')
+      .query({ sort: TASK_SORTS.DUE_DATE_DESC, batchCursor })
+      .auth('employee', { type: 'bearer' })
+      .expect(400);
+    expect(repository.findByFilter).not.toHaveBeenCalled();
+  });
+
+  it('accepts the tagged sort cursor and preserves its batch metadata', async () => {
+    const batchCursor = encodeTaskCursor(
+      { id: TASK_ID, isUrgent: false, dueDate: null },
+      TASK_SORTS.DUE_DATE_DESC,
+    );
+    await request(server())
+      .get('/task/my-tasks')
+      .query({ sort: TASK_SORTS.DUE_DATE_DESC, batchCursor, batchSize: 2 })
+      .auth('employee', { type: 'bearer' })
+      .expect(200);
+    expect(repository.findByFilter).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sort: TASK_SORTS.DUE_DATE_DESC,
+        assigneeId: EMPLOYEE_ID,
+      }),
+      expect.objectContaining({ batchCursor, batchSize: 2 }),
+    );
+  });
+
+  it('keeps legacy untagged cursors for default order only', async () => {
+    const batchCursor = Buffer.from(
+      JSON.stringify({ id: TASK_ID, isUrgent: false, dueDate: null }),
+    ).toString('base64url');
+    await request(server())
+      .get('/task/my-tasks')
+      .query({ batchCursor })
+      .auth('employee', { type: 'bearer' })
+      .expect(200);
+    await request(server())
+      .get('/task/my-tasks')
+      .query({ batchCursor, sort: TASK_SORTS.DUE_DATE_ASC })
+      .auth('employee', { type: 'bearer' })
+      .expect(400);
+  });
+
+  it('keeps existing authentication and feature permission boundaries for sorted lists', async () => {
+    await request(server())
+      .get('/task/my-tasks')
+      .query({ sort: TASK_SORTS.DUE_DATE_ASC })
+      .expect(401);
+    users.employee.permissions = [];
+    await request(server())
+      .get('/task/my-tasks')
+      .query({ sort: TASK_SORTS.DUE_DATE_ASC })
+      .auth('employee', { type: 'bearer' })
+      .expect(403);
+    expect(repository.findByFilter).not.toHaveBeenCalled();
+  });
+
   it('emits only on false-to-true urgency transitions', async () => {
     await request(server())
       .patch(`/task/${TASK_ID}/urgency`)

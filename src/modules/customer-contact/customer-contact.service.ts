@@ -14,6 +14,7 @@ import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { toDialablePhone } from '@Utilities/phone.utility';
 import { CustomerContact } from './entities/customer-contact.entity';
+import { Customer } from '@Modules/customer/entities/customer.entity';
 import { HTTP_ERROR_CODES } from '@Constants/http-error-code.constant';
 import { CustomerContactRepository } from './customer-contact.repository';
 import { getHttpErrorPayload } from '@Utilities/http-error-payload.utility';
@@ -120,6 +121,16 @@ export class CustomerContactService {
       if (!existing) {
         throw new NotFoundException(
           getHttpErrorPayload(HTTP_ERROR_CODES.CUSTOMER_CONTACT_NOT_FOUND),
+        );
+      }
+
+      const customerReferences = await Customer.count({
+        where: { primaryContactId: id },
+        transaction,
+      });
+      if (customerReferences > 0) {
+        throw new BadRequestException(
+          getHttpErrorPayload(HTTP_ERROR_CODES.CUSTOMER_OWN_CONTACT_MANAGED),
         );
       }
 

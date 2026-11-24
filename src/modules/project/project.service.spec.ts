@@ -44,6 +44,7 @@ import { ProjectMemberService } from '@Modules/project-member/project-member.ser
 import { PARAN_JERUSALEM_PLACE } from '@Modules/address/testing/paran-jerusalem.fixture';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { ProjectDriveLinkService } from '@Modules/project-drive-link/project-drive-link.service';
 import { ProjectStageTransitionService } from '@Modules/project-stage-transition/project-stage-transition.service';
 
 const TRANSACTION = { id: 'transaction' };
@@ -271,14 +272,33 @@ const createService = async () => {
   };
   const eventEmitter = { emitAsync: jest.fn().mockResolvedValue([]) };
   const transactionService = {
+    lockKey: jest.fn().mockResolvedValue(null),
     run: jest.fn((work: (transaction: object) => Promise<unknown>) =>
       work(TRANSACTION),
     ),
   };
 
+  const driveLinkService = {
+    resolve: jest.fn().mockResolvedValue({ id: 'legacy-folder' }),
+    assertOwnershipAvailable: jest
+      .fn<
+        ReturnType<ProjectDriveLinkService['assertOwnershipAvailable']>,
+        Parameters<ProjectDriveLinkService['assertOwnershipAvailable']>
+      >()
+      .mockImplementation((): Promise<void> => Promise.resolve()),
+    assertRootClaimAvailable: jest.fn<
+      ReturnType<ProjectDriveLinkService['assertRootClaimAvailable']>,
+      Parameters<ProjectDriveLinkService['assertRootClaimAvailable']>
+    >(),
+  };
+  driveLinkService.assertRootClaimAvailable.mockImplementation(
+    (...parameters): Promise<void> =>
+      driveLinkService.assertOwnershipAvailable(...parameters),
+  );
   const moduleRef = await Test.createTestingModule({
     providers: [
       ProjectService,
+      { provide: ProjectDriveLinkService, useValue: driveLinkService },
       ProjectIntakeService,
       ProjectApartmentService,
       { provide: CustomerService, useValue: customerService },
@@ -296,6 +316,8 @@ const createService = async () => {
   return {
     service: moduleRef.get(ProjectService),
     eventEmitter,
+    driveLinkService,
+    transactionService,
     customerService,
     addressService,
     projectRepository,
@@ -2130,5 +2152,114 @@ describe('ProjectService lighting persistence', () => {
       ),
     ).rejects.toThrow(BadRequestException);
     expect(state.projectRepository.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService existing Drive folder creation', () => {
+  const input = {
+    ...COMPANY_DETAILS,
+    ...COMPANY_INTAKE,
+    customerId: CUSTOMER_ID,
+    name: 'פרויקט ותיק',
+    projectTypeId: COMPANY_TYPE_ID,
+    members: [],
+  };
+
+  it('persists selected folder and linked mode before announcing the project', async () => {
+    const {
+      service,
+      driveLinkService,
+      projectRepository,
+      eventEmitter,
+      transactionService,
+    } = await createService();
+    await service.create(
+      { ...input, existingDriveFolder: 'legacy-folder' },
+      CREATOR,
+    );
+    expect(driveLinkService.resolve).toHaveBeenCalledWith('legacy-folder');
+    expect(transactionService.lockKey).toHaveBeenCalledWith(
+      'project-drive-link-ownership',
+      TRANSACTION,
+    );
+    expect(driveLinkService.assertOwnershipAvailable).toHaveBeenCalledWith(
+      'legacy-folder',
+      null,
+      null,
+      TRANSACTION,
+    );
+    expect(projectRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        driveFolderId: 'legacy-folder',
+        driveFolderLinked: true,
+      }),
+      TRANSACTION,
+    );
+    expect(projectRepository.create.mock.invocationCallOrder[0]).toBeLessThan(
+      eventEmitter.emitAsync.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('keeps ordinary creation independent of Drive credentials or validation', async () => {
+    const { service, driveLinkService, transactionService } =
+      await createService();
+    await service.create(input, CREATOR);
+    expect(driveLinkService.resolve).not.toHaveBeenCalled();
+    expect(transactionService.lockKey).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid existing folders before writing or announcing a project', async () => {
+    const { service, driveLinkService, projectRepository, eventEmitter } =
+      await createService();
+    driveLinkService.resolve.mockRejectedValue(
+      new BadRequestException('invalid folder'),
+    );
+    await expect(
+      service.create({ ...input, existingDriveFolder: 'bad-folder' }, CREATOR),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(projectRepository.create).not.toHaveBeenCalled();
+    expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
+  });
+
+  it('rechecks ownership under the transaction lock before persisting', async () => {
+    const { service, driveLinkService, projectRepository, eventEmitter } =
+      await createService();
+    driveLinkService.assertOwnershipAvailable.mockRejectedValue(
+      new ConflictException('folder taken'),
+    );
+    await expect(
+      service.create(
+        { ...input, existingDriveFolder: 'legacy-folder' },
+        CREATOR,
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(projectRepository.create).not.toHaveBeenCalled();
+    expect(eventEmitter.emitAsync).not.toHaveBeenCalled();
+  });
+
+  it('validates apartment folder location with its building and persists before announcement', async () => {
+    const { service, driveLinkService, projectRepository, eventEmitter } =
+      await createService();
+    projectRepository.findById.mockResolvedValueOnce(BUILDING);
+    await service.createApartment(
+      BUILDING_ID,
+      { ...NEW_APARTMENT, existingDriveFolder: 'legacy-folder' },
+      CREATOR,
+    );
+    expect(driveLinkService.resolve).toHaveBeenCalledWith(
+      'legacy-folder',
+      BUILDING_ID,
+    );
+    expect(projectRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        driveFolderId: 'legacy-folder',
+        driveFolderLinked: true,
+        parentProjectId: BUILDING_ID,
+      }),
+      TRANSACTION,
+    );
+    expect(projectRepository.create.mock.invocationCallOrder[0]).toBeLessThan(
+      eventEmitter.emitAsync.mock.invocationCallOrder[0],
+    );
   });
 });

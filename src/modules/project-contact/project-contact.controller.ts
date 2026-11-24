@@ -1,5 +1,6 @@
 import {
   Get,
+  Put,
   Post,
   Body,
   Param,
@@ -15,6 +16,7 @@ import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectContactService } from './project-contact.service';
 import { LinkProjectContactDto } from './dto/link-project-contact.dto';
 import { ProjectContactLink } from './entities/project-contact-link.entity';
+import { SetProjectContactRoleDto } from './dto/set-project-contact-role.dto';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 
 @ApiTags('project-contact')
@@ -38,6 +40,16 @@ export class ProjectContactController {
     @Body() input: LinkProjectContactDto,
   ): Promise<ProjectContactLink> {
     return this.contacts.link(projectId, input);
+  }
+
+  @Put('roles/:role')
+  @RequirePermissions(PERMISSIONS.PROJECTS_UPDATE)
+  setRole(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('role') role: string,
+    @Body() input: SetProjectContactRoleDto,
+  ): Promise<ProjectContactLink[]> {
+    return this.contacts.setRole(projectId, role, input.contactId);
   }
 
   @Delete(':contactId')

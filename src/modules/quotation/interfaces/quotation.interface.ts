@@ -4,8 +4,8 @@ import type {
   TQuotationCancellationKind,
 } from '../constants/quotation.constant';
 
-import type { IPaymentStage } from './quotation-document.interface';
 import type { PaymentTermsType } from '@Constants/payment-terms.constant';
+import type { IPaymentStage } from '@Interfaces/payment-configuration.interface';
 import type { IQuotationRule } from '@Modules/quotation-rule/interfaces/quotation-rule.interface';
 
 export interface IQuotation {

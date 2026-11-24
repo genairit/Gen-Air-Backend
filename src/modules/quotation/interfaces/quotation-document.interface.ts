@@ -5,14 +5,12 @@ import type {
 } from '@Modules/quotation-project/interfaces/quotation-project.interface';
 
 import type { IQuotation } from './quotation.interface';
+import type { IQuotationTaskMetadata } from './task-quotation.interface';
+import type { IQuotationLifecycleEvent } from './quotation-lifecycle.interface';
 import type { QuotationProjectRoleType } from '../constants/quotation-sharing.constant';
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
 import type { IQuotationSection } from '@Modules/quotation-section/interfaces/quotation-section.interface';
 
-export interface IPaymentStage {
-  text: string;
-  percent: string;
-}
 export interface IQuotationSectionDocument extends IQuotationSection {
   items: IQuotationItem[];
 }
@@ -38,8 +36,10 @@ export interface IQuotationView extends IQuotationDocument {
   warnings: IQuotationWarning[];
   salesAgentName?: string | null;
 }
-export interface IQuotationDetailView extends IQuotationView {
+export interface IQuotationDetailView
+  extends IQuotationView, Partial<IQuotationTaskMetadata> {
   apartmentLinks: IQuotationApartmentLink[];
+  lifecycleHistory: IQuotationLifecycleEvent[];
   primaryProject: IQuotationPrimaryProject | null;
 }
 export interface IProjectQuotationView extends IQuotationView {
