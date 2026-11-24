@@ -13,6 +13,11 @@ import type {
   IQuotationPdfSection,
 } from './interfaces/quotation-pdf.interface';
 
+import {
+  quotationFilename,
+  quotationFilenameInputs,
+} from './utilities/quotation-filename.utility';
+
 import { Transaction } from 'sequelize';
 import { Injectable } from '@nestjs/common';
 import { UserService } from '@Modules/user/user.service';
@@ -20,7 +25,7 @@ import defaultTerms from './constants/quotation-pdf-terms.json';
 import { ProjectService } from '@Modules/project/project.service';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { quotationView } from './utilities/quotation-calculation.utility';
-import { quotationFilename } from './utilities/quotation-filename.utility';
+import { QUOTATION_FILENAME } from './constants/quotation-filename.constant';
 import type { IQuotationDocument } from './interfaces/quotation-document.interface';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { PUBLICATION_POLICY } from '@Modules/quotation-publication/constants/publication.constant';
@@ -60,7 +65,9 @@ export class QuotationPdfSnapshotService {
     const payload = {
       number: quotation.number,
       title:
-        quotation.status === QUOTATION_STATUS.APPROVED ? 'הזמנה' : 'הצעת מחיר',
+        quotation.status === QUOTATION_STATUS.APPROVED
+          ? QUOTATION_FILENAME.TITLE.ORDER
+          : QUOTATION_FILENAME.TITLE.QUOTATION,
       quotationDate: new Intl.DateTimeFormat('he-IL', {
         timeZone: 'UTC',
       }).format(new Date(`${quotation.date}T00:00:00Z`)),
@@ -70,7 +77,7 @@ export class QuotationPdfSnapshotService {
       issuerName: quotation.issuerName,
       company: QUOTATION_PDF_COMPANY,
       recipient: {
-        name: project?.customerName ?? customer.name,
+        name: project?.customerName?.trim() || customer.name,
         address: project?.customerAddress ?? customer.address,
         city: project?.addressCity ?? null,
         email: project?.customerEmail ?? customer.primaryContact?.email ?? null,
@@ -129,19 +136,23 @@ export class QuotationPdfSnapshotService {
       },
     };
 
-    const namingInputs = {
+    const namingInputs = quotationFilenameInputs({
+      quotationId: quotation.id,
       title: payload.title,
       number: quotation.number,
       customerName: payload.recipient.name,
-      projectCode: project?.code ?? null,
+      projectName: project?.name ?? null,
+      buildingName: project?.parentProjectId
+        ? (project.parentProject?.name ?? null)
+        : null,
       apartmentNumber: project?.customerApartment ?? null,
       brands: quotation.brands,
-    };
+    });
     return {
       document: payload,
       source: document,
       filename: quotationFilename(namingInputs),
-      namingInputs,
+      namingInputs: { ...namingInputs },
       filenamePolicy: PUBLICATION_POLICY.FILENAME,
       rendererVersion: PUBLICATION_POLICY.RENDERER,
     };

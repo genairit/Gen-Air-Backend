@@ -38,7 +38,7 @@ export const PUBLICATION_LIMITS = {
 } as const;
 export const PUBLICATION_POLICY = {
   RENDERER: 'quotation.pdf.v1',
-  FILENAME: 'quotation-filename.v1',
+  FILENAME: 'quotation-filename.v2',
   TENANT: 'genair',
 } as const;
 export const PUBLICATION_REASON = {
