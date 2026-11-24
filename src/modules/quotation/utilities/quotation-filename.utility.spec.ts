@@ -201,16 +201,16 @@ it('truncates optional emoji text at complete grapheme boundaries', (): void => 
 it.each(['', ' / ', '\u202e\u0000'])(
   'rejects an empty or unusable required document number: %j',
   (number): void => {
-    expect(() => quotationFilename(context({ number }))).toThrow();
+    expect((): string => quotationFilename(context({ number }))).toThrow();
   },
 );
 
 it('rejects an unusable document kind rather than fabricating a filename', (): void => {
-  expect(() => quotationFilename(context({ title: ' / ' }))).toThrow();
+  expect((): string => quotationFilename(context({ title: ' / ' }))).toThrow();
 });
 
 it('rejects pathological required data that cannot fit without shortening the document identity', (): void => {
-  expect(() =>
+  expect((): string =>
     quotationFilename(context({ number: 'Q'.repeat(250) })),
   ).toThrow();
 });

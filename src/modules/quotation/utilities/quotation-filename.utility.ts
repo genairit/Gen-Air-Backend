@@ -41,7 +41,7 @@ const buildingParts = (context: IQuotationFilenameContext): IFilenamePart[] =>
       prefix: `${QUOTATION_FILENAME.APARTMENT_LABEL} `,
       value: context.apartmentNumber ?? '',
     },
-  ].filter((part): boolean => Boolean(part.value));
+  ].filter((part): boolean => part.value.length > 0);
 
 const joinedParts = (parts: IFilenamePart[], separator: string): string =>
   parts.map((part): string => `${part.prefix}${part.value}`).join(separator);
@@ -143,7 +143,9 @@ export const quotationFilename = (
   context: IQuotationFilenameContext,
 ): string => {
   const normalized = quotationFilenameInputs(context);
-  const hasIdentity = Boolean(normalized.title && normalized.number);
+  const hasTitle = normalized.title.length > 0;
+  const hasNumber = normalized.number.length > 0;
+  const hasIdentity = hasTitle && hasNumber;
   if (!hasIdentity) {
     throw new Error('Quotation document identity is required for filename');
   }
