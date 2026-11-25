@@ -148,6 +148,15 @@ export class ProjectService {
     return this.projectApartmentService.resolveForRead(project);
   }
 
+  async getOtherProjectDriveRoots(
+    projectId: string,
+  ): Promise<ReadonlySet<string>> {
+    const roots =
+      await this.projectRepository.findOtherProjectDriveRoots(projectId);
+
+    return new Set(roots);
+  }
+
   async getById(id: string): Promise<TProjectRead> {
     const project = await this.getStoredById(id);
     const [projectWithReason] = await this.withWaitingReasons([

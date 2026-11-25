@@ -24,6 +24,7 @@ import { UserRoleAudit } from '@Modules/user-role-audit/entities/user-role-audit
 import { PurchaseRecord } from '@Modules/purchase-record/entities/purchase-record.entity';
 import { RolePermission } from '@Modules/role-permission/entities/role-permission.entity';
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
+import { ProjectDocument } from '@Modules/project-document/entities/project-document.entity';
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { ProjectBoqRevision } from '@Modules/project-boq/entities/project-boq-revision.entity';
 import { QuotationSection } from '@Modules/quotation-section/entities/quotation-section.entity';
@@ -33,6 +34,7 @@ import { QuotationCloneCommand } from '@Modules/quotation/entities/quotation-clo
 import { PurchaseRecordLine } from '@Modules/purchase-record/entities/purchase-record-line.entity';
 import { ProjectContactLink } from '@Modules/project-contact/entities/project-contact-link.entity';
 import { PurchaseRecordEvent } from '@Modules/purchase-record/entities/purchase-record-event.entity';
+import { ProjectDocumentPage } from '@Modules/project-document/entities/project-document-page.entity';
 import { QuotationLifecycleEvent } from '@Modules/quotation/entities/quotation-lifecycle-event.entity';
 import { CatalogueItemUsage } from '@Modules/catalogue-item-usage/entities/catalogue-item-usage.entity';
 import { ExecutionPlanTemplate } from '@Modules/execution-plan/entities/execution-plan-template.entity';
@@ -128,6 +130,8 @@ export const DatabaseProvider: Provider = {
       ProjectBoq,
       ProjectBoqLine,
       ProjectBoqRevision,
+      ProjectDocument,
+      ProjectDocumentPage,
       PurchaseRecord,
       PurchaseRecordLine,
       PurchaseOrderLineTerm,

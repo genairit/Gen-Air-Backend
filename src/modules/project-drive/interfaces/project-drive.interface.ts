@@ -36,3 +36,10 @@ export interface IProjectDriveTemplateFolders {
   transaction: Transaction;
   templateNodes: IDriveTemplateFolderNode[];
 }
+
+export interface IProjectFileDownload {
+  fileId: string;
+  maxBytes: number;
+  projectId: string;
+  signal: AbortSignal;
+}

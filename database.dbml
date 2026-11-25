@@ -964,3 +964,41 @@ Table quotation_publication_operations {
   indexes { (cycle_id,generation) [unique] }
   Note: 'Transactional outbox and append-only stage history; immutable snapshots and first accepted hashes, no delete/truncate. Lifecycle ID nullable only for soft-delete maintenance.'
 }
+
+Enum enum_project_documents_status {
+  indexed        [note: 'Text extracted and stored per page']
+  scanned        [note: 'PDF has no extractable text (image-only scan); reported as unsearchable']
+  too_large      [note: 'File exceeds the indexing byte limit; not downloaded']
+  unreadable     [note: 'Corrupt, encrypted or timed-out PDF extraction']
+  too_many_pages [note: 'Page count exceeds the indexing page limit']
+}
+
+Table project_documents {
+  project_id          uuid         [not null, ref: > projects.id, note: 'Deleted with the project (ON DELETE CASCADE)']
+  file_id             varchar(128) [not null, note: 'Google Drive file id of a PDF inside the project folder tree']
+  drive_modified_time timestamptz  [note: 'Drive modifiedTime at indexing; a change triggers re-extraction']
+  md5_checksum        varchar(32)  [note: 'Drive md5Checksum at indexing; a change triggers re-extraction']
+  page_count          integer      [not null, default: 0]
+  status              enum_project_documents_status [not null]
+  indexed_at          timestamptz  [not null, default: `now()`]
+  indexes {
+    (project_id, file_id) [pk]
+  }
+  Note: 'On-demand Jenny PDF index state per project file. Rows for files no longer in the project Drive tree are deleted on the next search. Private: RLS enabled, Data API grants revoked.'
+}
+
+Table project_document_pages {
+  project_id    uuid         [not null]
+  file_id       varchar(128) [not null]
+  page_number   integer      [not null, note: '1-based PDF page number']
+  text          text         [not null, note: 'Extracted page text with visual-order Hebrew lines repaired; never logged']
+  search_vector tsvector     [note: "Generated: to_tsvector('simple', text) STORED"]
+  indexes {
+    (project_id, file_id, page_number) [pk]
+    search_vector [name: 'idx_project_document_pages_search_vector', note: 'GIN full-text index']
+    text [name: 'idx_project_document_pages_text_trgm', note: 'GIN gin_trgm_ops (pg_trgm) index for word_similarity search']
+  }
+  Note: 'Searchable PDF page text for Jenny. Private: RLS enabled, Data API grants revoked.'
+}
+
+Ref: project_document_pages.(project_id, file_id) > project_documents.(project_id, file_id) [delete: cascade]
