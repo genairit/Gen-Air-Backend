@@ -54,6 +54,7 @@ const createService = async () => {
   const projectService = {
     getById: jest.fn().mockResolvedValue(PROJECT),
     quotationSnapshot: jest.fn(),
+    getOtherProjectDriveRoots: jest.fn().mockResolvedValue(new Set()),
     lockDriveRootCandidate: jest.fn((): Promise<void> => Promise.resolve()),
     withDriveRootLock: jest.fn(
       (
@@ -97,6 +98,8 @@ const createService = async () => {
     moveFile: jest.fn(async (): Promise<void> => {}),
     trashFile: jest.fn(async (): Promise<void> => {}),
     countDescendantFiles: jest.fn().mockResolvedValue(new Map()),
+    listDescendantFiles: jest.fn().mockResolvedValue([]),
+    downloadFile: jest.fn().mockResolvedValue(Buffer.from('%PDF')),
     uploadFile: jest
       .fn<Promise<{ id: string }>, [IDriveUpload]>()
       .mockResolvedValue({ id: 'uploaded' }),
@@ -880,6 +883,114 @@ describe('ProjectDriveService.handleProjectCreated', () => {
     await expect(
       service.handleProjectCreated({ projectId: PROJECT.id }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('ProjectDriveService project file tree', () => {
+  it('lists files below the project root and excludes other project roots', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    const planFile = { id: 'plan', name: 'plan.pdf', folderPath: 'תוכניות' };
+    projectService.getById.mockResolvedValue({
+      ...PROJECT,
+      driveFolderId: PROJECT_FOLDER_ID,
+    });
+    const excludedRoots = new Set(['apartment-folder']);
+    projectService.getOtherProjectDriveRoots.mockResolvedValue(excludedRoots);
+    googleDriveService.listDescendantFiles.mockResolvedValue([planFile]);
+
+    await expect(service.listProjectFiles(PROJECT.id)).resolves.toEqual([
+      planFile,
+    ]);
+    expect(googleDriveService.listDescendantFiles).toHaveBeenCalledWith(
+      PROJECT_FOLDER_ID,
+      MAX_FOLDER_DEPTH,
+      excludedRoots,
+    );
+  });
+
+  it('reports a project without a Drive folder as not provisioned', async () => {
+    const { service, googleDriveService } = await createService();
+
+    await expect(service.listProjectFiles(PROJECT.id)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(googleDriveService.listDescendantFiles).not.toHaveBeenCalled();
+  });
+
+  const createProjectFileService = async (fileParentId: string) => {
+    const context = await createService();
+    context.projectService.getById.mockResolvedValue({
+      ...PROJECT,
+      driveFolderId: PROJECT_FOLDER_ID,
+    });
+    context.googleDriveService.getFileMetadata.mockImplementation(
+      (id: string) =>
+        Promise.resolve({
+          id,
+          trashed: false,
+          mimeType:
+            id === 'plan'
+              ? GOOGLE_DRIVE.PDF_MIME_TYPE
+              : GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+          parents: id === 'plan' ? [fileParentId] : [],
+        }),
+    );
+    context.googleDriveService.findParentIds.mockImplementation((id: string) =>
+      Promise.resolve(id === 'plans' ? [PROJECT_FOLDER_ID] : []),
+    );
+
+    return context;
+  };
+
+  it('downloads a file inside the project folder within the byte limit and signal', async () => {
+    const context = await createProjectFileService('plans');
+    const signal = new AbortController().signal;
+
+    await expect(
+      context.service.downloadProjectFile({
+        signal,
+        fileId: 'plan',
+        maxBytes: 1024,
+        projectId: PROJECT.id,
+      }),
+    ).resolves.toEqual(Buffer.from('%PDF'));
+    expect(context.googleDriveService.downloadFile).toHaveBeenCalledWith(
+      'plan',
+      1024,
+      { signal },
+    );
+  });
+
+  it('refuses to download a file from a nested project root', async () => {
+    const context = await createProjectFileService('plans');
+    context.projectService.getOtherProjectDriveRoots.mockResolvedValue(
+      new Set(['plans']),
+    );
+
+    await expect(
+      context.service.downloadProjectFile({
+        fileId: 'plan',
+        maxBytes: 1024,
+        projectId: PROJECT.id,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(context.googleDriveService.downloadFile).not.toHaveBeenCalled();
+  });
+
+  it('refuses to download a file outside the project folder', async () => {
+    const context = await createProjectFileService('another-project');
+
+    await expect(
+      context.service.downloadProjectFile({
+        fileId: 'plan',
+        maxBytes: 1024,
+        projectId: PROJECT.id,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(context.googleDriveService.downloadFile).not.toHaveBeenCalled();
   });
 });
 
