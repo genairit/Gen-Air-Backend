@@ -115,11 +115,15 @@ const placeChild = (
 ): IPlacedDriveChild[] => {
   const parentPath = findParentPath(child, folderPaths);
 
-  if (parentPath === null || !child.id || !child.name) {
+  const { id, name } = child;
+  const isOutsideWalkedTree = parentPath === null;
+  const isUnnamedChild = !id || !name;
+
+  if (isOutsideWalkedTree || isUnnamedChild) {
     return [];
   }
 
-  return [{ child, parentPath, id: child.id, name: child.name }];
+  return [{ id, name, child, parentPath }];
 };
 
 const isPlacedFolder = (placed: IPlacedDriveChild): boolean =>

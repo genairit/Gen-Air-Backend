@@ -1,11 +1,12 @@
-const PDF_LINE_BREAK = '\n';
+import { TEXT } from '@Constants/text.constant';
+
 const XREF_OFFSET_WIDTH = 10;
 const OBJECTS_PER_PAGE = 2;
 const FIRST_PAGE_OBJECT_ID = 4;
 const FREE_XREF_ENTRY = '0000000000 65535 f ';
 
 const toPdfLines = (...lines: string[]): string =>
-  lines.map((line) => `${line}${PDF_LINE_BREAK}`).join('');
+  lines.map((line) => `${line}${TEXT.LINE_BREAK}`).join('');
 
 const toPageObjectId = (pageIndex: number): number =>
   FIRST_PAGE_OBJECT_ID + pageIndex * OBJECTS_PER_PAGE;
@@ -21,7 +22,7 @@ const pageObjects = (texts: string[]): string[] =>
     return [
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentsId} 0 R >>`,
       [`<< /Length ${stream.length} >>`, 'stream', stream, 'endstream'].join(
-        PDF_LINE_BREAK,
+        TEXT.LINE_BREAK,
       ),
     ];
   });

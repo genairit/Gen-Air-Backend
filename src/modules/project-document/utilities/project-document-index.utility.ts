@@ -98,13 +98,16 @@ const resolveExtractedStatus = (
   extracted: IExtractedPdf,
   pages: IProjectDocumentPage[],
 ): ProjectDocumentStatusType => {
-  if (extracted.totalPages > PROJECT_DOCUMENT_LIMITS.MAX_PAGES) {
+  const hasTooManyPages =
+    extracted.totalPages > PROJECT_DOCUMENT_LIMITS.MAX_PAGES;
+  const hasTooLittleText =
+    countTextCharacters(pages) < PROJECT_DOCUMENT_LIMITS.MIN_TEXT_CHARACTERS;
+
+  if (hasTooManyPages) {
     return PROJECT_DOCUMENT_STATUSES.TOO_MANY_PAGES;
   }
 
-  if (
-    countTextCharacters(pages) < PROJECT_DOCUMENT_LIMITS.MIN_TEXT_CHARACTERS
-  ) {
+  if (hasTooLittleText) {
     return PROJECT_DOCUMENT_STATUSES.SCANNED;
   }
 
