@@ -1,8 +1,7 @@
 import {
   JENNY_LIMITS,
+  JENNY_REPLY_TEXT,
   JENNY_TOOL_ERRORS,
-  JENNY_INCOMPLETE_ANSWER,
-  JENNY_TRUNCATION_MARKER,
 } from '../constants/jenny.constant';
 
 import { NotFoundException } from '@nestjs/common';
@@ -262,7 +261,7 @@ describe('runJennyToolLoop', () => {
       messages: INITIAL_MESSAGES,
     });
 
-    expect(outcome.message).toBe(JENNY_INCOMPLETE_ANSWER);
+    expect(outcome.message).toBe(JENNY_REPLY_TEXT.INCOMPLETE_ANSWER);
   });
 
   it('reports unknown tools, invalid arguments and tool failures to the model instead of failing the chat', async () => {
@@ -327,8 +326,9 @@ describe('serializeToolData', () => {
     });
 
     expect(serialized).toHaveLength(
-      JENNY_LIMITS.MAX_TOOL_RESULT_CHARACTERS + JENNY_TRUNCATION_MARKER.length,
+      JENNY_LIMITS.MAX_TOOL_RESULT_CHARACTERS +
+        JENNY_REPLY_TEXT.TRUNCATION_MARKER.length,
     );
-    expect(serialized.endsWith(JENNY_TRUNCATION_MARKER)).toBe(true);
+    expect(serialized.endsWith(JENNY_REPLY_TEXT.TRUNCATION_MARKER)).toBe(true);
   });
 });

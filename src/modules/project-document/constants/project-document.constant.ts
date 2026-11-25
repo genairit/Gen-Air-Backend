@@ -1,5 +1,6 @@
 import { TIME_UNITS } from '@Constants/time.constant';
 import { BYTE_UNITS } from '@Constants/size.constant';
+import type { IProjectDocumentFileOutcome } from '../interfaces/project-document.interface';
 
 export const PROJECT_DOCUMENT_STATUSES = {
   INDEXED: 'indexed',
@@ -16,12 +17,21 @@ export const PROJECT_DOCUMENT_STATUS_VALUES: readonly ProjectDocumentStatusType[
   Object.values(PROJECT_DOCUMENT_STATUSES);
 
 export const PROJECT_DOCUMENT_SKIP_REASONS = {
-  ...PROJECT_DOCUMENT_STATUSES,
+  SCANNED: PROJECT_DOCUMENT_STATUSES.SCANNED,
+  TOO_LARGE: PROJECT_DOCUMENT_STATUSES.TOO_LARGE,
+  UNREADABLE: PROJECT_DOCUMENT_STATUSES.UNREADABLE,
+  TOO_MANY_PAGES: PROJECT_DOCUMENT_STATUSES.TOO_MANY_PAGES,
   DOWNLOAD_FAILED: 'download_failed',
 } as const;
 
 export type ProjectDocumentSkipReasonType =
   (typeof PROJECT_DOCUMENT_SKIP_REASONS)[keyof typeof PROJECT_DOCUMENT_SKIP_REASONS];
+
+export const PROJECT_DOCUMENT_SKIP_REASON_VALUES: readonly string[] =
+  Object.values(PROJECT_DOCUMENT_SKIP_REASONS);
+
+export const PROJECT_DOCUMENT_INTERRUPTED_OUTCOME: IProjectDocumentFileOutcome =
+  { skip: null, completed: false };
 
 export const PROJECT_DOCUMENT_LIMITS = {
   MAX_PAGES: 300,
@@ -32,6 +42,10 @@ export const PROJECT_DOCUMENT_LIMITS = {
   MAX_FILE_BYTES: 25 * BYTE_UNITS.MEGABYTE,
   EXTRACTION_TIMEOUT_MS: 20 * TIME_UNITS.SECOND_MS,
   REFRESH_BUDGET_MS: 40 * TIME_UNITS.SECOND_MS,
+  SNIPPET_MIN_WORDS: 15,
+  SNIPPET_MAX_WORDS: 40,
+  SNIPPET_MAX_FRAGMENTS: 2,
+  FALLBACK_SNIPPET_CHARACTERS: 300,
 } as const;
 
 export const PROJECT_DOCUMENT_LOCK_PREFIX = 'project-document';
@@ -61,8 +75,8 @@ matches AS (
 SELECT
   "fileId",
   "pageNumber",
-  CASE WHEN terms = '' THEN left(text, 300)
-    ELSE ts_headline('simple', text, terms::tsquery, 'MaxWords=40, MinWords=15, MaxFragments=2, StartSel=«, StopSel=»')
+  CASE WHEN terms = '' THEN left(text, ${PROJECT_DOCUMENT_LIMITS.FALLBACK_SNIPPET_CHARACTERS})
+    ELSE ts_headline('simple', text, terms::tsquery, 'MaxWords=${PROJECT_DOCUMENT_LIMITS.SNIPPET_MAX_WORDS}, MinWords=${PROJECT_DOCUMENT_LIMITS.SNIPPET_MIN_WORDS}, MaxFragments=${PROJECT_DOCUMENT_LIMITS.SNIPPET_MAX_FRAGMENTS}, StartSel=«, StopSel=»')
   END AS snippet
 FROM matches
 ORDER BY rank + similarity DESC, "fileId", "pageNumber"

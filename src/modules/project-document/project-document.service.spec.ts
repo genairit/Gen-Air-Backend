@@ -263,6 +263,52 @@ describe('ProjectDocumentService on-demand indexing', () => {
     ]);
   });
 
+  it('stores and reports PDFs over the page limit as too_many_pages without retrying them', async () => {
+    const huge = pdfFile('huge');
+    projectDrive.listProjectFiles.mockResolvedValue([huge]);
+    repository.findStates.mockResolvedValue([]);
+    extractPdfPagesMock.mockResolvedValue({
+      pages: [],
+      totalPages: PROJECT_DOCUMENT_LIMITS.MAX_PAGES + 1,
+    });
+
+    const firstSearch = await search('מזגן');
+
+    expect(repository.replaceDocument).toHaveBeenCalledWith(
+      {
+        pages: [],
+        document: {
+          pageCount: 0,
+          fileId: 'huge',
+          projectId: PROJECT_ID,
+          md5Checksum: huge.md5Checksum,
+          driveModifiedTime: huge.modifiedTime,
+          status: PROJECT_DOCUMENT_STATUSES.TOO_MANY_PAGES,
+        },
+      },
+      transaction,
+    );
+    expect(firstSearch.skipped).toEqual([
+      {
+        fileId: 'huge',
+        fileName: 'huge.pdf',
+        reason: PROJECT_DOCUMENT_SKIP_REASONS.TOO_MANY_PAGES,
+      },
+    ]);
+
+    jest.clearAllMocks();
+    repository.searchPages.mockResolvedValue([]);
+    projectDrive.listProjectFiles.mockResolvedValue([huge]);
+    repository.findStates.mockResolvedValue([
+      storedState(huge, PROJECT_DOCUMENT_STATUSES.TOO_MANY_PAGES),
+    ]);
+
+    const repeatSearch = await search('מזגן');
+
+    expect(projectDrive.downloadProjectFile).not.toHaveBeenCalled();
+    expect(repeatSearch.skipped).toEqual(firstSearch.skipped);
+  });
+
   it('marks unreadable PDFs and reports transient download failures without persisting them', async () => {
     const unreadable = pdfFile('unreadable');
     const unreachable = pdfFile('unreachable');

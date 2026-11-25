@@ -3,6 +3,7 @@ import {
   PROJECT_DOCUMENT_STATUSES,
   ProjectDocumentStatusType,
   ProjectDocumentSkipReasonType,
+  PROJECT_DOCUMENT_SKIP_REASON_VALUES,
 } from '../constants/project-document.constant';
 
 import {
@@ -16,13 +17,11 @@ import {
   IProjectDocumentIndexPlan,
 } from '../interfaces/project-document.interface';
 
+import { TEXT_PATTERNS } from '@Constants/text.constant';
 import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { toDriveFileLink } from '@Utilities/google-drive.utility';
 import { IDriveTreeFile } from '@Interfaces/google-drive.interface';
 import { fixVisualOrderHebrew } from '@Utilities/hebrew-text.utility';
-
-const HORIZONTAL_WHITESPACE = /[^\S\n]+/g;
-const ANY_WHITESPACE = /\s/g;
 
 const toTimestamp = (date: Date | null): number | null =>
   date?.getTime() ?? null;
@@ -70,7 +69,7 @@ export const planDocumentIndex = (
 
 export const normalizePageText = (text: string): string =>
   fixVisualOrderHebrew(text)
-    .replace(HORIZONTAL_WHITESPACE, ' ')
+    .replace(TEXT_PATTERNS.HORIZONTAL_WHITESPACE, ' ')
     .trim()
     .slice(0, PROJECT_DOCUMENT_LIMITS.MAX_PAGE_CHARACTERS);
 
@@ -90,18 +89,15 @@ const toDocumentPages = (
 
 const countTextCharacters = (pages: IProjectDocumentPage[]): number =>
   pages.reduce(
-    (total, page) => total + page.text.replace(ANY_WHITESPACE, '').length,
+    (total, page) =>
+      total + page.text.replace(TEXT_PATTERNS.ANY_WHITESPACE, '').length,
     0,
   );
 
 const resolveExtractedStatus = (
-  extracted: IExtractedPdf | null,
+  extracted: IExtractedPdf,
   pages: IProjectDocumentPage[],
 ): ProjectDocumentStatusType => {
-  if (!extracted) {
-    return PROJECT_DOCUMENT_STATUSES.UNREADABLE;
-  }
-
   if (extracted.totalPages > PROJECT_DOCUMENT_LIMITS.MAX_PAGES) {
     return PROJECT_DOCUMENT_STATUSES.TOO_MANY_PAGES;
   }
@@ -136,7 +132,15 @@ export const buildIndexedDocument = (
   file: IDriveTreeFile,
   extracted: IExtractedPdf | null,
 ): IIndexedProjectDocument => {
-  const pages = toDocumentPages(projectId, file.id, extracted?.pages ?? []);
+  if (!extracted) {
+    return buildUnindexedDocument(
+      projectId,
+      file,
+      PROJECT_DOCUMENT_STATUSES.UNREADABLE,
+    );
+  }
+
+  const pages = toDocumentPages(projectId, file.id, extracted.pages);
   const status = resolveExtractedStatus(extracted, pages);
 
   if (status !== PROJECT_DOCUMENT_STATUSES.INDEXED) {
@@ -147,20 +151,35 @@ export const buildIndexedDocument = (
     pages,
     document: {
       ...buildUnindexedDocument(projectId, file, status).document,
-      pageCount: extracted?.totalPages ?? pages.length,
+      pageCount: extracted.totalPages,
     },
   };
+};
+
+export const isSkipReason = (
+  value?: string | null,
+): value is ProjectDocumentSkipReasonType => {
+  if (!value) {
+    return false;
+  }
+
+  return PROJECT_DOCUMENT_SKIP_REASON_VALUES.includes(value);
 };
 
 export const toDocumentSkip = (
   file: IDriveTreeFile,
   reason: ProjectDocumentSkipReasonType,
+): IProjectDocumentSkip => ({ reason, fileId: file.id, fileName: file.name });
+
+export const toStatusSkip = (
+  file: IDriveTreeFile,
+  status: ProjectDocumentStatusType,
 ): IProjectDocumentSkip | null => {
-  if (reason === PROJECT_DOCUMENT_STATUSES.INDEXED) {
+  if (!isSkipReason(status)) {
     return null;
   }
 
-  return { reason, fileId: file.id, fileName: file.name };
+  return toDocumentSkip(file, status);
 };
 
 export const toStoredSkips = (
@@ -171,13 +190,15 @@ export const toStoredSkips = (
     storedDocuments.map((document) => [document.fileId, document.status]),
   );
 
-  return unchanged.flatMap(
-    (file) =>
-      toDocumentSkip(
-        file,
-        statusByFileId.get(file.id) ?? PROJECT_DOCUMENT_STATUSES.INDEXED,
-      ) ?? [],
-  );
+  return unchanged.flatMap((file) => {
+    const status = statusByFileId.get(file.id) ?? null;
+
+    if (!isSkipReason(status)) {
+      return [];
+    }
+
+    return [toDocumentSkip(file, status)];
+  });
 };
 
 export const toDocumentHits = (

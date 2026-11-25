@@ -9,6 +9,7 @@ import {
   PROJECT_DOCUMENT_STATUSES,
   PROJECT_DOCUMENT_LOCK_PREFIX,
   PROJECT_DOCUMENT_SKIP_REASONS,
+  PROJECT_DOCUMENT_INTERRUPTED_OUTCOME,
 } from './constants/project-document.constant';
 
 import {
@@ -27,6 +28,7 @@ import {
 
 import {
   isPdfFile,
+  toStatusSkip,
   toStoredSkips,
   toDocumentHits,
   toDocumentSkip,
@@ -44,11 +46,6 @@ import { IDriveTreeFile } from '@Interfaces/google-drive.interface';
 import { ProjectDocumentRepository } from './project-document.repository';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
-
-const INTERRUPTED_OUTCOME: IProjectDocumentFileOutcome = {
-  skip: null,
-  completed: false,
-};
 
 @Injectable()
 export class ProjectDocumentService {
@@ -177,7 +174,7 @@ export class ProjectDocumentService {
     const extracted = await this.extract(file, content, fileSignal);
 
     if (fileSignal.aborted) {
-      return INTERRUPTED_OUTCOME;
+      return PROJECT_DOCUMENT_INTERRUPTED_OUTCOME;
     }
 
     return this.store(
@@ -191,7 +188,7 @@ export class ProjectDocumentService {
     fileSignal: AbortSignal,
   ): IProjectDocumentFileOutcome {
     if (fileSignal.aborted) {
-      return INTERRUPTED_OUTCOME;
+      return PROJECT_DOCUMENT_INTERRUPTED_OUTCOME;
     }
 
     return {
@@ -224,7 +221,7 @@ export class ProjectDocumentService {
 
     return {
       completed: true,
-      skip: toDocumentSkip(file, indexed.document.status),
+      skip: toStatusSkip(file, indexed.document.status),
     };
   }
 

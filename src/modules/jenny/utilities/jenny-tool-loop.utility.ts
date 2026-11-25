@@ -1,8 +1,7 @@
 import {
   JENNY_LIMITS,
+  JENNY_REPLY_TEXT,
   JENNY_TOOL_ERRORS,
-  JENNY_INCOMPLETE_ANSWER,
-  JENNY_TRUNCATION_MARKER,
 } from '../constants/jenny.constant';
 
 import {
@@ -39,7 +38,7 @@ export const serializeToolData = (data: unknown): string => {
     return serialized;
   }
 
-  return `${serialized.slice(0, JENNY_LIMITS.MAX_TOOL_RESULT_CHARACTERS)}${JENNY_TRUNCATION_MARKER}`;
+  return `${serialized.slice(0, JENNY_LIMITS.MAX_TOOL_RESULT_CHARACTERS)}${JENNY_REPLY_TEXT.TRUNCATION_MARKER}`;
 };
 
 const describeToolError = (error: unknown): Record<string, string> => {
@@ -121,7 +120,7 @@ const toOutcome = (
   usage: state.usage,
   sources: state.sources,
   toolNames: state.toolNames,
-  message: content?.trim() || JENNY_INCOMPLETE_ANSWER,
+  message: content?.trim() || JENNY_REPLY_TEXT.INCOMPLETE_ANSWER,
 });
 
 export const runJennyToolLoop = (

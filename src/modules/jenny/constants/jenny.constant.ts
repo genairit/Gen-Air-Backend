@@ -64,7 +64,8 @@ export const JENNY_TOOL_ERRORS = {
   TOO_MANY_TOOL_CALLS: 'too_many_tool_calls',
 } as const;
 
-export const JENNY_TRUNCATION_MARKER = '…[truncated]';
-
-export const JENNY_INCOMPLETE_ANSWER =
-  'מצטערת, לא הצלחתי להשלים את התשובה. אפשר לנסח את השאלה מחדש?';
+export const JENNY_REPLY_TEXT = {
+  TRUNCATION_MARKER: '…[truncated]',
+  INCOMPLETE_ANSWER:
+    'מצטערת, לא הצלחתי להשלים את התשובה. אפשר לנסח את השאלה מחדש?',
+} as const;

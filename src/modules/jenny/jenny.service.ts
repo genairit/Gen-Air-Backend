@@ -1,9 +1,6 @@
 import {
   Inject,
   Injectable,
-  HttpException,
-  BadGatewayException,
-  GatewayTimeoutException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 
@@ -14,6 +11,11 @@ import {
   IJennyToolLoopOutcome,
 } from './interfaces/jenny.interface';
 
+import {
+  toConversationFailure,
+  buildJennyConversation,
+} from './utilities/jenny-conversation.utility';
+
 import { LLM_PROVIDER } from '@Constants/llm.constant';
 import { JENNY_LIMITS } from './constants/jenny.constant';
 import { Meta, TypedLogger } from '@Logger/logger.service';
@@ -23,15 +25,6 @@ import { JennyContextRegistry } from './jenny-context.registry';
 import { selectCitedSources } from './utilities/jenny-source.utility';
 import { runJennyToolLoop } from './utilities/jenny-tool-loop.utility';
 import { readJennyMaxToolRounds } from './utilities/jenny-settings.utility';
-import { buildJennyConversation } from './utilities/jenny-conversation.utility';
-
-const toConversationFailure = (signal: AbortSignal): HttpException => {
-  if (signal.aborted) {
-    return new GatewayTimeoutException('Jenny took too long to answer');
-  }
-
-  return new BadGatewayException('Jenny is temporarily unavailable');
-};
 
 @Injectable()
 export class JennyService {

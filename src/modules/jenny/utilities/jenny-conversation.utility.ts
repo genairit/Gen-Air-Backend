@@ -1,17 +1,19 @@
 import {
+  HttpException,
+  BadGatewayException,
+  GatewayTimeoutException,
+} from '@nestjs/common';
+
+import {
   JENNY_CHAT_ROLES,
   JennyChatRoleType,
 } from '../constants/jenny.constant';
-
-import {
-  JENNY_SYSTEM_PROMPT,
-  JENNY_CONTEXT_HEADING,
-} from '../constants/jenny-prompt.constant';
 
 import { TEXT } from '@Constants/text.constant';
 import { TLlmMessage } from '@Interfaces/llm.interface';
 import { JennyMessageDto } from '../dto/jenny-chat.dto';
 import { LLM_MESSAGE_ROLES } from '@Constants/llm.constant';
+import { JENNY_PROMPT } from '../constants/jenny-prompt.constant';
 
 const CHAT_MESSAGE_BUILDERS: Record<
   JennyChatRoleType,
@@ -29,7 +31,7 @@ const CHAT_MESSAGE_BUILDERS: Record<
 };
 
 export const buildJennySystemPrompt = (contextPrompt: string): string =>
-  [JENNY_SYSTEM_PROMPT, JENNY_CONTEXT_HEADING, contextPrompt].join(
+  [JENNY_PROMPT.SYSTEM, JENNY_PROMPT.CONTEXT_HEADING, contextPrompt].join(
     TEXT.LINE_BREAK,
   );
 
@@ -45,3 +47,11 @@ export const buildJennyConversation = (
     CHAT_MESSAGE_BUILDERS[message.role](message.content),
   ),
 ];
+
+export const toConversationFailure = (signal: AbortSignal): HttpException => {
+  if (signal.aborted) {
+    return new GatewayTimeoutException('Jenny took too long to answer');
+  }
+
+  return new BadGatewayException('Jenny is temporarily unavailable');
+};

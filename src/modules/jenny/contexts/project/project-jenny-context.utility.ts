@@ -16,8 +16,8 @@ import { IJennySource } from '../../interfaces/jenny.interface';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { toDriveFileLink } from '@Utilities/google-drive.utility';
 import { IDriveTreeFile } from '@Interfaces/google-drive.interface';
+import { JENNY_PROMPT } from '../../constants/jenny-prompt.constant';
 import { TProjectRead } from '@Modules/project/interfaces/project.interface';
-import { JENNY_PROJECT_CONTEXT_LABEL } from '../../constants/jenny-prompt.constant';
 import { IProjectQuotationView } from '@Modules/quotation/interfaces/quotation-document.interface';
 
 const toFullName = (user?: IUser): string | null => {
@@ -33,7 +33,7 @@ const toModifiedTimestamp = (file: IDriveTreeFile): number =>
 
 export const buildProjectContextPrompt = (project: TProjectRead): string =>
   [
-    JENNY_PROJECT_CONTEXT_LABEL,
+    JENNY_PROMPT.PROJECT_CONTEXT_LABEL,
     JSON.stringify({
       code: project.code,
       name: project.name,

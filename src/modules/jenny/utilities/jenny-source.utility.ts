@@ -1,14 +1,16 @@
 import { uniqueBy } from '@Utilities/array.utility';
+import { TEXT_PATTERNS } from '@Constants/text.constant';
 import { JENNY_LIMITS } from '../constants/jenny.constant';
 import { IJennySource } from '../interfaces/jenny.interface';
-
-const FILE_EXTENSION = /\.[^.]+$/;
 
 const sourceKey = (source: IJennySource): string =>
   [source.fileId, source.page ?? ''].join(':');
 
 const citableNames = (fileName: string): string[] => {
-  const nameWithoutExtension = fileName.replace(FILE_EXTENSION, '');
+  const nameWithoutExtension = fileName.replace(
+    TEXT_PATTERNS.FILE_EXTENSION,
+    '',
+  );
   const isDistinctiveStem =
     nameWithoutExtension.length >= JENNY_LIMITS.MIN_CITED_NAME_LENGTH;
 
