@@ -5,18 +5,29 @@ import {
 } from '../../../../testing/customer-project.fixture';
 
 import {
+  TASK_STATUSES,
+  EMPTY_TASK_STATUS_COUNTS,
+} from '@Modules/task/constants/task-status.constant';
+
+import {
   IProjectDocumentSearch,
   IProjectDocumentSession,
   IProjectDocumentSessionRequest,
 } from '@Modules/project-document/interfaces/project-document.interface';
 
 import { Test } from '@nestjs/testing';
+import { mock } from 'jest-mock-extended';
+import { TaskService } from '@Modules/task/task.service';
 import { USER_ROLES } from '@Constants/user-role.constant';
 import { QuotationJennyTool } from './tools/quotation.tool';
+import { ITask } from '@Modules/task/interfaces/task.interface';
 import { ProjectService } from '@Modules/project/project.service';
+import { ProjectTasksJennyTool } from './tools/project-tasks.tool';
 import { IDriveTreeFile } from '@Interfaces/google-drive.interface';
 import { ProjectStatusJennyTool } from './tools/project-status.tool';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { TASK_TYPES } from '@Modules/task/constants/task-type.constant';
+import { TASK_SORTS } from '@Modules/task/constants/task-sort.constant';
 import { PROJECT_STATUS_IDS } from '@Constants/project-status.constant';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { QuotationService } from '@Modules/quotation/quotation.service';
@@ -28,6 +39,7 @@ import { PERMISSIONS, PermissionType } from '@Constants/authorization.constant';
 import { quotationDocumentFixture } from '../../../../testing/quotation.fixture';
 import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
 import { ProjectDocumentSearchJennyTool } from './tools/project-document-search.tool';
+import { JennyToolArgumentsError } from '../../utilities/jenny-tool-arguments.utility';
 import { quotationView } from '@Modules/quotation/utilities/quotation-calculation.utility';
 import { GetProjectQuotationsDto } from '@Modules/quotation/dto/get-project-quotations.dto';
 import { ProjectDocumentService } from '@Modules/project-document/project-document.service';
@@ -85,6 +97,7 @@ describe('ProjectJennyContextService scoping', () => {
       [string, GetProjectQuotationsDto]
     >(),
   };
+  const taskService = mock<TaskService>();
   const documentSession = {
     listFiles: jest.fn<Promise<IDriveTreeFile[]>, []>(),
     search: jest.fn<Promise<IProjectDocumentSearch>, [string]>(),
@@ -104,6 +117,7 @@ describe('ProjectJennyContextService scoping', () => {
     PERMISSIONS.PROJECTS_READ,
     PERMISSIONS.QUOTATIONS_READ,
     PERMISSIONS.DRIVE_READ,
+    PERMISSIONS.TASKS_READ,
   );
 
   beforeAll(async () => {
@@ -114,8 +128,10 @@ describe('ProjectJennyContextService scoping', () => {
         QuotationJennyTool,
         ProjectDocumentsJennyTool,
         ProjectDocumentSearchJennyTool,
+        ProjectTasksJennyTool,
         { provide: ProjectService, useValue: projectService },
         { provide: QuotationService, useValue: quotationService },
+        { provide: TaskService, useValue: taskService },
         { provide: ProjectDocumentService, useValue: projectDocumentService },
       ],
     }).compile();
@@ -125,6 +141,13 @@ describe('ProjectJennyContextService scoping', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     projectService.getById.mockResolvedValue(contextProject());
+    taskService.getByFilter.mockResolvedValue({ items: [], nextCursor: null });
+    taskService.getCounts.mockResolvedValue({
+      total: 0,
+      urgent: 0,
+      byStatus: EMPTY_TASK_STATUS_COUNTS,
+    });
+    taskService.getOverdueCountForProject.mockResolvedValue(0);
     projectDocumentService.openSession.mockReturnValue(documentSession);
     documentSession.listFiles.mockResolvedValue([]);
     quotationService.listByProject.mockResolvedValue({
@@ -177,6 +200,7 @@ describe('ProjectJennyContextService scoping', () => {
       JENNY_TOOL_NAMES.GET_QUOTATION,
       JENNY_TOOL_NAMES.LIST_PROJECT_DOCUMENTS,
       JENNY_TOOL_NAMES.SEARCH_PROJECT_DOCUMENTS,
+      JENNY_TOOL_NAMES.GET_PROJECT_TASKS,
     ]);
   });
 
@@ -295,6 +319,19 @@ describe('ProjectJennyContextService scoping', () => {
     expect(documentSession.search).toHaveBeenCalledWith('מעבה');
   });
 
+  it('does not offer project tasks without task read permission', async () => {
+    const resolved = await context().resolve({
+      signal: requestSignal,
+      id: CONTEXT_PROJECT_ID,
+      user: userWith(PERMISSIONS.PROJECTS_READ),
+    });
+
+    expect(resolved.tools.map(({ definition }) => definition.name)).toEqual([
+      JENNY_TOOL_NAMES.GET_PROJECT_STATUS,
+    ]);
+    expect(taskService.getByFilter).not.toHaveBeenCalled();
+  });
+
   describe('tool results', () => {
     const resolveTool = async (name: string) => {
       const resolved = await context().resolve({
@@ -305,6 +342,100 @@ describe('ProjectJennyContextService scoping', () => {
 
       return resolved.tools.find((tool) => tool.definition.name === name);
     };
+
+    it('searches only the current project and keeps totals independent of the result cap', async () => {
+      const assignee = makeCustomerProjectUser();
+      const title = 'בדיקת תכניות';
+      const dueDate = new Date('2026-11-20T22:00:00Z');
+      const task: ITask = {
+        title,
+        dueDate,
+        assignee,
+        isUrgent: true,
+        deletedAt: null,
+        customerId: null,
+        description: null,
+        createdAt: dueDate,
+        updatedAt: dueDate,
+        urgencyMarkedAt: null,
+        id: 'fixture-task',
+        urgencyMarkedById: null,
+        assigneeId: assignee.id,
+        createdById: assignee.id,
+        taskType: TASK_TYPES.GENERAL,
+        status: TASK_STATUSES.IN_PROGRESS,
+        projectId: CONTEXT_PROJECT_ID,
+      };
+      taskService.getByFilter.mockResolvedValue({
+        nextCursor: 'more',
+        items: [task],
+      });
+      taskService.getCounts.mockResolvedValue({
+        total: 27,
+        urgent: 1,
+        byStatus: {
+          ...EMPTY_TASK_STATUS_COUNTS,
+          [TASK_STATUSES.IN_PROGRESS]: 27,
+        },
+      });
+      taskService.getOverdueCountForProject.mockResolvedValue(25);
+
+      const tool = await resolveTool(JENNY_TOOL_NAMES.GET_PROJECT_TASKS);
+      expect(tool).toBeDefined();
+      const result = await tool?.run({
+        query: title,
+        projectId: OTHER_PROJECT_ID,
+      });
+
+      expect(taskService.getByFilter).toHaveBeenCalledWith({
+        search: title,
+        projectId: CONTEXT_PROJECT_ID,
+        sort: TASK_SORTS.DUE_DATE_ASC,
+        batchSize: JENNY_LIMITS.MAX_LISTED_TASKS,
+      });
+      expect(taskService.getCounts).toHaveBeenCalledWith({
+        projectId: CONTEXT_PROJECT_ID,
+      });
+      expect(taskService.getOverdueCountForProject).toHaveBeenCalledWith(
+        CONTEXT_PROJECT_ID,
+      );
+      expect(result).toMatchObject({
+        sources: [],
+        data: {
+          totalTasks: 27,
+          overdueTasks: 25,
+          urgentTasks: 1,
+          hasMoreMatchingTasks: true,
+          tasks: [
+            {
+              title,
+              isUrgent: true,
+              dueDate: '2026-11-21',
+              status: TASK_STATUSES.IN_PROGRESS,
+              assignee: `${assignee.firstName} ${assignee.lastName}`,
+            },
+          ],
+        },
+      });
+    });
+
+    it('returns an empty list for projects without tasks and validates optional searches', async () => {
+      const tool = await resolveTool(JENNY_TOOL_NAMES.GET_PROJECT_TASKS);
+      expect(tool).toBeDefined();
+
+      await expect(tool?.run({})).resolves.toMatchObject({
+        data: {
+          tasks: [],
+          totalTasks: 0,
+          overdueTasks: 0,
+          hasMoreMatchingTasks: false,
+        },
+      });
+      await expect(tool?.run({ query: ' ' })).rejects.toBeInstanceOf(
+        JennyToolArgumentsError,
+      );
+      expect(taskService.getByFilter).toHaveBeenCalledTimes(1);
+    });
 
     it('reports a team member whose user record is unavailable without a name', async () => {
       projectService.getById.mockResolvedValue({
