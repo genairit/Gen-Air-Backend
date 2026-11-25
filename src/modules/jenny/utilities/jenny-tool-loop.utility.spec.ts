@@ -1,0 +1,291 @@
+import {
+  TLlmMessage,
+  ILlmProvider,
+  ILlmCompletion,
+  ILlmCompletionRequest,
+} from '@Interfaces/llm.interface';
+
+import {
+  JENNY_LIMITS,
+  JENNY_TOOL_ERRORS,
+  JENNY_INCOMPLETE_ANSWER,
+  JENNY_TRUNCATION_MARKER,
+} from '../constants/jenny.constant';
+
+import { NotFoundException } from '@nestjs/common';
+import { LLM_MESSAGE_ROLES } from '@Constants/llm.constant';
+import { IJennyBoundTool, IJennySource } from '../interfaces/jenny.interface';
+import { runJennyToolLoop, serializeToolData } from './jenny-tool-loop.utility';
+
+const USAGE = { inputTokens: 10, outputTokens: 5 };
+
+const SOURCE: IJennySource = {
+  page: 2,
+  fileId: 'file-1',
+  fileName: 'plan.pdf',
+  url: 'https://drive.google.com/file/d/file-1/view',
+};
+
+const INITIAL_MESSAGES: TLlmMessage[] = [
+  { role: LLM_MESSAGE_ROLES.SYSTEM, content: 'system' },
+  { role: LLM_MESSAGE_ROLES.USER, content: 'מה הסטטוס?' },
+];
+
+const answer = (content: string | null): ILlmCompletion => ({
+  content,
+  usage: USAGE,
+  toolCalls: [],
+});
+
+const callTools = (
+  ...calls: Array<{ id: string; name: string; arguments?: string }>
+): ILlmCompletion => ({
+  usage: USAGE,
+  content: null,
+  toolCalls: calls.map((call) => ({ arguments: '{}', ...call })),
+});
+
+const stubProvider = (
+  completions: ILlmCompletion[],
+): ILlmProvider & { requests: ILlmCompletionRequest[] } => {
+  const requests: ILlmCompletionRequest[] = [];
+  const queue = [...completions];
+
+  return {
+    requests,
+    isConfigured: () => true,
+    complete: (request) => {
+      requests.push(request);
+      const next = queue.shift();
+
+      if (!next) {
+        return Promise.reject(new Error('No stubbed completion left'));
+      }
+
+      return Promise.resolve(next);
+    },
+  };
+};
+
+const stubTool = (
+  name: string,
+  run: IJennyBoundTool['run'],
+): IJennyBoundTool & { run: jest.Mock } => ({
+  run: jest.fn(run),
+  definition: { name, description: name, parameters: { type: 'object' } },
+});
+
+describe('runJennyToolLoop', () => {
+  it('answers directly when the model calls no tool', async () => {
+    const provider = stubProvider([answer('שלום, אני ג׳ני')]);
+    const status = stubTool('getProjectStatus', () =>
+      Promise.resolve({ data: {}, sources: [] }),
+    );
+
+    const outcome = await runJennyToolLoop({
+      provider,
+      maxRounds: 5,
+      tools: [status],
+      messages: INITIAL_MESSAGES,
+    });
+
+    expect(outcome).toEqual({
+      rounds: 0,
+      sources: [],
+      toolNames: [],
+      usage: USAGE,
+      message: 'שלום, אני ג׳ני',
+    });
+    expect(provider.requests[0].tools).toEqual([status.definition]);
+    expect(status.run).not.toHaveBeenCalled();
+  });
+
+  it('runs several tools in one round and feeds every result back to the model', async () => {
+    const provider = stubProvider([
+      callTools(
+        { id: 'call-1', name: 'getProjectStatus' },
+        {
+          id: 'call-2',
+          name: 'searchProjectDocuments',
+          arguments: '{"query":"מעבה"}',
+        },
+      ),
+      answer('הפרויקט בעבודה. לפי plan.pdf עמוד 2 הדגם הוא X.'),
+    ]);
+    const status = stubTool('getProjectStatus', () =>
+      Promise.resolve({ data: { stage: 'בעבודה' }, sources: [] }),
+    );
+    const search = stubTool('searchProjectDocuments', () =>
+      Promise.resolve({ data: { hits: 1 }, sources: [SOURCE] }),
+    );
+
+    const outcome = await runJennyToolLoop({
+      provider,
+      maxRounds: 5,
+      tools: [status, search],
+      messages: INITIAL_MESSAGES,
+    });
+
+    expect(search.run).toHaveBeenCalledWith({ query: 'מעבה' });
+    expect(outcome.rounds).toBe(1);
+    expect(outcome.sources).toEqual([SOURCE]);
+    expect(outcome.toolNames).toEqual([
+      'getProjectStatus',
+      'searchProjectDocuments',
+    ]);
+    expect(outcome.usage).toEqual({ inputTokens: 20, outputTokens: 10 });
+    expect(provider.requests[1].messages.slice(2)).toEqual([
+      {
+        content: null,
+        role: LLM_MESSAGE_ROLES.ASSISTANT,
+        toolCalls: [
+          { id: 'call-1', name: 'getProjectStatus', arguments: '{}' },
+          {
+            id: 'call-2',
+            name: 'searchProjectDocuments',
+            arguments: '{"query":"מעבה"}',
+          },
+        ],
+      },
+      {
+        toolCallId: 'call-1',
+        role: LLM_MESSAGE_ROLES.TOOL,
+        content: '{"stage":"בעבודה"}',
+      },
+      {
+        toolCallId: 'call-2',
+        role: LLM_MESSAGE_ROLES.TOOL,
+        content: '{"hits":1}',
+      },
+    ]);
+  });
+
+  it('continues across rounds until the model answers', async () => {
+    const provider = stubProvider([
+      callTools({ id: 'a', name: 'getProjectStatus' }),
+      callTools({ id: 'b', name: 'getQuotation' }),
+      answer('סיכום'),
+    ]);
+    const status = stubTool('getProjectStatus', () =>
+      Promise.resolve({ data: 1, sources: [] }),
+    );
+    const quotation = stubTool('getQuotation', () =>
+      Promise.resolve({ data: 2, sources: [] }),
+    );
+
+    const outcome = await runJennyToolLoop({
+      provider,
+      maxRounds: 5,
+      tools: [status, quotation],
+      messages: INITIAL_MESSAGES,
+    });
+
+    expect(outcome.rounds).toBe(2);
+    expect(outcome.message).toBe('סיכום');
+    expect(provider.requests).toHaveLength(3);
+  });
+
+  it('stops calling tools at the round cap and forces a final answer without tools', async () => {
+    const provider = stubProvider([
+      callTools({ id: 'a', name: 'getProjectStatus' }),
+      callTools({ id: 'b', name: 'getProjectStatus' }),
+      { ...callTools({ id: 'c', name: 'getProjectStatus' }), content: 'סופי' },
+    ]);
+    const status = stubTool('getProjectStatus', () =>
+      Promise.resolve({ data: 1, sources: [] }),
+    );
+
+    const outcome = await runJennyToolLoop({
+      provider,
+      maxRounds: 2,
+      tools: [status],
+      messages: INITIAL_MESSAGES,
+    });
+
+    expect(status.run).toHaveBeenCalledTimes(2);
+    expect(provider.requests).toHaveLength(3);
+    expect(provider.requests.map((request) => request.tools.length)).toEqual([
+      1, 1, 0,
+    ]);
+    expect(outcome.rounds).toBe(2);
+    expect(outcome.message).toBe('סופי');
+  });
+
+  it('falls back to a Hebrew apology when the model returns no text', async () => {
+    const provider = stubProvider([answer('   ')]);
+
+    const outcome = await runJennyToolLoop({
+      provider,
+      tools: [],
+      maxRounds: 1,
+      messages: INITIAL_MESSAGES,
+    });
+
+    expect(outcome.message).toBe(JENNY_INCOMPLETE_ANSWER);
+  });
+
+  it('reports unknown tools, invalid arguments and tool failures to the model instead of failing the chat', async () => {
+    const provider = stubProvider([
+      callTools(
+        { id: 'unknown', name: 'deleteProject' },
+        { id: 'invalid', name: 'searchProjectDocuments', arguments: '{oops' },
+        { id: 'failed', name: 'getProjectStatus' },
+      ),
+      answer('לא הצלחתי'),
+    ]);
+    const search = stubTool('searchProjectDocuments', () =>
+      Promise.resolve({ data: {}, sources: [SOURCE] }),
+    );
+    const status = stubTool('getProjectStatus', () =>
+      Promise.reject(new NotFoundException('Project was not found')),
+    );
+
+    const outcome = await runJennyToolLoop({
+      provider,
+      maxRounds: 3,
+      tools: [search, status],
+      messages: INITIAL_MESSAGES,
+    });
+
+    expect(search.run).not.toHaveBeenCalled();
+    expect(outcome.sources).toEqual([]);
+    expect(
+      provider.requests[1].messages
+        .slice(3)
+        .map((message) => JSON.parse(message.content ?? '') as unknown),
+    ).toEqual([
+      { error: JENNY_TOOL_ERRORS.UNKNOWN_TOOL },
+      {
+        error: JENNY_TOOL_ERRORS.INVALID_ARGUMENTS,
+        detail: 'Tool arguments must be valid JSON',
+      },
+      { error: JENNY_TOOL_ERRORS.FAILED, detail: 'Project was not found' },
+    ]);
+  });
+
+  it('propagates language model failures to the caller', async () => {
+    const provider = stubProvider([]);
+
+    await expect(
+      runJennyToolLoop({
+        provider,
+        tools: [],
+        maxRounds: 1,
+        messages: INITIAL_MESSAGES,
+      }),
+    ).rejects.toThrow('No stubbed completion left');
+  });
+});
+
+describe('serializeToolData', () => {
+  it('truncates oversized tool results to bound the prompt size', () => {
+    const serialized = serializeToolData({
+      text: 'א'.repeat(JENNY_LIMITS.MAX_TOOL_RESULT_CHARACTERS),
+    });
+
+    expect(serialized).toHaveLength(
+      JENNY_LIMITS.MAX_TOOL_RESULT_CHARACTERS + JENNY_TRUNCATION_MARKER.length,
+    );
+    expect(serialized.endsWith(JENNY_TRUNCATION_MARKER)).toBe(true);
+  });
+});

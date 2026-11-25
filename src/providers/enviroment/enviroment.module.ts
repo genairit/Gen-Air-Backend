@@ -1,5 +1,6 @@
 import * as Joi from 'joi';
 import { ConfigModule } from '@nestjs/config';
+import { JENNY_SETTINGS } from '@Modules/jenny/constants/jenny.constant';
 
 const environmentSchema = Joi.object({
   DB_USER: Joi.string().required(),
@@ -15,6 +16,13 @@ const environmentSchema = Joi.object({
   GOOGLE_PLACES_API_KEY: Joi.string().optional(),
   GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON: Joi.string().optional(),
   GOOGLE_APPLICATION_CREDENTIALS: Joi.string().optional(),
+  OPENAI_API_KEY: Joi.string().optional(),
+  JENNY_MODEL: Joi.string().default(JENNY_SETTINGS.DEFAULT_MODEL),
+  JENNY_MAX_TOOL_ROUNDS: Joi.number()
+    .integer()
+    .min(JENNY_SETTINGS.MIN_TOOL_ROUNDS)
+    .max(JENNY_SETTINGS.MAX_TOOL_ROUNDS)
+    .default(JENNY_SETTINGS.DEFAULT_MAX_TOOL_ROUNDS),
 });
 
 export const EnvironmentModule = ConfigModule.forRoot({
