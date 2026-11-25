@@ -27,6 +27,7 @@ export const JENNY_LIMITS = {
   MAX_SOURCES: 10,
   MAX_MESSAGES: 20,
   MAX_QUOTATIONS: 50,
+  MAX_LISTED_TASKS: 20,
   REQUESTS_PER_MINUTE: 20,
   MAX_LISTED_DOCUMENTS: 100,
   MAX_MESSAGE_LENGTH: 4000,
@@ -53,6 +54,7 @@ export const JENNY_ENVIRONMENT_KEYS = {
 
 export const JENNY_TOOL_NAMES = {
   GET_QUOTATION: 'getQuotation',
+  GET_PROJECT_TASKS: 'getProjectTasks',
   GET_PROJECT_STATUS: 'getProjectStatus',
   LIST_PROJECT_DOCUMENTS: 'listProjectDocuments',
   SEARCH_PROJECT_DOCUMENTS: 'searchProjectDocuments',

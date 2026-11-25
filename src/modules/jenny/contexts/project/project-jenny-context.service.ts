@@ -11,6 +11,7 @@ import { QuotationJennyTool } from './tools/quotation.tool';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { assertPermissions } from '@Utilities/permission.utility';
+import { ProjectTasksJennyTool } from './tools/project-tasks.tool';
 import { ProjectStatusJennyTool } from './tools/project-status.tool';
 import { bindPermittedTools } from '../../utilities/jenny-tool.utility';
 import { ProjectDocumentsJennyTool } from './tools/project-documents.tool';
@@ -29,12 +30,14 @@ export class ProjectJennyContextService implements IJennyContextProvider {
     quotationTool: QuotationJennyTool,
     projectDocumentsTool: ProjectDocumentsJennyTool,
     projectDocumentSearchTool: ProjectDocumentSearchJennyTool,
+    projectTasksTool: ProjectTasksJennyTool,
   ) {
     this.tools = [
       projectStatusTool,
       quotationTool,
       projectDocumentsTool,
       projectDocumentSearchTool,
+      projectTasksTool,
     ];
   }
 
