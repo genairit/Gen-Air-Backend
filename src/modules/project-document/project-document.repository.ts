@@ -1,4 +1,9 @@
 import {
+  PROJECT_DOCUMENT_SEARCH_QUERY,
+  PROJECT_DOCUMENT_STATE_ATTRIBUTES,
+} from './constants/project-document.constant';
+
+import {
   TProjectDocumentState,
   IIndexedProjectDocument,
   IProjectDocumentPageMatch,
@@ -9,7 +14,6 @@ import { Injectable } from '@nestjs/common';
 import { Sequelize, QueryTypes, Transaction } from 'sequelize';
 import { ProjectDocument } from './entities/project-document.entity';
 import { ProjectDocumentPage } from './entities/project-document-page.entity';
-import { PROJECT_DOCUMENT_SEARCH_QUERY } from './constants/project-document.constant';
 
 @Injectable()
 export class ProjectDocumentRepository {
@@ -17,7 +21,7 @@ export class ProjectDocumentRepository {
     return ProjectDocument.findAll({
       raw: true,
       where: { projectId },
-      attributes: ['fileId', 'status', 'md5Checksum', 'driveModifiedTime'],
+      attributes: [...PROJECT_DOCUMENT_STATE_ATTRIBUTES],
     });
   }
 

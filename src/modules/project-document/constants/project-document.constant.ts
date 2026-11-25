@@ -1,6 +1,10 @@
+import type {
+  IProjectDocument,
+  IProjectDocumentFileOutcome,
+} from '../interfaces/project-document.interface';
+
 import { TIME_UNITS } from '@Constants/time.constant';
 import { BYTE_UNITS } from '@Constants/size.constant';
-import type { IProjectDocumentFileOutcome } from '../interfaces/project-document.interface';
 
 export const PROJECT_DOCUMENT_STATUSES = {
   INDEXED: 'indexed',
@@ -27,7 +31,7 @@ export const PROJECT_DOCUMENT_SKIP_REASONS = {
 export type ProjectDocumentSkipReasonType =
   (typeof PROJECT_DOCUMENT_SKIP_REASONS)[keyof typeof PROJECT_DOCUMENT_SKIP_REASONS];
 
-export const PROJECT_DOCUMENT_SKIP_REASON_VALUES: readonly string[] =
+export const PROJECT_DOCUMENT_SKIP_REASON_VALUES: readonly ProjectDocumentSkipReasonType[] =
   Object.values(PROJECT_DOCUMENT_SKIP_REASONS);
 
 export const PROJECT_DOCUMENT_INTERRUPTED_OUTCOME: IProjectDocumentFileOutcome =
@@ -47,6 +51,13 @@ export const PROJECT_DOCUMENT_LIMITS = {
   SNIPPET_MAX_FRAGMENTS: 2,
   FALLBACK_SNIPPET_CHARACTERS: 300,
 } as const;
+
+export const PROJECT_DOCUMENT_STATE_ATTRIBUTES = [
+  'fileId',
+  'status',
+  'md5Checksum',
+  'driveModifiedTime',
+] as const satisfies readonly (keyof IProjectDocument)[];
 
 export const PROJECT_DOCUMENT_LOCK_PREFIX = 'project-document';
 

@@ -1,6 +1,7 @@
 import {
   ProjectDocumentStatusType,
   ProjectDocumentSkipReasonType,
+  PROJECT_DOCUMENT_STATE_ATTRIBUTES,
 } from '../constants/project-document.constant';
 
 import { IDriveTreeFile } from '@Interfaces/google-drive.interface';
@@ -17,7 +18,7 @@ export interface IProjectDocument {
 
 export type TProjectDocumentState = Pick<
   IProjectDocument,
-  'fileId' | 'status' | 'md5Checksum' | 'driveModifiedTime'
+  (typeof PROJECT_DOCUMENT_STATE_ATTRIBUTES)[number]
 >;
 
 export type TProjectDocumentWrite = Omit<IProjectDocument, 'indexedAt'>;

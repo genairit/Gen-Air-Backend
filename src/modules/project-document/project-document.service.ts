@@ -39,6 +39,7 @@ import {
 } from './utilities/project-document-index.utility';
 
 import { Injectable } from '@nestjs/common';
+import { TEXT } from '@Constants/text.constant';
 import { memoizeAsync } from '@Utilities/memoize.utility';
 import { Meta, TypedLogger } from '@Logger/logger.service';
 import { extractPdfPages } from './utilities/pdf-text.utility';
@@ -205,7 +206,7 @@ export class ProjectDocumentService {
       PROJECT_DOCUMENT_LOCK_PREFIX,
       indexed.document.projectId,
       indexed.document.fileId,
-    ].join(':');
+    ].join(TEXT.KEY_SEPARATOR);
 
     await this.transactions.run(async (transaction) => {
       await this.transactions.lockKey(lockKey, transaction);

@@ -1,10 +1,10 @@
 import { uniqueBy } from '@Utilities/array.utility';
-import { TEXT_PATTERNS } from '@Constants/text.constant';
 import { JENNY_LIMITS } from '../constants/jenny.constant';
 import { IJennySource } from '../interfaces/jenny.interface';
+import { TEXT, TEXT_PATTERNS } from '@Constants/text.constant';
 
 const sourceKey = (source: IJennySource): string =>
-  [source.fileId, source.page ?? ''].join(':');
+  [source.fileId, source.page ?? ''].join(TEXT.KEY_SEPARATOR);
 
 const citableNames = (fileName: string): string[] => {
   const nameWithoutExtension = fileName.replace(

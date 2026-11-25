@@ -163,7 +163,7 @@ export const isSkipReason = (
     return false;
   }
 
-  return PROJECT_DOCUMENT_SKIP_REASON_VALUES.includes(value);
+  return PROJECT_DOCUMENT_SKIP_REASON_VALUES.some((reason) => reason === value);
 };
 
 export const toDocumentSkip = (

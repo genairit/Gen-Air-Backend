@@ -1,5 +1,6 @@
 export const TEXT = {
   LINE_BREAK: '\n',
+  KEY_SEPARATOR: ':',
 } as const;
 
 export const TEXT_PATTERNS = {
