@@ -30,6 +30,7 @@ import { JennyService } from './jenny.service';
 import { TypedLogger } from '@Logger/logger.service';
 import { JennyController } from './jenny.controller';
 import { LLM_PROVIDER } from '@Constants/llm.constant';
+import { TaskService } from '@Modules/task/task.service';
 import { AuthService } from '@Modules/auth/auth.service';
 import { JennyContextRegistry } from './jenny-context.registry';
 import { ProjectService } from '@Modules/project/project.service';
@@ -39,6 +40,7 @@ import { JENNY_LIMITS, JENNY_TOOL_NAMES } from './constants/jenny.constant';
 import { TProjectRead } from '@Modules/project/interfaces/project.interface';
 import { QuotationJennyTool } from './contexts/project/tools/quotation.tool';
 import { PERMISSIONS, PermissionType } from '@Constants/authorization.constant';
+import { ProjectTasksJennyTool } from './contexts/project/tools/project-tasks.tool';
 import { ProjectStatusJennyTool } from './contexts/project/tools/project-status.tool';
 import { GetProjectQuotationsDto } from '@Modules/quotation/dto/get-project-quotations.dto';
 import { ProjectDocumentsJennyTool } from './contexts/project/tools/project-documents.tool';
@@ -124,9 +126,11 @@ describe('POST /jenny/chat', () => {
         QuotationJennyTool,
         ProjectDocumentsJennyTool,
         ProjectDocumentSearchJennyTool,
+        ProjectTasksJennyTool,
         { provide: LLM_PROVIDER, useValue: llmProvider },
         { provide: ProjectService, useValue: projectService },
         { provide: QuotationService, useValue: quotationService },
+        { provide: TaskService, useValue: {} },
         { provide: ProjectDocumentService, useValue: projectDocumentService },
         {
           provide: AuthService,
