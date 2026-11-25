@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { TaskModule } from '@Modules/task/task.module';
 import { AuthModule } from '@Modules/auth/auth.module';
 import { UserModule } from '@Modules/user/user.module';
+import { JennyModule } from '@Modules/jenny/jenny.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AddressModule } from '@Modules/address/address.module';
 import { ProjectModule } from '@Modules/project/project.module';
@@ -37,6 +38,7 @@ import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-emai
     CustomerModule,
     CustomerContactModule,
     DriveTemplateFolderModule,
+    JennyModule,
     ProjectModule,
     ProjectBoqModule,
     PurchaseRecordModule,

@@ -20,11 +20,13 @@ import {
 
 import {
   IDriveItem,
+  IDriveTreeFile,
   IDriveFileMetadata,
   TFileCountByFolderId,
 } from '@Interfaces/google-drive.interface';
 
 import type {
+  IProjectFileDownload,
   IProjectDriveContents,
   IProjectDriveProvisioning,
   IProjectDriveTemplateContext,
@@ -47,6 +49,7 @@ import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { decodeUploadedFileName } from '@Utilities/upload.utility';
+import { buildDriveFileUrl } from '@Utilities/google-drive.utility';
 import { IProject } from '@Modules/project/interfaces/project.interface';
 import { ISharedDocument } from './interfaces/shared-document.interface';
 import { ApartmentFolderRepairDto } from './dto/apartment-folder-repair.dto';
@@ -458,6 +461,34 @@ export class ProjectDriveService {
     };
   }
 
+  async listProjectFiles(projectId: string): Promise<IDriveTreeFile[]> {
+    const rootId = await this.resolveProjectFolder(projectId, {});
+    const excludedRoots =
+      await this.projectService.getOtherProjectDriveRoots(projectId);
+
+    return this.callDrive(() =>
+      this.googleDriveService.listDescendantFiles(
+        rootId,
+        MAX_FOLDER_DEPTH,
+        excludedRoots,
+      ),
+    );
+  }
+
+  async downloadProjectFile(download: IProjectFileDownload): Promise<Buffer> {
+    const rootId = await this.resolveProjectFolder(download.projectId, {});
+    const excludedRoots = await this.projectService.getOtherProjectDriveRoots(
+      download.projectId,
+    );
+    await this.requireProjectFile(download.fileId, rootId, excludedRoots);
+
+    return this.callDrive(() =>
+      this.googleDriveService.downloadFile(download.fileId, download.maxBytes, {
+        signal: download.signal,
+      }),
+    );
+  }
+
   async upload(
     projectId: string,
     folder: DriveFolderDto,
@@ -587,7 +618,7 @@ export class ProjectDriveService {
         file: {
           id: file.id,
           name: file.name ?? 'מסמך משותף',
-          url: `https://drive.google.com/open?id=${encodeURIComponent(file.id)}`,
+          url: buildDriveFileUrl(file.id),
         },
       };
     } catch (error) {
@@ -616,6 +647,7 @@ export class ProjectDriveService {
   private async requireProjectFile(
     fileId: string,
     rootId: string,
+    excludedRoots: ReadonlySet<string> = new Set(),
   ): Promise<IDriveFileMetadata> {
     const file = await this.requireLiveItem(fileId);
     const isFolder = file.mimeType === GOOGLE_DRIVE.FOLDER_MIME_TYPE;
@@ -627,7 +659,14 @@ export class ProjectDriveService {
 
     const parentsWithinProject = await this.callDrive(() =>
       Promise.all(
-        file.parents.map((parentId) => this.isWithinFolder(parentId, rootId)),
+        file.parents.map((parentId) =>
+          this.isWithinFolder(
+            parentId,
+            rootId,
+            MAX_FOLDER_DEPTH,
+            excludedRoots,
+          ),
+        ),
       ),
     );
     if (!parentsWithinProject.every(Boolean)) {
@@ -926,12 +965,13 @@ export class ProjectDriveService {
     folderId: string,
     ancestorId: string,
     depthLeft: number = MAX_FOLDER_DEPTH,
+    excludedRoots: ReadonlySet<string> = new Set(),
   ): Promise<boolean> {
     if (folderId === ancestorId) {
       return true;
     }
 
-    if (depthLeft === 0) {
+    if (depthLeft === 0 || excludedRoots.has(folderId)) {
       return false;
     }
 
@@ -943,7 +983,7 @@ export class ProjectDriveService {
 
     const parentResults = await Promise.all(
       parentIds.map((parentId) =>
-        this.isWithinFolder(parentId, ancestorId, depthLeft - 1),
+        this.isWithinFolder(parentId, ancestorId, depthLeft - 1, excludedRoots),
       ),
     );
 

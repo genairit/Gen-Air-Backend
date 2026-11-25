@@ -17,6 +17,25 @@ export interface IDriveUpload {
 
 export type TFileCountByFolderId = Map<string, number>;
 
+export type TFolderPathById = Map<string, string>;
+
+export interface IDriveTreeFile extends IDriveItem {
+  folderPath: string;
+  md5Checksum: string | null;
+}
+
+export interface IDriveFileTreeLevel {
+  files: IDriveTreeFile[];
+  folderPaths: TFolderPathById;
+}
+
+export interface IDriveFileTreeWalk {
+  depthLeft: number;
+  files: IDriveTreeFile[];
+  folderPaths: TFolderPathById;
+  excludedFolderIds: ReadonlySet<string>;
+}
+
 export type TRootIdByFolderId = Map<string, string>;
 
 export interface IDriveTreeLevel {
@@ -33,12 +52,16 @@ export interface IDriveFileMetadata {
   name?: string;
   trashed: boolean;
   mimeType: string;
-  parents: string[];
   version?: string;
+  parents: string[];
 }
 
 export interface IDriveFileMove {
   fileId: string;
   parentIds: string[];
   destinationFolderId: string;
+}
+
+export interface IDriveDownloadOptions {
+  signal?: AbortSignal;
 }
