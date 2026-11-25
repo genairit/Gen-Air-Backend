@@ -26,6 +26,7 @@ import {
 } from '@Interfaces/google-drive.interface';
 
 import type {
+  IProjectFileDownload,
   IProjectDriveContents,
   IProjectDriveProvisioning,
   IProjectDriveTemplateContext,
@@ -468,12 +469,14 @@ export class ProjectDriveService {
     );
   }
 
-  downloadListedProjectFile(
-    file: IDriveTreeFile,
-    maxBytes: number,
-  ): Promise<Buffer> {
+  async downloadProjectFile(download: IProjectFileDownload): Promise<Buffer> {
+    const rootId = await this.resolveProjectFolder(download.projectId, {});
+    await this.requireProjectFile(download.fileId, rootId);
+
     return this.callDrive(() =>
-      this.googleDriveService.downloadFile(file.id, maxBytes),
+      this.googleDriveService.downloadFile(download.fileId, download.maxBytes, {
+        signal: download.signal,
+      }),
     );
   }
 

@@ -1,36 +1,28 @@
-import { withTimeout } from '@Utilities/timeout.utility';
-import { IExtractedPdf } from '../interfaces/project-document.interface';
-import { PDF_JS_ERRORS_ONLY_VERBOSITY } from '../constants/project-document.constant';
+import {
+  IExtractedPdf,
+  IPdfExtractionLimits,
+} from '../interfaces/project-document.interface';
 
-interface IPdfExtractionLimits {
-  maxPages: number;
-  timeoutMs: number;
-}
+import { openPdf } from './pdf-library.utility';
+import { withAbort } from '@Utilities/abort.utility';
 
 export const extractPdfPages = async (
   content: Buffer,
   limits: IPdfExtractionLimits,
 ): Promise<IExtractedPdf> => {
-  const { getDocumentProxy, extractText } = await import('unpdf');
-  const document = await withTimeout(
-    getDocumentProxy(new Uint8Array(content), {
-      verbosity: PDF_JS_ERRORS_ONLY_VERBOSITY,
-    }),
-    limits.timeoutMs,
-  );
+  const pdf = await openPdf(content);
 
   try {
-    if (document.numPages > limits.maxPages) {
-      return { totalPages: document.numPages, pages: [] };
+    const document = await withAbort(pdf.opened, limits.signal);
+
+    if (document.pageCount > limits.maxPages) {
+      return { totalPages: document.pageCount, pages: [] };
     }
 
-    const extracted = await withTimeout(
-      extractText(document, { mergePages: false }),
-      limits.timeoutMs,
-    );
+    const pages = await withAbort(document.extractPages(), limits.signal);
 
-    return { totalPages: extracted.totalPages, pages: extracted.text };
+    return { pages, totalPages: document.pageCount };
   } finally {
-    await document.loadingTask.destroy();
+    await pdf.destroy();
   }
 };

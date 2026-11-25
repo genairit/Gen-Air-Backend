@@ -1,26 +1,37 @@
 import {
   Inject,
   Injectable,
+  HttpException,
   BadGatewayException,
+  GatewayTimeoutException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 
 import {
+  IJennyChatRequest,
+  IJennyConversation,
   IJennyChatResponse,
-  IJennyResolvedContext,
   IJennyToolLoopOutcome,
 } from './interfaces/jenny.interface';
 
-import { JennyChatDto } from './dto/jenny-chat.dto';
 import { LLM_PROVIDER } from '@Constants/llm.constant';
+import { JENNY_LIMITS } from './constants/jenny.constant';
 import { Meta, TypedLogger } from '@Logger/logger.service';
+import { signalWithTimeout } from '@Utilities/abort.utility';
 import type { ILlmProvider } from '@Interfaces/llm.interface';
 import { JennyContextRegistry } from './jenny-context.registry';
 import { selectCitedSources } from './utilities/jenny-source.utility';
 import { runJennyToolLoop } from './utilities/jenny-tool-loop.utility';
-import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { readJennyMaxToolRounds } from './utilities/jenny-settings.utility';
 import { buildJennyConversation } from './utilities/jenny-conversation.utility';
+
+const toConversationFailure = (signal: AbortSignal): HttpException => {
+  if (signal.aborted) {
+    return new GatewayTimeoutException('Jenny took too long to answer');
+  }
+
+  return new BadGatewayException('Jenny is temporarily unavailable');
+};
 
 @Injectable()
 export class JennyService {
@@ -32,19 +43,22 @@ export class JennyService {
     @Inject(LLM_PROVIDER) private readonly llmProvider: ILlmProvider,
   ) {}
 
-  async chat(
-    request: JennyChatDto,
-    user: IAuthorizedUser,
-  ): Promise<IJennyChatResponse> {
+  async chat(chat: IJennyChatRequest): Promise<IJennyChatResponse> {
     const startedAt = Date.now();
+    const { request, user } = chat;
+    const signal = signalWithTimeout(
+      chat.clientSignal,
+      JENNY_LIMITS.CHAT_DEADLINE_MS,
+    );
     const context = await this.contexts.resolve(request.context.type, {
       user,
+      signal,
       id: request.context.id,
     });
 
     this.assertConfigured();
 
-    const outcome = await this.converse(context, request);
+    const outcome = await this.converse({ context, request, signal });
 
     this.logger.info({
       userId: user.id,
@@ -71,11 +85,13 @@ export class JennyService {
   }
 
   private async converse(
-    context: IJennyResolvedContext,
-    request: JennyChatDto,
+    conversation: IJennyConversation,
   ): Promise<IJennyToolLoopOutcome> {
+    const { context, request, signal } = conversation;
+
     try {
       return await runJennyToolLoop({
+        signal,
         tools: context.tools,
         provider: this.llmProvider,
         maxRounds: this.maxToolRounds,
@@ -84,11 +100,12 @@ export class JennyService {
     } catch (error) {
       this.logger.error({
         error,
+        interrupted: signal.aborted,
         contextType: request.context.type,
         message: 'Jenny language model request failed',
       });
 
-      throw new BadGatewayException('Jenny is temporarily unavailable');
+      throw toConversationFailure(signal);
     }
   }
 }

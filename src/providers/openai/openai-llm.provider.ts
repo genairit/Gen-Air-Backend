@@ -32,14 +32,17 @@ export class OpenAiLlmProvider implements ILlmProvider {
   }
 
   async complete(request: ILlmCompletionRequest): Promise<ILlmCompletion> {
-    const completion = await this.requireClient().chat.completions.create({
-      model: this.options.model,
-      max_completion_tokens: OPENAI.MAX_COMPLETION_TOKENS,
-      messages: request.messages.map((message) => toOpenAiMessage(message)),
-      ...(request.tools.length > 0
-        ? { tools: request.tools.map(toOpenAiTool) }
-        : {}),
-    });
+    const completion = await this.requireClient().chat.completions.create(
+      {
+        model: this.options.model,
+        max_completion_tokens: OPENAI.MAX_COMPLETION_TOKENS,
+        messages: request.messages.map((message) => toOpenAiMessage(message)),
+        ...(request.tools.length > 0
+          ? { tools: request.tools.map(toOpenAiTool) }
+          : {}),
+      },
+      { signal: request.signal },
+    );
 
     return fromOpenAiCompletion(completion);
   }

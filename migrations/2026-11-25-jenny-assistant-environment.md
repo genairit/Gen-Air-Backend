@@ -10,13 +10,17 @@ default search path already includes both, so no further change is needed.
 
 ## What to add
 
-- `OPENAI_API_KEY` — required for Jenny. Without it the server still starts and every other
-  feature works, but `POST /jenny/chat` answers `503` after the permission and project checks.
-- `JENNY_MODEL` — optional, defaults to `gpt-5.4-mini`. Any OpenAI Chat Completions model that
-  supports function calling.
-- `JENNY_MAX_TOOL_ROUNDS` — optional, defaults to `5`. A whole number from `1` to `10`; how many
-  rounds of tool calls Jenny may run before she must answer with what she has. Invalid values fall
-  back to the default and log a warning.
+- `OPENAI_API_KEY` — required for Jenny. Leaving it unset or empty (`OPENAI_API_KEY=`) is valid:
+  the server still starts and every other feature works, but `POST /jenny/chat` answers `503`
+  after the permission and project checks.
+- `JENNY_MODEL` — optional; unset or empty uses `gpt-5.4-mini`. Any OpenAI Chat Completions model
+  that supports function calling.
+- `JENNY_MAX_TOOL_ROUNDS` — optional; unset or empty uses `5`. A whole number from `1` to `10`;
+  how many rounds of tool calls Jenny may run before she must answer with what she has. Any other
+  value never blocks startup: Jenny logs a warning and uses `5`.
+
+Each chat request is bounded by a 2-minute deadline (and is cancelled when the client
+disconnects), at most 4 tool calls per round, and a 40-second PDF indexing budget per request.
 
 ## Why
 

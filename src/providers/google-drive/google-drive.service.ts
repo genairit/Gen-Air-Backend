@@ -24,6 +24,7 @@ import {
   IDriveFileMetadata,
   IDriveFileTreeWalk,
   TFileCountByFolderId,
+  IDriveDownloadOptions,
 } from '@Interfaces/google-drive.interface';
 
 import {
@@ -374,10 +375,14 @@ export class GoogleDriveService {
     }
   }
 
-  async downloadFile(fileId: string, maxBytes: number): Promise<Buffer> {
+  async downloadFile(
+    fileId: string,
+    maxBytes: number,
+    options: IDriveDownloadOptions = {},
+  ): Promise<Buffer> {
     const response = await this.drive.files.get(
       { ...SHARED_DRIVE_OPTIONS, fileId, alt: 'media' },
-      { responseType: 'stream' },
+      { ...options, responseType: 'stream' },
     );
     const stream = response.data;
     const chunks: Buffer[] = [];

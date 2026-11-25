@@ -15,12 +15,19 @@ import {
   makeCustomerProjectParent,
 } from '../../testing/customer-project.fixture';
 
+import {
+  IProjectDocumentSearch,
+  IProjectDocumentSession,
+  IProjectDocumentSessionRequest,
+} from '@Modules/project-document/interfaces/project-document.interface';
+
 import request from 'supertest';
 import { Server } from 'node:http';
 import { Test } from '@nestjs/testing';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from '@Guards/auth.guard';
 import { JennyService } from './jenny.service';
+import { TypedLogger } from '@Logger/logger.service';
 import { JennyController } from './jenny.controller';
 import { LLM_PROVIDER } from '@Constants/llm.constant';
 import { AuthService } from '@Modules/auth/auth.service';
@@ -32,13 +39,11 @@ import { JENNY_LIMITS, JENNY_TOOL_NAMES } from './constants/jenny.constant';
 import { TProjectRead } from '@Modules/project/interfaces/project.interface';
 import { QuotationJennyTool } from './contexts/project/tools/quotation.tool';
 import { PERMISSIONS, PermissionType } from '@Constants/authorization.constant';
-import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
 import { ProjectStatusJennyTool } from './contexts/project/tools/project-status.tool';
 import { ProjectDocumentsJennyTool } from './contexts/project/tools/project-documents.tool';
 import { ProjectDocumentService } from '@Modules/project-document/project-document.service';
 import { ProjectJennyContextService } from './contexts/project/project-jenny-context.service';
 import { ProjectDocumentSearchJennyTool } from './contexts/project/tools/project-document-search.tool';
-import { IProjectDocumentSearch } from '@Modules/project-document/interfaces/project-document.interface';
 
 const PROJECT_ID = '00000000-0000-4000-8000-0000000000d1';
 const MISSING_PROJECT_ID = '00000000-0000-4000-8000-0000000000d2';
@@ -91,13 +96,14 @@ describe('POST /jenny/chat', () => {
       Parameters<QuotationService['listByProject']>
     >(),
   };
-  const projectDriveService = {
-    listProjectFiles: jest.fn<Promise<IDriveTreeFile[]>, [string]>(),
+  const documentSession = {
+    listFiles: jest.fn<Promise<IDriveTreeFile[]>, []>(),
+    search: jest.fn<Promise<IProjectDocumentSearch>, [string]>(),
   };
   const projectDocumentService = {
-    search: jest.fn<
-      Promise<IProjectDocumentSearch>,
-      Parameters<ProjectDocumentService['search']>
+    openSession: jest.fn<
+      IProjectDocumentSession,
+      [IProjectDocumentSessionRequest]
     >(),
   };
   const llmProvider = {
@@ -119,7 +125,6 @@ describe('POST /jenny/chat', () => {
         { provide: LLM_PROVIDER, useValue: llmProvider },
         { provide: ProjectService, useValue: projectService },
         { provide: QuotationService, useValue: quotationService },
-        { provide: ProjectDriveService, useValue: projectDriveService },
         { provide: ProjectDocumentService, useValue: projectDocumentService },
         {
           provide: AuthService,
@@ -164,11 +169,9 @@ describe('POST /jenny/chat', () => {
           })
         : Promise.reject(new NotFoundException(`Project ${id} was not found`)),
     );
-    projectDriveService.listProjectFiles.mockResolvedValue([
-      PLAN_FILE,
-      OTHER_FILE,
-    ]);
-    projectDocumentService.search.mockResolvedValue({
+    projectDocumentService.openSession.mockReturnValue(documentSession);
+    documentSession.listFiles.mockResolvedValue([PLAN_FILE, OTHER_FILE]);
+    documentSession.search.mockResolvedValue({
       pendingFiles: 0,
       skipped: [],
       hits: [
@@ -331,13 +334,52 @@ describe('POST /jenny/chat', () => {
         },
       ],
     });
-    expect(projectDocumentService.search).toHaveBeenCalledWith({
-      query: 'מעבה',
-      projectId: PROJECT_ID,
-    });
+    expect(documentSession.search).toHaveBeenCalledWith('מעבה');
+    const [[sessionRequest]] = projectDocumentService.openSession.mock.calls;
+    expect(sessionRequest.projectId).toBe(PROJECT_ID);
+    expect(sessionRequest.signal).toBe(
+      llmProvider.complete.mock.calls[0][0].signal,
+    );
     const firstRequest = llmProvider.complete.mock.calls[0][0];
     expect(firstRequest.messages[0].content).toContain('ג׳ני');
     expect(firstRequest.messages[0].content).toContain('מגדלי הים');
+  });
+
+  it('never logs the user message, the answer or document snippets', async () => {
+    const info = jest.spyOn(TypedLogger.prototype, 'info');
+    const error = jest.spyOn(TypedLogger.prototype, 'error');
+    llmProvider.complete
+      .mockResolvedValueOnce({
+        content: null,
+        usage: { inputTokens: 1, outputTokens: 1 },
+        toolCalls: [
+          {
+            id: 'search',
+            arguments: '{"query":"מעבה"}',
+            name: JENNY_TOOL_NAMES.SEARCH_PROJECT_DOCUMENTS,
+          },
+          { id: 'bad', name: 'unknownTool', arguments: '{oops' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        toolCalls: [],
+        content: 'תשובה סודית של ג׳ני',
+        usage: { inputTokens: 1, outputTokens: 1 },
+      });
+
+    await request(server())
+      .post('/jenny/chat')
+      .set('Authorization', 'Bearer full')
+      .send(chatBody())
+      .expect(200);
+
+    const logged = JSON.stringify([...info.mock.calls, ...error.mock.calls]);
+    info.mockRestore();
+    error.mockRestore();
+    expect(logged).toContain('Jenny answered a chat request');
+    expect(logged).not.toContain('איזה מעבה מתוכנן?');
+    expect(logged).not.toContain('תשובה סודית');
+    expect(logged).not.toContain('VRF-200');
   });
 
   it('rate limits chat requests per user', async () => {

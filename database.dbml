@@ -992,7 +992,7 @@ Table project_document_pages {
   file_id       varchar(128) [not null]
   page_number   integer      [not null, note: '1-based PDF page number']
   text          text         [not null, note: 'Extracted page text with visual-order Hebrew lines repaired; never logged']
-  search_vector tsvector     [not null, note: "Generated: to_tsvector('simple', text)"]
+  search_vector tsvector     [note: "Generated: to_tsvector('simple', text) STORED"]
   indexes {
     (project_id, file_id, page_number) [pk]
     search_vector [name: 'idx_project_document_pages_search_vector', note: 'GIN full-text index']

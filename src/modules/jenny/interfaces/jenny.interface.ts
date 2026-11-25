@@ -5,9 +5,11 @@ import {
   ILlmToolDefinition,
 } from '@Interfaces/llm.interface';
 
+import { JennyChatDto } from '../dto/jenny-chat.dto';
 import { LLM_MESSAGE_ROLES } from '@Constants/llm.constant';
 import { PermissionType } from '@Constants/authorization.constant';
 import { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
+import { IProjectDocumentSession } from '@Modules/project-document/interfaces/project-document.interface';
 
 export type TJennyToolArguments = Record<string, unknown>;
 
@@ -39,6 +41,7 @@ export interface IJennyBoundTool {
 
 export interface IJennyContextRequest {
   id: string;
+  signal: AbortSignal;
   user: IAuthorizedUser;
 }
 
@@ -53,6 +56,7 @@ export interface IJennyContextProvider {
 
 export interface IJennyProjectScope {
   projectId: string;
+  documents: IProjectDocumentSession;
 }
 
 export interface IJennyChatResponse {
@@ -62,6 +66,7 @@ export interface IJennyChatResponse {
 
 export interface IJennyToolLoopInput {
   maxRounds: number;
+  signal: AbortSignal;
   provider: ILlmProvider;
   messages: TLlmMessage[];
   tools: IJennyBoundTool[];
@@ -86,4 +91,16 @@ export interface IJennyToolLoopOutcome {
   usage: ILlmUsage;
   toolNames: string[];
   sources: IJennySource[];
+}
+
+export interface IJennyChatRequest {
+  user: IAuthorizedUser;
+  request: JennyChatDto;
+  clientSignal: AbortSignal;
+}
+
+export interface IJennyConversation {
+  signal: AbortSignal;
+  request: JennyChatDto;
+  context: IJennyResolvedContext;
 }

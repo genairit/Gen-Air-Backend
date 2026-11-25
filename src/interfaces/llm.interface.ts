@@ -36,6 +36,7 @@ export type TLlmMessage<
 }[TRole];
 
 export interface ILlmCompletionRequest {
+  signal: AbortSignal;
   messages: TLlmMessage[];
   tools: ILlmToolDefinition[];
 }

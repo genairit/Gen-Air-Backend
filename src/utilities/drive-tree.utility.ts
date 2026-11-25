@@ -102,30 +102,53 @@ const toDriveTreeFile = (
   return { ...item, folderPath, md5Checksum: child.md5Checksum ?? null };
 };
 
+interface IPlacedDriveChild {
+  id: string;
+  name: string;
+  parentPath: string;
+  child: drive_v3.Schema$File;
+}
+
+const placeChild = (
+  child: drive_v3.Schema$File,
+  folderPaths: TFolderPathById,
+): IPlacedDriveChild[] => {
+  const parentPath = findParentPath(child, folderPaths);
+
+  if (parentPath === null || !child.id || !child.name) {
+    return [];
+  }
+
+  return [{ child, parentPath, id: child.id, name: child.name }];
+};
+
+const isPlacedFolder = (placed: IPlacedDriveChild): boolean =>
+  placed.child.mimeType === GOOGLE_DRIVE.FOLDER_MIME_TYPE;
+
 export const collectFileTreeLevel = (
   children: drive_v3.Schema$File[],
   folderPaths: TFolderPathById,
-): IDriveFileTreeLevel =>
-  children.reduce<IDriveFileTreeLevel>(
-    (level, child) => {
-      const parentPath = findParentPath(child, folderPaths);
-
-      if (parentPath === null || !child.id || !child.name) {
-        return level;
-      }
-
-      if (child.mimeType === GOOGLE_DRIVE.FOLDER_MIME_TYPE) {
-        level.folderPaths.set(child.id, joinFolderPath(parentPath, child.name));
-
-        return level;
-      }
-
-      const file = toDriveTreeFile(child, parentPath);
-
-      return file ? { ...level, files: [...level.files, file] } : level;
-    },
-    { files: [], folderPaths: new Map() },
+): IDriveFileTreeLevel => {
+  const placedChildren = children.flatMap((child) =>
+    placeChild(child, folderPaths),
   );
+
+  return {
+    folderPaths: new Map(
+      placedChildren
+        .filter(isPlacedFolder)
+        .map((folder) => [
+          folder.id,
+          joinFolderPath(folder.parentPath, folder.name),
+        ]),
+    ),
+    files: placedChildren
+      .filter((placed) => !isPlacedFolder(placed))
+      .flatMap(
+        (placed) => toDriveTreeFile(placed.child, placed.parentPath) ?? [],
+      ),
+  };
+};
 
 export const uniqueTreeFiles = (files: IDriveTreeFile[]): IDriveTreeFile[] =>
   uniqueBy(files, (file) => file.id);

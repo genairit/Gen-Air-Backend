@@ -1,3 +1,4 @@
+import { TIME_UNITS } from '@Constants/time.constant';
 import { LLM_MESSAGE_ROLES } from '@Constants/llm.constant';
 
 export const JENNY_CONTEXT_TYPES = {
@@ -31,7 +32,9 @@ export const JENNY_LIMITS = {
   MIN_CITED_NAME_LENGTH: 4,
   MIN_SEARCH_QUERY_LENGTH: 2,
   MAX_SEARCH_QUERY_LENGTH: 200,
+  MAX_TOOL_CALLS_PER_ROUND: 4,
   MAX_TOOL_RESULT_CHARACTERS: 16000,
+  CHAT_DEADLINE_MS: 2 * TIME_UNITS.MINUTE_MS,
 } as const;
 
 export const JENNY_SETTINGS = {
@@ -58,6 +61,7 @@ export const JENNY_TOOL_ERRORS = {
   FAILED: 'tool_failed',
   UNKNOWN_TOOL: 'unknown_tool',
   INVALID_ARGUMENTS: 'invalid_arguments',
+  TOO_MANY_TOOL_CALLS: 'too_many_tool_calls',
 } as const;
 
 export const JENNY_TRUNCATION_MARKER = '…[truncated]';

@@ -2,7 +2,10 @@ import { extractPdfPages } from './pdf-text.utility';
 import { buildTextPdf } from '../testing/pdf.fixture';
 import { TIME_UNITS } from '@Constants/time.constant';
 
-const LIMITS = { maxPages: 5, timeoutMs: 10 * TIME_UNITS.SECOND_MS };
+const LIMITS = {
+  maxPages: 5,
+  signal: AbortSignal.timeout(30 * TIME_UNITS.SECOND_MS),
+};
 
 describe('extractPdfPages', () => {
   it('extracts text page by page from a real PDF', async () => {

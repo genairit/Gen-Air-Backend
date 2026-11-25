@@ -60,3 +60,7 @@ export interface IDriveFileMove {
   parentIds: string[];
   destinationFolderId: string;
 }
+
+export interface IDriveDownloadOptions {
+  signal?: AbortSignal;
+}

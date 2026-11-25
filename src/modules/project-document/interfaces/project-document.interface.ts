@@ -52,9 +52,22 @@ export interface IProjectDocumentPageSearch {
   projectId: string;
 }
 
-export interface IProjectDocumentSearchRequest {
-  query: string;
+export interface IProjectDocumentSessionRequest {
   projectId: string;
+  signal: AbortSignal;
+}
+
+export interface IProjectDocumentRefreshRequest extends IProjectDocumentSessionRequest {
+  files: IDriveTreeFile[];
+}
+
+export interface IProjectDocumentIndexBatch extends IProjectDocumentRefreshRequest {
+  deadline: number;
+}
+
+export interface IProjectDocumentFileOutcome {
+  completed: boolean;
+  skip: IProjectDocumentSkip | null;
 }
 
 export interface IProjectDocumentSkip {
@@ -83,7 +96,37 @@ export interface IProjectDocumentRefresh {
   skipped: IProjectDocumentSkip[];
 }
 
+export interface IProjectDocumentIndex extends IProjectDocumentRefresh {
+  pdfFiles: IDriveTreeFile[];
+}
+
+export interface IProjectDocumentSession {
+  listFiles: () => Promise<IDriveTreeFile[]>;
+  search: (query: string) => Promise<IProjectDocumentSearch>;
+}
+
 export interface IExtractedPdf {
   pages: string[];
   totalPages: number;
+}
+
+export interface IProjectDocumentIndexedSearch {
+  query: string;
+  index: IProjectDocumentIndex;
+  request: IProjectDocumentSessionRequest;
+}
+
+export interface IOpenedPdf {
+  pageCount: number;
+  extractPages: () => Promise<string[]>;
+}
+
+export interface IPdfLoadingHandle {
+  opened: Promise<IOpenedPdf>;
+  destroy: () => Promise<void>;
+}
+
+export interface IPdfExtractionLimits {
+  maxPages: number;
+  signal: AbortSignal;
 }

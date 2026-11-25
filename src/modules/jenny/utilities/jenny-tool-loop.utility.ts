@@ -95,6 +95,24 @@ const executeToolCall = async (
   }
 };
 
+const executeToolCallWithinCap = (
+  toolsByName: Map<string, IJennyBoundTool>,
+  call: ILlmToolCall,
+  callIndex: number,
+): Promise<IJennyToolExecution> => {
+  if (callIndex >= JENNY_LIMITS.MAX_TOOL_CALLS_PER_ROUND) {
+    return Promise.resolve(
+      toToolExecution(
+        call,
+        { error: JENNY_TOOL_ERRORS.TOO_MANY_TOOL_CALLS },
+        [],
+      ),
+    );
+  }
+
+  return executeToolCall(toolsByName, call);
+};
+
 const toOutcome = (
   state: IJennyToolLoopState,
   content: string | null,
@@ -119,6 +137,7 @@ export const runJennyToolLoop = (
   ): Promise<IJennyToolLoopOutcome> => {
     const roundsExhausted = state.round >= input.maxRounds;
     const completion = await input.provider.complete({
+      signal: input.signal,
       messages: state.messages,
       tools: roundsExhausted ? [] : definitions,
     });
@@ -130,7 +149,9 @@ export const runJennyToolLoop = (
     }
 
     const executions = await Promise.all(
-      completion.toolCalls.map((call) => executeToolCall(toolsByName, call)),
+      completion.toolCalls.map((call, index) =>
+        executeToolCallWithinCap(toolsByName, call, index),
+      ),
     );
 
     return runRound({

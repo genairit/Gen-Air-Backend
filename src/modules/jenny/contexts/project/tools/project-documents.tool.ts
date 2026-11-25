@@ -14,7 +14,6 @@ import { Injectable } from '@nestjs/common';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { JENNY_LIMITS } from '../../../constants/jenny.constant';
 import { PROJECT_JENNY_TOOL_DEFINITIONS } from '../project-jenny-tools.constant';
-import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
 
 @Injectable()
 export class ProjectDocumentsJennyTool implements IJennyTool<IJennyProjectScope> {
@@ -24,12 +23,8 @@ export class ProjectDocumentsJennyTool implements IJennyTool<IJennyProjectScope>
     PERMISSIONS.DRIVE_READ,
   ];
 
-  constructor(private readonly projectDriveService: ProjectDriveService) {}
-
   async execute(scope: IJennyProjectScope): Promise<IJennyToolResult> {
-    const files = await this.projectDriveService.listProjectFiles(
-      scope.projectId,
-    );
+    const files = await scope.documents.listFiles();
     const listedFiles = sortByRecentlyModified(files).slice(
       0,
       JENNY_LIMITS.MAX_LISTED_DOCUMENTS,

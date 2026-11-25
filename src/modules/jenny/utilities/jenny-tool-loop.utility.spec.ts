@@ -18,6 +18,7 @@ import { IJennyBoundTool, IJennySource } from '../interfaces/jenny.interface';
 import { runJennyToolLoop, serializeToolData } from './jenny-tool-loop.utility';
 
 const USAGE = { inputTokens: 10, outputTokens: 5 };
+const SIGNAL = new AbortController().signal;
 
 const SOURCE: IJennySource = {
   page: 2,
@@ -86,6 +87,7 @@ describe('runJennyToolLoop', () => {
       provider,
       maxRounds: 5,
       tools: [status],
+      signal: SIGNAL,
       messages: INITIAL_MESSAGES,
     });
 
@@ -123,6 +125,7 @@ describe('runJennyToolLoop', () => {
       provider,
       maxRounds: 5,
       tools: [status, search],
+      signal: SIGNAL,
       messages: INITIAL_MESSAGES,
     });
 
@@ -177,6 +180,7 @@ describe('runJennyToolLoop', () => {
       provider,
       maxRounds: 5,
       tools: [status, quotation],
+      signal: SIGNAL,
       messages: INITIAL_MESSAGES,
     });
 
@@ -199,6 +203,7 @@ describe('runJennyToolLoop', () => {
       provider,
       maxRounds: 2,
       tools: [status],
+      signal: SIGNAL,
       messages: INITIAL_MESSAGES,
     });
 
@@ -211,6 +216,68 @@ describe('runJennyToolLoop', () => {
     expect(outcome.message).toBe('סופי');
   });
 
+  it('passes the request signal to every model call', async () => {
+    const provider = stubProvider([
+      callTools({ id: 'a', name: 'getProjectStatus' }),
+      answer('סיכום'),
+    ]);
+    const status = stubTool('getProjectStatus', () =>
+      Promise.resolve({ data: 1, sources: [] }),
+    );
+
+    await runJennyToolLoop({
+      provider,
+      maxRounds: 3,
+      signal: SIGNAL,
+      tools: [status],
+      messages: INITIAL_MESSAGES,
+    });
+
+    expect(provider.requests.map((request) => request.signal)).toEqual([
+      SIGNAL,
+      SIGNAL,
+    ]);
+  });
+
+  it('runs at most the per-round tool-call cap and answers the excess calls with an error', async () => {
+    const callCount = JENNY_LIMITS.MAX_TOOL_CALLS_PER_ROUND + 2;
+    const provider = stubProvider([
+      callTools(
+        ...Array.from({ length: callCount }, (_value, index) => ({
+          id: `call-${index}`,
+          name: 'searchProjectDocuments',
+          arguments: '{"query":"מעבה"}',
+        })),
+      ),
+      answer('סיכום'),
+    ]);
+    const search = stubTool('searchProjectDocuments', () =>
+      Promise.resolve({ data: { hits: 0 }, sources: [] }),
+    );
+
+    await runJennyToolLoop({
+      provider,
+      maxRounds: 3,
+      signal: SIGNAL,
+      tools: [search],
+      messages: INITIAL_MESSAGES,
+    });
+
+    const toolReplies = provider.requests[1].messages.slice(3);
+    expect(search.run).toHaveBeenCalledTimes(
+      JENNY_LIMITS.MAX_TOOL_CALLS_PER_ROUND,
+    );
+    expect(toolReplies).toHaveLength(callCount);
+    expect(
+      toolReplies
+        .slice(JENNY_LIMITS.MAX_TOOL_CALLS_PER_ROUND)
+        .map((message) => message.content),
+    ).toEqual([
+      JSON.stringify({ error: JENNY_TOOL_ERRORS.TOO_MANY_TOOL_CALLS }),
+      JSON.stringify({ error: JENNY_TOOL_ERRORS.TOO_MANY_TOOL_CALLS }),
+    ]);
+  });
+
   it('falls back to a Hebrew apology when the model returns no text', async () => {
     const provider = stubProvider([answer('   ')]);
 
@@ -218,6 +285,7 @@ describe('runJennyToolLoop', () => {
       provider,
       tools: [],
       maxRounds: 1,
+      signal: SIGNAL,
       messages: INITIAL_MESSAGES,
     });
 
@@ -244,6 +312,7 @@ describe('runJennyToolLoop', () => {
       provider,
       maxRounds: 3,
       tools: [search, status],
+      signal: SIGNAL,
       messages: INITIAL_MESSAGES,
     });
 
@@ -271,6 +340,7 @@ describe('runJennyToolLoop', () => {
         provider,
         tools: [],
         maxRounds: 1,
+        signal: SIGNAL,
         messages: INITIAL_MESSAGES,
       }),
     ).rejects.toThrow('No stubbed completion left');

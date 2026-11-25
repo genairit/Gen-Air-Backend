@@ -19,7 +19,6 @@ import {
 import { Injectable } from '@nestjs/common';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { requireStringArgument } from '../../../utilities/jenny-tool-arguments.utility';
-import { ProjectDocumentService } from '@Modules/project-document/project-document.service';
 
 @Injectable()
 export class ProjectDocumentSearchJennyTool implements IJennyTool<IJennyProjectScope> {
@@ -29,19 +28,12 @@ export class ProjectDocumentSearchJennyTool implements IJennyTool<IJennyProjectS
     PERMISSIONS.DRIVE_READ,
   ];
 
-  constructor(
-    private readonly projectDocumentService: ProjectDocumentService,
-  ) {}
-
   async execute(
     scope: IJennyProjectScope,
     args: TJennyToolArguments,
   ): Promise<IJennyToolResult> {
     const query = requireStringArgument(args, SEARCH_QUERY_ARGUMENT);
-    const search = await this.projectDocumentService.search({
-      query,
-      projectId: scope.projectId,
-    });
+    const search = await scope.documents.search(query);
 
     return {
       sources: search.hits.map(toHitSource),

@@ -13,12 +13,14 @@ import {
 
 import { Test } from '@nestjs/testing';
 import { Sequelize, Transaction } from 'sequelize';
+import { TypedLogger } from '@Logger/logger.service';
 import { extractPdfPages } from './utilities/pdf-text.utility';
 import { ProjectDocumentService } from './project-document.service';
 import { IDriveTreeFile } from '@Interfaces/google-drive.interface';
 import { ProjectDocumentRepository } from './project-document.repository';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { IProjectFileDownload } from '@Modules/project-drive/interfaces/project-drive.interface';
 
 jest.mock('./utilities/pdf-text.utility');
 
@@ -70,10 +72,7 @@ describe('ProjectDocumentService on-demand indexing', () => {
   };
   const projectDrive = {
     listProjectFiles: jest.fn<Promise<IDriveTreeFile[]>, [string]>(),
-    downloadListedProjectFile: jest.fn<
-      Promise<Buffer>,
-      [IDriveTreeFile, number]
-    >(),
+    downloadProjectFile: jest.fn<Promise<Buffer>, [IProjectFileDownload]>(),
   };
   const transactions = {
     lockKey: jest.fn<Promise<void>, [string, Transaction]>(),
@@ -83,8 +82,13 @@ describe('ProjectDocumentService on-demand indexing', () => {
     ),
   };
   const state: { service: ProjectDocumentService | null } = { service: null };
-  const search = (query: string) =>
-    state.service!.search({ query, projectId: PROJECT_ID });
+  const openSession = (signal: AbortSignal = new AbortController().signal) =>
+    state.service!.openSession({ signal, projectId: PROJECT_ID });
+  const search = (query: string) => openSession().search(query);
+  const downloadedFileIds = () =>
+    projectDrive.downloadProjectFile.mock.calls.map(
+      ([download]) => download.fileId,
+    );
   const indexedFileIds = () =>
     repository.replaceDocument.mock.calls.map(
       ([indexed]) => indexed.document.fileId,
@@ -112,9 +116,7 @@ describe('ProjectDocumentService on-demand indexing', () => {
     repository.deleteDocuments.mockResolvedValue();
     repository.replaceDocument.mockResolvedValue();
     transactions.lockKey.mockResolvedValue();
-    projectDrive.downloadListedProjectFile.mockResolvedValue(
-      Buffer.from('%PDF'),
-    );
+    projectDrive.downloadProjectFile.mockResolvedValue(Buffer.from('%PDF'));
     extractPdfPagesMock.mockResolvedValue({
       totalPages: 1,
       pages: [PAGE_TEXT],
@@ -128,7 +130,7 @@ describe('ProjectDocumentService on-demand indexing', () => {
 
     const result = await search('מזגן');
 
-    expect(projectDrive.downloadListedProjectFile).not.toHaveBeenCalled();
+    expect(projectDrive.downloadProjectFile).not.toHaveBeenCalled();
     expect(extractPdfPagesMock).not.toHaveBeenCalled();
     expect(repository.replaceDocument).not.toHaveBeenCalled();
     expect(result).toEqual({ hits: [], skipped: [], pendingFiles: 0 });
@@ -150,11 +152,14 @@ describe('ProjectDocumentService on-demand indexing', () => {
 
       await search('מזגן');
 
-      expect(projectDrive.downloadListedProjectFile).toHaveBeenCalledTimes(1);
-      expect(projectDrive.downloadListedProjectFile).toHaveBeenCalledWith(
-        changed,
-        PROJECT_DOCUMENT_LIMITS.MAX_FILE_BYTES,
-      );
+      expect(projectDrive.downloadProjectFile).toHaveBeenCalledTimes(1);
+      const [[download]] = projectDrive.downloadProjectFile.mock.calls;
+      expect(download).toMatchObject({
+        fileId: 'changed',
+        projectId: PROJECT_ID,
+        maxBytes: PROJECT_DOCUMENT_LIMITS.MAX_FILE_BYTES,
+      });
+      expect(download.signal).toBeInstanceOf(AbortSignal);
       expect(repository.replaceDocument).toHaveBeenCalledTimes(1);
       expect(repository.replaceDocument).toHaveBeenCalledWith(
         {
@@ -191,11 +196,8 @@ describe('ProjectDocumentService on-demand indexing', () => {
     expect(repository.deleteDocuments).toHaveBeenCalledWith(PROJECT_ID, [
       'removed',
     ]);
-    expect(projectDrive.downloadListedProjectFile).toHaveBeenCalledTimes(1);
-    expect(projectDrive.downloadListedProjectFile).toHaveBeenCalledWith(
-      newFile,
-      PROJECT_DOCUMENT_LIMITS.MAX_FILE_BYTES,
-    );
+    expect(projectDrive.downloadProjectFile).toHaveBeenCalledTimes(1);
+    expect(downloadedFileIds()).toEqual([newFile.id]);
     expect(transactions.lockKey).toHaveBeenCalledWith(
       `project-document:${PROJECT_ID}:new`,
       transaction,
@@ -223,7 +225,7 @@ describe('ProjectDocumentService on-demand indexing', () => {
 
     const result = await search('x');
 
-    expect(projectDrive.downloadListedProjectFile).toHaveBeenCalledTimes(1);
+    expect(projectDrive.downloadProjectFile).toHaveBeenCalledTimes(1);
     expect(
       repository.replaceDocument.mock.calls.map(([indexed]) => ({
         pages: indexed.pages,
@@ -267,7 +269,7 @@ describe('ProjectDocumentService on-demand indexing', () => {
     projectDrive.listProjectFiles.mockResolvedValue([unreadable, unreachable]);
     repository.findStates.mockResolvedValue([]);
     extractPdfPagesMock.mockRejectedValueOnce(new Error('Invalid PDF'));
-    projectDrive.downloadListedProjectFile
+    projectDrive.downloadProjectFile
       .mockResolvedValueOnce(Buffer.from('broken'))
       .mockRejectedValueOnce(new Error('Drive unavailable'));
 
@@ -298,7 +300,7 @@ describe('ProjectDocumentService on-demand indexing', () => {
 
     const result = await search('x');
 
-    expect(projectDrive.downloadListedProjectFile).toHaveBeenCalledTimes(
+    expect(projectDrive.downloadProjectFile).toHaveBeenCalledTimes(
       PROJECT_DOCUMENT_LIMITS.MAX_FILES_PER_REFRESH,
     );
     expect(result.pendingFiles).toBe(2);
@@ -348,5 +350,95 @@ describe('ProjectDocumentService on-demand indexing', () => {
         (page) => page.text,
       ),
     ).toEqual(['הדגם של מזגן\nModel VRF-200']);
+  });
+
+  it('lists the Drive tree and refreshes the index once per session however many tools ask', async () => {
+    const file = pdfFile('plan');
+    projectDrive.listProjectFiles.mockResolvedValue([file]);
+    repository.findStates.mockResolvedValue([]);
+    const session = openSession();
+
+    await Promise.all([
+      session.search('מזגן'),
+      session.search('מעבה'),
+      session.listFiles(),
+    ]);
+    await session.search('לוח');
+
+    expect(projectDrive.listProjectFiles).toHaveBeenCalledTimes(1);
+    expect(repository.findStates).toHaveBeenCalledTimes(1);
+    expect(projectDrive.downloadProjectFile).toHaveBeenCalledTimes(1);
+    expect(repository.searchPages).toHaveBeenCalledTimes(3);
+  });
+
+  it('aborts a stalled download at the refresh deadline and leaves the file pending', async () => {
+    const stalled = pdfFile('stalled');
+    const next = pdfFile('next');
+    const startedAt = Date.now();
+    const deadlineInMs = 30;
+    projectDrive.listProjectFiles.mockResolvedValue([stalled, next]);
+    repository.findStates.mockResolvedValue([]);
+    projectDrive.downloadProjectFile.mockImplementation(
+      ({ signal }) =>
+        new Promise<Buffer>((_resolve, reject) => {
+          signal.addEventListener('abort', () =>
+            reject(new Error('Download aborted')),
+          );
+        }),
+    );
+    jest
+      .spyOn(Date, 'now')
+      .mockImplementationOnce(
+        () =>
+          startedAt - PROJECT_DOCUMENT_LIMITS.REFRESH_BUDGET_MS + deadlineInMs,
+      );
+
+    const result = await search('מזגן');
+
+    jest.restoreAllMocks();
+    const [[download]] = projectDrive.downloadProjectFile.mock.calls;
+    expect(download.signal.aborted).toBe(true);
+    expect(downloadedFileIds()).toEqual(['stalled']);
+    expect(repository.replaceDocument).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ skipped: [], pendingFiles: 2 });
+  });
+
+  it('stops indexing and persists nothing for a file interrupted by the request signal', async () => {
+    const controller = new AbortController();
+    projectDrive.listProjectFiles.mockResolvedValue([pdfFile('plan')]);
+    repository.findStates.mockResolvedValue([]);
+    extractPdfPagesMock.mockImplementation(() => {
+      controller.abort(new Error('client disconnected'));
+
+      return Promise.reject(new Error('aborted'));
+    });
+
+    const result = await openSession(controller.signal).search('מזגן');
+
+    expect(repository.replaceDocument).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ skipped: [], pendingFiles: 1 });
+  });
+
+  it('never logs page text, snippets or the search query', async () => {
+    const info = jest.spyOn(TypedLogger.prototype, 'info');
+    const error = jest.spyOn(TypedLogger.prototype, 'error');
+    const file = pdfFile('plan');
+    projectDrive.listProjectFiles.mockResolvedValue([file, pdfFile('bad')]);
+    repository.findStates.mockResolvedValue([]);
+    extractPdfPagesMock
+      .mockResolvedValueOnce({ totalPages: 1, pages: [PAGE_TEXT] })
+      .mockRejectedValueOnce(new Error('Invalid PDF'));
+    repository.searchPages.mockResolvedValue([
+      { fileId: 'plan', pageNumber: 1, snippet: '«מזגן» סודי' },
+    ]);
+
+    await search('שאילתה פרטית');
+
+    const logged = JSON.stringify([...info.mock.calls, ...error.mock.calls]);
+    jest.restoreAllMocks();
+    expect(info).toHaveBeenCalled();
+    expect(logged).not.toContain(PAGE_TEXT);
+    expect(logged).not.toContain('סודי');
+    expect(logged).not.toContain('שאילתה פרטית');
   });
 });

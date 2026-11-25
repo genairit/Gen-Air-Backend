@@ -8,6 +8,7 @@ import { Authenticated } from '@Decorators/authenticated.decorator';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import { Body, Post, HttpCode, HttpStatus, Controller } from '@nestjs/common';
+import { RequestAbortSignal } from '@Decorators/request-abort-signal.decorator';
 
 @ApiTags('jenny')
 @ApiBearerAuth()
@@ -22,7 +23,8 @@ export class JennyController {
   chat(
     @Body() request: JennyChatDto,
     @AuthenticatedUser() user: IAuthorizedUser,
+    @RequestAbortSignal() clientSignal: AbortSignal,
   ): Promise<IJennyChatResponse> {
-    return this.jennyService.chat(request, user);
+    return this.jennyService.chat({ request, user, clientSignal });
   }
 }

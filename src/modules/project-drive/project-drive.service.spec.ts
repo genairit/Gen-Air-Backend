@@ -914,26 +914,64 @@ describe('ProjectDriveService project file tree', () => {
     expect(googleDriveService.listDescendantFiles).not.toHaveBeenCalled();
   });
 
-  it('downloads a listed project file within the byte limit', async () => {
-    const { service, googleDriveService } = await createService();
+  const stubProjectFile = (
+    context: Awaited<ReturnType<typeof createService>>,
+    fileParentId: string,
+  ) => {
+    context.projectService.getById.mockResolvedValue({
+      ...PROJECT,
+      driveFolderId: PROJECT_FOLDER_ID,
+    });
+    context.googleDriveService.getFileMetadata.mockImplementation(
+      (id: string) =>
+        Promise.resolve({
+          id,
+          trashed: false,
+          mimeType:
+            id === 'plan'
+              ? GOOGLE_DRIVE.PDF_MIME_TYPE
+              : GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+          parents: id === 'plan' ? [fileParentId] : [],
+        }),
+    );
+    context.googleDriveService.findParentIds.mockImplementation((id: string) =>
+      Promise.resolve(id === 'plans' ? [PROJECT_FOLDER_ID] : []),
+    );
+  };
+
+  it('downloads a file inside the project folder within the byte limit and signal', async () => {
+    const context = await createService();
+    const signal = new AbortController().signal;
+    stubProjectFile(context, 'plans');
 
     await expect(
-      service.downloadListedProjectFile(
-        {
-          id: 'plan',
-          size: 10,
-          isFolder: false,
-          folderPath: '',
-          name: 'plan.pdf',
-          md5Checksum: null,
-          modifiedTime: null,
-          webViewLink: null,
-          mimeType: GOOGLE_DRIVE.PDF_MIME_TYPE,
-        },
-        1024,
-      ),
+      context.service.downloadProjectFile({
+        signal,
+        fileId: 'plan',
+        maxBytes: 1024,
+        projectId: PROJECT.id,
+      }),
     ).resolves.toEqual(Buffer.from('%PDF'));
-    expect(googleDriveService.downloadFile).toHaveBeenCalledWith('plan', 1024);
+    expect(context.googleDriveService.downloadFile).toHaveBeenCalledWith(
+      'plan',
+      1024,
+      { signal },
+    );
+  });
+
+  it('refuses to download a file outside the project folder', async () => {
+    const context = await createService();
+    stubProjectFile(context, 'another-project');
+
+    await expect(
+      context.service.downloadProjectFile({
+        fileId: 'plan',
+        maxBytes: 1024,
+        projectId: PROJECT.id,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(context.googleDriveService.downloadFile).not.toHaveBeenCalled();
   });
 });
 

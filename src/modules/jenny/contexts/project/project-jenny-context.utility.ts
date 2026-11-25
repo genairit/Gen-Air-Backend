@@ -11,11 +11,13 @@ import {
   IProjectDocumentSkip,
 } from '@Modules/project-document/interfaces/project-document.interface';
 
+import { TEXT } from '@Constants/text.constant';
 import { IJennySource } from '../../interfaces/jenny.interface';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { IDriveTreeFile } from '@Interfaces/google-drive.interface';
 import { buildDriveFileUrl } from '@Utilities/google-drive.utility';
 import { TProjectRead } from '@Modules/project/interfaces/project.interface';
+import { JENNY_PROJECT_CONTEXT_LABEL } from '../../constants/jenny-prompt.constant';
 import { IProjectQuotationView } from '@Modules/quotation/interfaces/quotation-document.interface';
 
 const toFullName = (user?: IUser): string | null => {
@@ -29,15 +31,15 @@ const toFullName = (user?: IUser): string | null => {
 const toFileUrl = (file: IDriveTreeFile): string =>
   file.webViewLink ?? buildDriveFileUrl(file.id);
 
-export const buildProjectContextPrompt = (project: TProjectRead): string => {
-  const projectLine = `פרויקט "${project.name}" (קוד ${project.code}).`;
-
-  if (!project.parentProject) {
-    return projectLine;
-  }
-
-  return `${projectLine} זוהי דירה בבניין "${project.parentProject.name}".`;
-};
+export const buildProjectContextPrompt = (project: TProjectRead): string =>
+  [
+    JENNY_PROJECT_CONTEXT_LABEL,
+    JSON.stringify({
+      code: project.code,
+      name: project.name,
+      buildingName: project.parentProject?.name ?? null,
+    }),
+  ].join(TEXT.LINE_BREAK);
 
 export const toProjectStatus = (
   project: TProjectRead,

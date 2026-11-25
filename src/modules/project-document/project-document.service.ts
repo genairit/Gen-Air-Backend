@@ -1,4 +1,10 @@
 import {
+  withAbort,
+  remainingUntil,
+  signalWithTimeout,
+} from '@Utilities/abort.utility';
+
+import {
   PROJECT_DOCUMENT_LIMITS,
   PROJECT_DOCUMENT_STATUSES,
   PROJECT_DOCUMENT_LOCK_PREFIX,
@@ -7,11 +13,16 @@ import {
 
 import {
   IExtractedPdf,
-  IProjectDocumentSkip,
+  IProjectDocumentIndex,
   IProjectDocumentSearch,
+  IProjectDocumentSession,
   IIndexedProjectDocument,
   IProjectDocumentRefresh,
-  IProjectDocumentSearchRequest,
+  IProjectDocumentIndexBatch,
+  IProjectDocumentFileOutcome,
+  IProjectDocumentIndexedSearch,
+  IProjectDocumentRefreshRequest,
+  IProjectDocumentSessionRequest,
 } from './interfaces/project-document.interface';
 
 import {
@@ -26,6 +37,7 @@ import {
 } from './utilities/project-document-index.utility';
 
 import { Injectable } from '@nestjs/common';
+import { memoizeAsync } from '@Utilities/memoize.utility';
 import { Meta, TypedLogger } from '@Logger/logger.service';
 import { extractPdfPages } from './utilities/pdf-text.utility';
 import { IDriveTreeFile } from '@Interfaces/google-drive.interface';
@@ -33,13 +45,10 @@ import { ProjectDocumentRepository } from './project-document.repository';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
-interface IDocumentIndexBatch {
-  deadline: number;
-  projectId: string;
-  files: IDriveTreeFile[];
-}
-
-type TDocumentIndexOutcome = IProjectDocumentSkip | null;
+const INTERRUPTED_OUTCOME: IProjectDocumentFileOutcome = {
+  skip: null,
+  completed: false,
+};
 
 @Injectable()
 export class ProjectDocumentService {
@@ -51,56 +60,87 @@ export class ProjectDocumentService {
     private readonly transactions: DatabaseTransactionService,
   ) {}
 
-  async search(
-    request: IProjectDocumentSearchRequest,
-  ): Promise<IProjectDocumentSearch> {
-    const projectFiles = await this.projectDriveService.listProjectFiles(
-      request.projectId,
+  openSession(
+    request: IProjectDocumentSessionRequest,
+  ): IProjectDocumentSession {
+    const listFiles = memoizeAsync(() =>
+      withAbort(
+        this.projectDriveService.listProjectFiles(request.projectId),
+        request.signal,
+      ),
     );
-    const pdfFiles = projectFiles.filter(isPdfFile);
-    const refresh = await this.refreshIndex(request.projectId, pdfFiles);
+    const indexPdfFiles = memoizeAsync(async () =>
+      this.indexPdfFiles({ ...request, files: await listFiles() }),
+    );
+
+    return {
+      listFiles,
+      search: async (query) =>
+        this.search({ query, request, index: await indexPdfFiles() }),
+    };
+  }
+
+  private async search(
+    search: IProjectDocumentIndexedSearch,
+  ): Promise<IProjectDocumentSearch> {
     const matches = await this.repository.searchPages({
-      query: request.query,
-      projectId: request.projectId,
+      query: search.query,
+      projectId: search.request.projectId,
       limit: PROJECT_DOCUMENT_LIMITS.MAX_SEARCH_HITS,
     });
 
-    return { ...refresh, hits: toDocumentHits(matches, pdfFiles) };
+    return {
+      skipped: search.index.skipped,
+      pendingFiles: search.index.pendingFiles,
+      hits: toDocumentHits(matches, search.index.pdfFiles),
+    };
+  }
+
+  private async indexPdfFiles(
+    request: IProjectDocumentRefreshRequest,
+  ): Promise<IProjectDocumentIndex> {
+    const pdfFiles = request.files.filter(isPdfFile);
+    const refresh = await this.refreshIndex({ ...request, files: pdfFiles });
+
+    return { ...refresh, pdfFiles };
   }
 
   private async refreshIndex(
-    projectId: string,
-    files: IDriveTreeFile[],
+    request: IProjectDocumentRefreshRequest,
   ): Promise<IProjectDocumentRefresh> {
-    const storedDocuments = await this.repository.findStates(projectId);
-    const plan = planDocumentIndex(files, storedDocuments);
+    const storedDocuments = await this.repository.findStates(request.projectId);
+    const plan = planDocumentIndex(request.files, storedDocuments);
 
-    await this.repository.deleteDocuments(projectId, plan.removedFileIds);
+    await this.repository.deleteDocuments(
+      request.projectId,
+      plan.removedFileIds,
+    );
 
     const outcomes = await this.indexWithinBudget({
-      projectId,
+      ...request,
       files: plan.stale.slice(0, PROJECT_DOCUMENT_LIMITS.MAX_FILES_PER_REFRESH),
       deadline: Date.now() + PROJECT_DOCUMENT_LIMITS.REFRESH_BUDGET_MS,
     });
-    const newSkips = outcomes.flatMap((outcome) => outcome ?? []);
+    const completedCount = outcomes.filter(({ completed }) => completed).length;
+    const newSkips = outcomes.flatMap(({ skip }) => skip ?? []);
 
     return {
-      pendingFiles: plan.stale.length - outcomes.length,
+      pendingFiles: plan.stale.length - completedCount,
       skipped: [...toStoredSkips(plan.unchanged, storedDocuments), ...newSkips],
     };
   }
 
   private async indexWithinBudget(
-    batch: IDocumentIndexBatch,
-  ): Promise<TDocumentIndexOutcome[]> {
+    batch: IProjectDocumentIndexBatch,
+  ): Promise<IProjectDocumentFileOutcome[]> {
     const [file, ...remainingFiles] = batch.files;
-    const isOutOfTime = Date.now() >= batch.deadline;
+    const isOutOfTime = remainingUntil(batch.deadline) === 0;
 
-    if (!file || isOutOfTime) {
+    if (!file || isOutOfTime || batch.signal.aborted) {
       return [];
     }
 
-    const outcome = await this.indexFile(batch.projectId, file);
+    const outcome = await this.indexFile(batch, file);
     const remainingOutcomes = await this.indexWithinBudget({
       ...batch,
       files: remainingFiles,
@@ -110,38 +150,60 @@ export class ProjectDocumentService {
   }
 
   private async indexFile(
-    projectId: string,
+    batch: IProjectDocumentIndexBatch,
     file: IDriveTreeFile,
-  ): Promise<TDocumentIndexOutcome> {
+  ): Promise<IProjectDocumentFileOutcome> {
     if (isOversizedFile(file)) {
       return this.store(
         file,
         buildUnindexedDocument(
-          projectId,
+          batch.projectId,
           file,
           PROJECT_DOCUMENT_STATUSES.TOO_LARGE,
         ),
       );
     }
 
-    const content = await this.download(file);
+    const fileSignal = signalWithTimeout(
+      batch.signal,
+      remainingUntil(batch.deadline),
+    );
+    const content = await this.download(batch.projectId, file, fileSignal);
 
     if (!content) {
-      return toDocumentSkip(
-        file,
-        PROJECT_DOCUMENT_SKIP_REASONS.DOWNLOAD_FAILED,
-      );
+      return this.toFailedDownloadOutcome(file, fileSignal);
     }
 
-    const extracted = await this.extract(file, content);
+    const extracted = await this.extract(file, content, fileSignal);
 
-    return this.store(file, buildIndexedDocument(projectId, file, extracted));
+    if (fileSignal.aborted) {
+      return INTERRUPTED_OUTCOME;
+    }
+
+    return this.store(
+      file,
+      buildIndexedDocument(batch.projectId, file, extracted),
+    );
+  }
+
+  private toFailedDownloadOutcome(
+    file: IDriveTreeFile,
+    fileSignal: AbortSignal,
+  ): IProjectDocumentFileOutcome {
+    if (fileSignal.aborted) {
+      return INTERRUPTED_OUTCOME;
+    }
+
+    return {
+      completed: true,
+      skip: toDocumentSkip(file, PROJECT_DOCUMENT_SKIP_REASONS.DOWNLOAD_FAILED),
+    };
   }
 
   private async store(
     file: IDriveTreeFile,
     indexed: IIndexedProjectDocument,
-  ): Promise<TDocumentIndexOutcome> {
+  ): Promise<IProjectDocumentFileOutcome> {
     const lockKey = [
       PROJECT_DOCUMENT_LOCK_PREFIX,
       indexed.document.projectId,
@@ -160,19 +222,32 @@ export class ProjectDocumentService {
       message: 'Indexed project document',
     });
 
-    return toDocumentSkip(file, indexed.document.status);
+    return {
+      completed: true,
+      skip: toDocumentSkip(file, indexed.document.status),
+    };
   }
 
-  private async download(file: IDriveTreeFile): Promise<Buffer | null> {
+  private async download(
+    projectId: string,
+    file: IDriveTreeFile,
+    fileSignal: AbortSignal,
+  ): Promise<Buffer | null> {
     try {
-      return await this.projectDriveService.downloadListedProjectFile(
-        file,
-        PROJECT_DOCUMENT_LIMITS.MAX_FILE_BYTES,
+      return await withAbort(
+        this.projectDriveService.downloadProjectFile({
+          projectId,
+          fileId: file.id,
+          signal: fileSignal,
+          maxBytes: PROJECT_DOCUMENT_LIMITS.MAX_FILE_BYTES,
+        }),
+        fileSignal,
       );
     } catch (error) {
       this.logger.error({
         error,
         fileId: file.id,
+        interrupted: fileSignal.aborted,
         message: 'Project document download failed; reporting it as skipped',
       });
 
@@ -183,16 +258,21 @@ export class ProjectDocumentService {
   private async extract(
     file: IDriveTreeFile,
     content: Buffer,
+    fileSignal: AbortSignal,
   ): Promise<IExtractedPdf | null> {
     try {
       return await extractPdfPages(content, {
         maxPages: PROJECT_DOCUMENT_LIMITS.MAX_PAGES,
-        timeoutMs: PROJECT_DOCUMENT_LIMITS.EXTRACTION_TIMEOUT_MS,
+        signal: signalWithTimeout(
+          fileSignal,
+          PROJECT_DOCUMENT_LIMITS.EXTRACTION_TIMEOUT_MS,
+        ),
       });
     } catch (error) {
       this.logger.error({
         error,
         fileId: file.id,
+        interrupted: fileSignal.aborted,
         message: 'Project document text extraction failed; marking unreadable',
       });
 

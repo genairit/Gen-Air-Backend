@@ -16,6 +16,7 @@ import { bindPermittedTools } from '../../utilities/jenny-tool.utility';
 import { ProjectDocumentsJennyTool } from './tools/project-documents.tool';
 import { buildProjectContextPrompt } from './project-jenny-context.utility';
 import { ProjectDocumentSearchJennyTool } from './tools/project-document-search.tool';
+import { ProjectDocumentService } from '@Modules/project-document/project-document.service';
 
 @Injectable()
 export class ProjectJennyContextService implements IJennyContextProvider {
@@ -23,6 +24,7 @@ export class ProjectJennyContextService implements IJennyContextProvider {
 
   constructor(
     private readonly projectService: ProjectService,
+    private readonly projectDocumentService: ProjectDocumentService,
     projectStatusTool: ProjectStatusJennyTool,
     quotationTool: QuotationJennyTool,
     projectDocumentsTool: ProjectDocumentsJennyTool,
@@ -46,7 +48,13 @@ export class ProjectJennyContextService implements IJennyContextProvider {
       tools: bindPermittedTools({
         tools: this.tools,
         user: request.user,
-        scope: { projectId: project.id },
+        scope: {
+          projectId: project.id,
+          documents: this.projectDocumentService.openSession({
+            projectId: project.id,
+            signal: request.signal,
+          }),
+        },
       }),
     };
   }
