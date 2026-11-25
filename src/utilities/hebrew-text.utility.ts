@@ -22,7 +22,7 @@ const reverseCharacters = (text: string): string =>
   [...text].reverse().join('');
 
 const mirrorCharacter = (character: string): string =>
-  MIRRORED_CHARACTERS[character];
+  MIRRORED_CHARACTERS[character] ?? character;
 
 export const isVisualOrderHebrewLine = (line: string): boolean => {
   const words = line.match(HEBREW_TEXT.WORD_PATTERN) ?? [];
@@ -49,8 +49,10 @@ export const isVisualOrderHebrewLine = (line: string): boolean => {
 };
 
 export const toLogicalOrderLine = (line: string): string =>
-  reverseCharacters(line)
-    .replace(HEBREW_TEXT.MIRRORED_CHARACTER_PATTERN, mirrorCharacter)
+  [...line]
+    .reverse()
+    .map(mirrorCharacter)
+    .join('')
     .replace(HEBREW_TEXT.LEFT_TO_RIGHT_RUN_PATTERN, reverseCharacters);
 
 const toLogicalOrderLineWhenVisual = (line: string): string => {

@@ -2,6 +2,7 @@ import {
   IsIn,
   IsUUID,
   IsArray,
+  IsObject,
   IsString,
   MaxLength,
   IsNotEmpty,
@@ -45,7 +46,7 @@ export class JennyMessageDto {
 }
 
 export class JennyChatDto {
-  @IsNotEmpty()
+  @IsObject()
   @ValidateNested()
   @Type(() => JennyContextDto)
   declare context: JennyContextDto;

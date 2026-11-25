@@ -451,6 +451,27 @@ describe('Google Drive project file tree', () => {
     );
   });
 
+  it('does not traverse another project root', async () => {
+    mockList.mockResolvedValueOnce({
+      data: {
+        files: [
+          {
+            id: 'apartment',
+            name: 'Apartment',
+            parents: ['root'],
+            mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+          },
+        ],
+      },
+    });
+
+    const drive = new GoogleDriveService();
+    await expect(
+      drive.listDescendantFiles('root', 5, new Set(['apartment'])),
+    ).resolves.toEqual([]);
+    expect(mockList).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses folder trees deeper than the supported depth', async () => {
     mockList.mockResolvedValue({
       data: {

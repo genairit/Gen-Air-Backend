@@ -24,11 +24,25 @@ import { ILlmUsage, ILlmToolCall } from '@Interfaces/llm.interface';
 
 const logger = new TypedLogger<Meta>('JennyToolLoop');
 
-const EMPTY_USAGE: ILlmUsage = { inputTokens: 0, outputTokens: 0 };
+const EMPTY_USAGE: ILlmUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  estimatedCostUsd: 0,
+};
+
+const addKnownCosts = (
+  current: number | null,
+  increment: number | null,
+): number | null =>
+  current === null || increment === null ? null : current + increment;
 
 const addUsage = (total: ILlmUsage, increment: ILlmUsage): ILlmUsage => ({
   inputTokens: total.inputTokens + increment.inputTokens,
   outputTokens: total.outputTokens + increment.outputTokens,
+  estimatedCostUsd: addKnownCosts(
+    total.estimatedCostUsd ?? null,
+    increment.estimatedCostUsd ?? null,
+  ),
 });
 
 export const serializeToolData = (data: unknown): string => {
@@ -85,8 +99,9 @@ const executeToolCall = async (
     return toToolExecution(call, result.data, result.sources);
   } catch (error) {
     logger.error({
-      error,
-      tool: call.name,
+      error: error instanceof Error ? error.constructor.name : null,
+      status: error instanceof HttpException ? error.getStatus() : null,
+      tool: tool.definition.name,
       message: 'Jenny tool failed; reporting the failure to the model',
     });
 
@@ -158,7 +173,9 @@ export const runJennyToolLoop = (
       round: state.round + 1,
       toolNames: [
         ...state.toolNames,
-        ...completion.toolCalls.map((call) => call.name),
+        ...completion.toolCalls
+          .slice(0, JENNY_LIMITS.MAX_TOOL_CALLS_PER_ROUND)
+          .flatMap(({ name }) => (toolsByName.has(name) ? [name] : [])),
       ],
       sources: [
         ...state.sources,

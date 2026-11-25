@@ -17,6 +17,13 @@ jest.setTimeout(2 * TIME_UNITS.MINUTE_MS);
 
 const PROJECT_ID = '00000000-0000-4000-8000-0000000000e1';
 const OTHER_PROJECT_ID = '00000000-0000-4000-8000-0000000000e2';
+const DRIVE_MODIFIED_TIME = new Date('2026-11-20T10:00:00Z');
+
+const currentFile = (id: string) => ({
+  id,
+  md5Checksum: `md5-${id}`,
+  modifiedTime: DRIVE_MODIFIED_TIME,
+});
 const MIGRATION_PATH = join(
   process.cwd(),
   'migrations',
@@ -47,7 +54,7 @@ const indexedDocument = (
     projectId,
     pageCount: pages.length,
     md5Checksum: `md5-${fileId}`,
-    driveModifiedTime: new Date('2026-11-20T10:00:00Z'),
+    driveModifiedTime: DRIVE_MODIFIED_TIME,
   },
 });
 
@@ -95,6 +102,7 @@ describe('project document search index on PostgreSQL', () => {
     const matches = await repository().searchPages({
       limit: 5,
       query: 'המעבה',
+      files: [currentFile('plan')],
       projectId: PROJECT_ID,
     });
 
@@ -115,6 +123,7 @@ describe('project document search index on PostgreSQL', () => {
       limit: 5,
       projectId: PROJECT_ID,
       query: 'דגם מעבה לוח',
+      files: [currentFile('spec')],
     });
 
     expect(matches.map((match) => match.pageNumber)).toEqual([2, 1]);
@@ -128,6 +137,7 @@ describe('project document search index on PostgreSQL', () => {
     const matches = await repository().searchPages({
       limit: 5,
       query: 'אלקטרא',
+      files: [currentFile('quote')],
       projectId: PROJECT_ID,
     });
 
@@ -141,9 +151,32 @@ describe('project document search index on PostgreSQL', () => {
       repository().searchPages({
         limit: 5,
         query: 'מעבה',
+        files: [currentFile('secret')],
         projectId: PROJECT_ID,
       }),
     ).resolves.toEqual([]);
+  });
+
+  it('only ranks pages whose stored versions match the current Drive files', async () => {
+    await replace(
+      indexedDocument(PROJECT_ID, 'changed-checksum', ['מעבה ישן']),
+    );
+    await replace(indexedDocument(PROJECT_ID, 'changed-date', ['מעבה ישן']));
+    await replace(indexedDocument(PROJECT_ID, 'removed', ['מעבה ישן']));
+    await replace(indexedDocument(PROJECT_ID, 'current', ['מעבה זמין']));
+
+    const matches = await repository().searchPages({
+      limit: 1,
+      query: 'מעבה',
+      projectId: PROJECT_ID,
+      files: [
+        { ...currentFile('changed-checksum'), md5Checksum: 'new-checksum' },
+        { ...currentFile('changed-date'), modifiedTime: null },
+        currentFile('current'),
+      ],
+    });
+
+    expect(matches.map(({ fileId }) => fileId)).toEqual(['current']);
   });
 
   it('handles queries without searchable words safely', async () => {
@@ -153,6 +186,7 @@ describe('project document search index on PostgreSQL', () => {
       repository().searchPages({
         limit: 5,
         query: "?! '&|",
+        files: [currentFile('plan')],
         projectId: PROJECT_ID,
       }),
     ).resolves.toEqual([]);
@@ -174,6 +208,7 @@ describe('project document search index on PostgreSQL', () => {
       repository().searchPages({
         limit: 5,
         query: 'מעבה',
+        files: [currentFile('plan')],
         projectId: PROJECT_ID,
       }),
     ).resolves.toEqual([]);
@@ -187,7 +222,7 @@ describe('project document search index on PostgreSQL', () => {
           fileId: 'plan',
           md5Checksum: 'md5-plan',
           status: PROJECT_DOCUMENT_STATUSES.INDEXED,
-          driveModifiedTime: new Date('2026-11-20T10:00:00Z'),
+          driveModifiedTime: DRIVE_MODIFIED_TIME,
         }),
       ]),
     );

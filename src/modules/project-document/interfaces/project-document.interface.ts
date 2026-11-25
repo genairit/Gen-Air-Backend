@@ -51,6 +51,7 @@ export interface IProjectDocumentPageSearch {
   query: string;
   limit: number;
   projectId: string;
+  files: Pick<IDriveTreeFile, 'id' | 'md5Checksum' | 'modifiedTime'>[];
 }
 
 export interface IProjectDocumentSessionRequest {

@@ -1,5 +1,5 @@
 import { IPdfLoadingHandle } from '../interfaces/project-document.interface';
-import { PDF_JS_ERRORS_ONLY_VERBOSITY } from '../constants/project-document.constant';
+import { PROJECT_DOCUMENT_SETTINGS } from '../constants/project-document.constant';
 
 export const openPdf = async (content: Buffer): Promise<IPdfLoadingHandle> => {
   const { extractText, getResolvedPDFJS } = await import('unpdf');
@@ -7,7 +7,7 @@ export const openPdf = async (content: Buffer): Promise<IPdfLoadingHandle> => {
   const loadingTask = getDocument({
     useSystemFonts: true,
     data: new Uint8Array(content),
-    verbosity: PDF_JS_ERRORS_ONLY_VERBOSITY,
+    verbosity: PROJECT_DOCUMENT_SETTINGS.PDF_JS_ERRORS_ONLY_VERBOSITY,
   });
 
   return {

@@ -365,6 +365,7 @@ describe('ProjectDocumentService on-demand indexing', () => {
 
     expect(repository.searchPages).toHaveBeenCalledWith({
       query: 'מזגן',
+      files: [file],
       projectId: PROJECT_ID,
       limit: PROJECT_DOCUMENT_LIMITS.MAX_SEARCH_HITS,
     });

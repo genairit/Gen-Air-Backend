@@ -65,6 +65,13 @@ export class ProjectDocumentRepository {
           query: search.query,
           limit: search.limit,
           projectId: search.projectId,
+          files: JSON.stringify(
+            search.files.map(({ id, md5Checksum, modifiedTime }) => ({
+              file_id: id,
+              md5_checksum: md5Checksum,
+              modified_time: modifiedTime,
+            })),
+          ),
         },
       },
     );

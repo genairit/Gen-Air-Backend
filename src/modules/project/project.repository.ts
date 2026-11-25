@@ -53,6 +53,16 @@ export class ProjectRepository {
     return projects.map((project) => project.get({ plain: true }));
   }
 
+  async findOtherProjectDriveRoots(projectId: string): Promise<string[]> {
+    const projects = await Project.findAll({
+      paranoid: false,
+      attributes: ['driveFolderId'],
+      where: { id: { [Op.ne]: projectId }, driveFolderId: { [Op.ne]: null } },
+    });
+
+    return projects.flatMap(({ driveFolderId }) => driveFolderId ?? []);
+  }
+
   async isNameAvailable(
     name: string,
     excludeId: string | null,

@@ -37,7 +37,7 @@ describe('selectCitedSources', () => {
     const pageThirteen = source('plan', 'plan.pdf', 13);
 
     expect(
-      selectCitedSources('לפי plan.pdf עמוד 3', [
+      selectCitedSources('לפי plan.pdf עמוד 3, ההספק הוא 13 קילוואט', [
         listed,
         pageThree,
         pageThirteen,

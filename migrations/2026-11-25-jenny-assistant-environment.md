@@ -27,7 +27,9 @@ disconnects), at most 4 tool calls per round, and a 40-second PDF indexing budge
 Jenny (ג׳ני) answers questions about the open project page in Hebrew. The Backend calls OpenAI
 with read-only tools (project status, quotations, Drive file list, PDF search), so the key never
 reaches the browser. Requests are rate limited per user, each OpenAI call is bounded by a timeout,
-and logs record only token counts, tool names and duration — never message or document text.
+and logs report token counts, estimated USD cost, tool names and duration. The cost includes cached
+input pricing for the default model. An unpriced override or missing usage reports a null cost.
+[Default model pricing](https://developers.openai.com/api/docs/models/gpt-5.4-mini)
 
 ## Value
 

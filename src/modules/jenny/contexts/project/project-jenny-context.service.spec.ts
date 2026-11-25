@@ -475,8 +475,8 @@ describe('ProjectJennyContextService scoping', () => {
           quotations: [
             {
               version: 1,
-              discount: '1.00',
-              vatAmount: '1.62',
+              discount: expect.stringMatching(/1\.00.*₪/),
+              vatAmount: expect.stringMatching(/1\.62.*₪/),
               status: QUOTATION_STATUS.DRAFT,
               brand: 'אלקטרה',
               date: '2026-10-31',
@@ -484,9 +484,9 @@ describe('ProjectJennyContextService scoping', () => {
               projectRole: QUOTATION_PROJECT_ROLE.PRIMARY,
               number: '2610-000001',
               sharedFromCode: null,
-              totalWithVat: '10.62',
-              totalBeforeVat: '9.00',
-              subtotalBeforeDiscount: '10.00',
+              totalWithVat: expect.stringMatching(/10\.62.*₪/),
+              totalBeforeVat: expect.stringMatching(/9\.00.*₪/),
+              subtotalBeforeDiscount: expect.stringMatching(/10\.00.*₪/),
             },
           ],
         },

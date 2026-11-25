@@ -7,7 +7,7 @@ import {
 import {
   PROJECT_DOCUMENT_LIMITS,
   PROJECT_DOCUMENT_STATUSES,
-  PROJECT_DOCUMENT_LOCK_PREFIX,
+  PROJECT_DOCUMENT_SETTINGS,
   PROJECT_DOCUMENT_SKIP_REASONS,
   PROJECT_DOCUMENT_INTERRUPTED_OUTCOME,
 } from './constants/project-document.constant';
@@ -83,6 +83,7 @@ export class ProjectDocumentService {
   ): Promise<IProjectDocumentSearch> {
     const matches = await this.repository.searchPages({
       query: search.query,
+      files: search.index.pdfFiles,
       projectId: search.request.projectId,
       limit: PROJECT_DOCUMENT_LIMITS.MAX_SEARCH_HITS,
     });
@@ -203,7 +204,7 @@ export class ProjectDocumentService {
     indexed: IIndexedProjectDocument,
   ): Promise<IProjectDocumentFileOutcome> {
     const lockKey = [
-      PROJECT_DOCUMENT_LOCK_PREFIX,
+      PROJECT_DOCUMENT_SETTINGS.LOCK_PREFIX,
       indexed.document.projectId,
       indexed.document.fileId,
     ].join(TEXT.KEY_SEPARATOR);
@@ -243,7 +244,7 @@ export class ProjectDocumentService {
       );
     } catch (error) {
       this.logger.error({
-        error,
+        error: error instanceof Error ? error.constructor.name : null,
         fileId: file.id,
         interrupted: fileSignal.aborted,
         message: 'Project document download failed; reporting it as skipped',
@@ -268,7 +269,7 @@ export class ProjectDocumentService {
       });
     } catch (error) {
       this.logger.error({
-        error,
+        error: error instanceof Error ? error.constructor.name : null,
         fileId: file.id,
         interrupted: fileSignal.aborted,
         message: 'Project document text extraction failed; marking unreadable',

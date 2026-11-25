@@ -17,33 +17,35 @@ const citableNames = (fileName: string): string[] => {
   return isDistinctiveStem ? [fileName, nameWithoutExtension] : [fileName];
 };
 
-const mentionsFile = (message: string, fileName: string): boolean => {
-  const normalizedMessage = message.toLocaleLowerCase();
-
-  return citableNames(fileName).some((name) =>
-    normalizedMessage.includes(name.toLocaleLowerCase()),
-  );
-};
-
-const mentionsPage = (message: string, page: number | null): boolean => {
+const mentionsSource = (
+  message: string,
+  name: string,
+  page: number | null,
+): boolean => {
   if (page === null) {
-    return true;
+    return message.includes(name);
   }
 
-  return new RegExp(`(?<!\\d)${page}(?!\\d)`).test(message);
+  const pageCitation = new RegExp(`^[\\s*_,:"״'()–—-]*עמוד\\s+${page}(?!\\d)`);
+
+  return message
+    .split(name)
+    .slice(1)
+    .some((suffix) => pageCitation.test(suffix));
 };
 
 const isCitedIn =
   (message: string) =>
   (source: IJennySource): boolean =>
-    mentionsFile(message, source.fileName) &&
-    mentionsPage(message, source.page);
+    citableNames(source.fileName).some((name) =>
+      mentionsSource(message, name.toLocaleLowerCase(), source.page),
+    );
 
 export const selectCitedSources = (
   message: string,
   candidates: IJennySource[],
 ): IJennySource[] => {
-  const cited = candidates.filter(isCitedIn(message));
+  const cited = candidates.filter(isCitedIn(message.toLocaleLowerCase()));
   const filesCitedByPage = new Set(
     cited.filter((source) => source.page !== null).map(({ fileId }) => fileId),
   );

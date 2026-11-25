@@ -76,11 +76,15 @@ const findParentPath = (
   folderPaths: TFolderPathById,
 ): string | null => {
   const parentIds = child.parents ?? [];
-  const walkedParent = [...folderPaths].find(([folderId]) =>
-    parentIds.includes(folderId),
+  const walkedParentId = parentIds.find((parentId) =>
+    folderPaths.has(parentId),
   );
 
-  return walkedParent?.[1] ?? null;
+  if (walkedParentId == null) {
+    return null;
+  }
+
+  return folderPaths.get(walkedParentId) ?? null;
 };
 
 const joinFolderPath = (parentPath: string, name: string): string => {

@@ -33,6 +33,7 @@ export interface IDriveFileTreeWalk {
   depthLeft: number;
   files: IDriveTreeFile[];
   folderPaths: TFolderPathById;
+  excludedFolderIds: ReadonlySet<string>;
 }
 
 export type TRootIdByFolderId = Map<string, string>;

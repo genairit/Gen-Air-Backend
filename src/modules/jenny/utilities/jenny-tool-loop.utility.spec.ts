@@ -11,7 +11,7 @@ import { stubLlmProvider } from '../../../testing/llm-provider.fixture';
 import { IJennyBoundTool, IJennySource } from '../interfaces/jenny.interface';
 import { runJennyToolLoop, serializeToolData } from './jenny-tool-loop.utility';
 
-const USAGE = { inputTokens: 10, outputTokens: 5 };
+const USAGE = { inputTokens: 10, outputTokens: 5, estimatedCostUsd: 0.001 };
 const SIGNAL = new AbortController().signal;
 
 const SOURCE: IJennySource = {
@@ -108,7 +108,11 @@ describe('runJennyToolLoop', () => {
       'getProjectStatus',
       'searchProjectDocuments',
     ]);
-    expect(outcome.usage).toEqual({ inputTokens: 20, outputTokens: 10 });
+    expect(outcome.usage).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      estimatedCostUsd: 0.002,
+    });
     expect(provider.requests[1].messages.slice(2)).toEqual([
       {
         content: null,

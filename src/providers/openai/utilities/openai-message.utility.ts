@@ -6,6 +6,12 @@ import type {
   ILlmToolDefinition,
 } from '@Interfaces/llm.interface';
 
+import {
+  OPENAI,
+  OPENAI_MODELS,
+  OPENAI_GPT_5_4_MINI_PRICING,
+} from '@Constants/openai.constant';
+
 import type {
   ChatCompletion,
   ChatCompletionMessageParam,
@@ -14,7 +20,6 @@ import type {
   ChatCompletionMessageFunctionToolCall,
 } from 'openai/resources/chat/completions';
 
-import { OPENAI } from '@Constants/openai.constant';
 import { LLM_MESSAGE_ROLES } from '@Constants/llm.constant';
 
 type TOpenAiMessageMappers = {
@@ -82,6 +87,26 @@ export const toOpenAiTool = (
   },
 });
 
+const estimateCostUsd = (completion: ChatCompletion): number | null => {
+  const { model, usage } = completion;
+  const hasKnownPricing = Object.values(OPENAI_MODELS).some(
+    (knownModel) => knownModel === model,
+  );
+
+  if (!usage || !hasKnownPricing) {
+    return null;
+  }
+
+  const pricing = OPENAI_GPT_5_4_MINI_PRICING;
+  const cachedInput = usage.prompt_tokens_details?.cached_tokens ?? 0;
+  const standardInput = usage.prompt_tokens - cachedInput;
+  const inputCost = standardInput * pricing.INPUT_USD;
+  const cachedCost = cachedInput * pricing.CACHED_INPUT_USD;
+  const outputCost = usage.completion_tokens * pricing.OUTPUT_USD;
+
+  return (inputCost + cachedCost + outputCost) / pricing.TOKENS_PER_PRICE_UNIT;
+};
+
 export const fromOpenAiCompletion = (
   completion: ChatCompletion,
 ): ILlmCompletion => {
@@ -93,6 +118,7 @@ export const fromOpenAiCompletion = (
     toolCalls: toolCalls.filter(isFunctionToolCall).map(fromOpenAiToolCall),
     usage: {
       inputTokens: completion.usage?.prompt_tokens ?? 0,
+      estimatedCostUsd: estimateCostUsd(completion),
       outputTokens: completion.usage?.completion_tokens ?? 0,
     },
   };

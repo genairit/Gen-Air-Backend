@@ -244,6 +244,7 @@ describe('POST /jenny/chat', () => {
         ],
       }),
     ],
+    ['an array-valued context', chatBody({ context: [] })],
     ['an unexpected field', chatBody({ projectId: PROJECT_ID })],
   ])('rejects %s', async (_case, body) => {
     await request(server())

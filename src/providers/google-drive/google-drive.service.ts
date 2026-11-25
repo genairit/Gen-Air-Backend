@@ -301,10 +301,12 @@ export class GoogleDriveService {
   async listDescendantFiles(
     rootFolderId: string,
     maxDepth: number,
+    excludedFolderIds: ReadonlySet<string> = new Set(),
   ): Promise<IDriveTreeFile[]> {
     const files = await this.collectRemainingFiles({
       files: [],
       depthLeft: maxDepth,
+      excludedFolderIds,
       folderPaths: new Map([[rootFolderId, '']]),
     });
 
@@ -495,9 +497,14 @@ export class GoogleDriveService {
     );
     const level = collectFileTreeLevel(children, walk.folderPaths);
 
+    const folderPaths = new Map(
+      [...level.folderPaths].filter(([id]) => !walk.excludedFolderIds.has(id)),
+    );
+
     return this.collectRemainingFiles({
+      ...walk,
+      folderPaths,
       depthLeft: walk.depthLeft - 1,
-      folderPaths: level.folderPaths,
       files: [...walk.files, ...level.files],
     });
   }

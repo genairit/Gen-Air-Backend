@@ -20,6 +20,14 @@ import { JENNY_PROMPT } from '../../constants/jenny-prompt.constant';
 import { TProjectRead } from '@Modules/project/interfaces/project.interface';
 import { IProjectQuotationView } from '@Modules/quotation/interfaces/quotation-document.interface';
 
+const quotationCurrencyFormatter = new Intl.NumberFormat('he-IL', {
+  style: 'currency',
+  currency: 'ILS',
+});
+
+const formatQuotationAmount = (amount: string): string =>
+  quotationCurrencyFormatter.format(Number(amount));
+
 const toFullName = (user?: IUser): string | null => {
   if (!user) {
     return null;
@@ -71,13 +79,13 @@ export const toQuotationSummary = (
   status: quotation.status,
   version: quotation.version,
   vatRatePercent: quotation.vatRate,
-  discount: quotation.totals.discount,
-  vatAmount: quotation.totals.vat,
+  discount: formatQuotationAmount(quotation.totals.discount),
+  vatAmount: formatQuotationAmount(quotation.totals.vat),
   projectRole: quotation.projectRole,
-  totalWithVat: quotation.totals.total,
-  totalBeforeVat: quotation.totals.pretax,
+  totalWithVat: formatQuotationAmount(quotation.totals.total),
+  totalBeforeVat: formatQuotationAmount(quotation.totals.pretax),
   sharedFromCode: quotation.sharedFromCode,
-  subtotalBeforeDiscount: quotation.totals.subtotal,
+  subtotalBeforeDiscount: formatQuotationAmount(quotation.totals.subtotal),
 });
 
 export const sortByRecentlyModified = (

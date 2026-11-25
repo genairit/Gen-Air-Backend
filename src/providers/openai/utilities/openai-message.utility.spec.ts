@@ -11,6 +11,7 @@ const DEFAULT_USAGE: CompletionUsage = {
   total_tokens: 15,
   prompt_tokens: 10,
   completion_tokens: 5,
+  prompt_tokens_details: { cached_tokens: 4 },
 };
 
 const completion = (
@@ -96,9 +97,21 @@ describe('OpenAI message mapping', () => {
       ),
     ).toEqual({
       content: null,
-      usage: { inputTokens: 10, outputTokens: 5 },
+      usage: { inputTokens: 10, outputTokens: 5, estimatedCostUsd: 0.0000273 },
       toolCalls: [{ id: 'c1', name: 'getProjectStatus', arguments: '{}' }],
     });
+  });
+
+  it('leaves cost unknown for a model without configured rates', () => {
+    const reply = completion({
+      role: 'assistant',
+      refusal: null,
+      content: 'שלום',
+    });
+
+    expect(
+      fromOpenAiCompletion({ ...reply, model: 'other-model' }).usage,
+    ).toEqual({ inputTokens: 10, outputTokens: 5, estimatedCostUsd: null });
   });
 
   it('treats missing usage as zero tokens', () => {
@@ -109,7 +122,7 @@ describe('OpenAI message mapping', () => {
     ).toEqual({
       toolCalls: [],
       content: 'שלום',
-      usage: { inputTokens: 0, outputTokens: 0 },
+      usage: { inputTokens: 0, outputTokens: 0, estimatedCostUsd: null },
     });
   });
 });

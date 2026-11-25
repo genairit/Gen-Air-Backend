@@ -47,7 +47,7 @@ describe('OpenAiLlmProvider', () => {
     ).resolves.toEqual({
       toolCalls: [],
       content: 'שלום',
-      usage: { inputTokens: 3, outputTokens: 2 },
+      usage: { inputTokens: 3, outputTokens: 2, estimatedCostUsd: 0.00001125 },
     });
     expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(mockCreate.mock.calls[0][0]).not.toHaveProperty('tools');

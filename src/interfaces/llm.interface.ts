@@ -9,6 +9,7 @@ export interface ILlmToolCall {
 export interface ILlmUsage {
   inputTokens: number;
   outputTokens: number;
+  estimatedCostUsd?: number | null;
 }
 
 export type TLlmJsonSchema = Record<string, unknown>;

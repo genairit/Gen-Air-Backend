@@ -59,15 +59,19 @@ export const PROJECT_DOCUMENT_STATE_ATTRIBUTES = [
   'driveModifiedTime',
 ] as const satisfies readonly (keyof IProjectDocument)[];
 
-export const PROJECT_DOCUMENT_LOCK_PREFIX = 'project-document';
-
-export const PDF_JS_ERRORS_ONLY_VERBOSITY = 0;
+export const PROJECT_DOCUMENT_SETTINGS = {
+  LOCK_PREFIX: 'project-document',
+  PDF_JS_ERRORS_ONLY_VERBOSITY: 0,
+} as const;
 
 export const PROJECT_DOCUMENT_SEARCH_QUERY = `
 WITH search AS (
   SELECT replace(plainto_tsquery('simple', $query)::text, '&', '|') AS terms
-),
-matches AS (
+), current_files AS (
+  SELECT *
+  FROM jsonb_to_recordset(CAST($files AS jsonb))
+    AS file(file_id text, md5_checksum text, modified_time timestamptz)
+), matches AS (
   SELECT
     page.file_id AS "fileId",
     page.page_number AS "pageNumber",
@@ -76,7 +80,16 @@ matches AS (
       ELSE ts_rank(page.search_vector, search.terms::tsquery) END AS rank,
     word_similarity($query, page.text) AS similarity,
     search.terms
-  FROM project_document_pages page, search
+  FROM current_files file
+  JOIN project_documents document
+    ON document.file_id = file.file_id
+    AND document.project_id = $projectId
+    AND document.md5_checksum IS NOT DISTINCT FROM file.md5_checksum
+    AND document.drive_modified_time IS NOT DISTINCT FROM file.modified_time
+  JOIN project_document_pages page
+    ON page.project_id = document.project_id
+    AND page.file_id = document.file_id
+  CROSS JOIN search
   WHERE page.project_id = $projectId
     AND (
       (search.terms <> '' AND page.search_vector @@ search.terms::tsquery)

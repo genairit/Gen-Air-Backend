@@ -62,6 +62,7 @@ export class JennyService {
       // Keys avoid the word "token": the logger redacts any key matching /token/i.
       promptUsage: outcome.usage.inputTokens,
       completionUsage: outcome.usage.outputTokens,
+      estimatedCostUsd: outcome.usage.estimatedCostUsd ?? null,
       message: 'Jenny answered a chat request',
     });
 
@@ -92,7 +93,7 @@ export class JennyService {
       });
     } catch (error) {
       this.logger.error({
-        error,
+        error: error instanceof Error ? error.constructor.name : null,
         interrupted: signal.aborted,
         contextType: request.context.type,
         message: 'Jenny language model request failed',

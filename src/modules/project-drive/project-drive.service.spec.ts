@@ -54,6 +54,7 @@ const createService = async () => {
   const projectService = {
     getById: jest.fn().mockResolvedValue(PROJECT),
     quotationSnapshot: jest.fn(),
+    getOtherProjectDriveRoots: jest.fn().mockResolvedValue(new Set()),
     lockDriveRootCandidate: jest.fn((): Promise<void> => Promise.resolve()),
     withDriveRootLock: jest.fn(
       (
@@ -886,7 +887,7 @@ describe('ProjectDriveService.handleProjectCreated', () => {
 });
 
 describe('ProjectDriveService project file tree', () => {
-  it('lists every file below the project root folder', async () => {
+  it('lists files below the project root and excludes other project roots', async () => {
     const { service, projectService, googleDriveService } =
       await createService();
     const planFile = { id: 'plan', name: 'plan.pdf', folderPath: 'תוכניות' };
@@ -894,6 +895,8 @@ describe('ProjectDriveService project file tree', () => {
       ...PROJECT,
       driveFolderId: PROJECT_FOLDER_ID,
     });
+    const excludedRoots = new Set(['apartment-folder']);
+    projectService.getOtherProjectDriveRoots.mockResolvedValue(excludedRoots);
     googleDriveService.listDescendantFiles.mockResolvedValue([planFile]);
 
     await expect(service.listProjectFiles(PROJECT.id)).resolves.toEqual([
@@ -902,6 +905,7 @@ describe('ProjectDriveService project file tree', () => {
     expect(googleDriveService.listDescendantFiles).toHaveBeenCalledWith(
       PROJECT_FOLDER_ID,
       MAX_FOLDER_DEPTH,
+      excludedRoots,
     );
   });
 
@@ -956,6 +960,23 @@ describe('ProjectDriveService project file tree', () => {
       1024,
       { signal },
     );
+  });
+
+  it('refuses to download a file from a nested project root', async () => {
+    const context = await createProjectFileService('plans');
+    context.projectService.getOtherProjectDriveRoots.mockResolvedValue(
+      new Set(['plans']),
+    );
+
+    await expect(
+      context.service.downloadProjectFile({
+        fileId: 'plan',
+        maxBytes: 1024,
+        projectId: PROJECT.id,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(context.googleDriveService.downloadFile).not.toHaveBeenCalled();
   });
 
   it('refuses to download a file outside the project folder', async () => {

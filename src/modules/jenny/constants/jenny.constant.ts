@@ -1,4 +1,5 @@
 import { TIME_UNITS } from '@Constants/time.constant';
+import { OPENAI_MODELS } from '@Constants/openai.constant';
 import { LLM_MESSAGE_ROLES } from '@Constants/llm.constant';
 
 export const JENNY_CONTEXT_TYPES = {
@@ -41,7 +42,7 @@ export const JENNY_SETTINGS = {
   MIN_TOOL_ROUNDS: 1,
   MAX_TOOL_ROUNDS: 10,
   DEFAULT_MAX_TOOL_ROUNDS: 5,
-  DEFAULT_MODEL: 'gpt-5.4-mini',
+  DEFAULT_MODEL: OPENAI_MODELS.GPT_5_4_MINI,
 } as const;
 
 export const JENNY_ENVIRONMENT_KEYS = {
