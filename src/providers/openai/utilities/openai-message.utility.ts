@@ -15,6 +15,7 @@ import type {
 } from 'openai/resources/chat/completions';
 
 import { OPENAI } from '@Constants/openai.constant';
+import { LLM_MESSAGE_ROLES } from '@Constants/llm.constant';
 
 type TOpenAiMessageMappers = {
   [Role in keyof ILlmMessageByRole]: (
@@ -31,14 +32,20 @@ const toOpenAiToolCall = (
 });
 
 const OPENAI_MESSAGE_MAPPERS: TOpenAiMessageMappers = {
-  user: (message) => ({ role: message.role, content: message.content }),
-  system: (message) => ({ role: message.role, content: message.content }),
-  tool: (message) => ({
+  [LLM_MESSAGE_ROLES.USER]: (message) => ({
+    role: message.role,
+    content: message.content,
+  }),
+  [LLM_MESSAGE_ROLES.SYSTEM]: (message) => ({
+    role: message.role,
+    content: message.content,
+  }),
+  [LLM_MESSAGE_ROLES.TOOL]: (message) => ({
     role: message.role,
     content: message.content,
     tool_call_id: message.toolCallId,
   }),
-  assistant: (message) => ({
+  [LLM_MESSAGE_ROLES.ASSISTANT]: (message) => ({
     role: message.role,
     content: message.content,
     ...(message.toolCalls.length > 0

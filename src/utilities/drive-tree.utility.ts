@@ -12,6 +12,13 @@ import { drive_v3 } from '@googleapis/drive';
 import { toDriveItem } from './google-drive.utility';
 import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 
+interface IPlacedDriveChild {
+  id: string;
+  name: string;
+  parentPath: string;
+  child: drive_v3.Schema$File;
+}
+
 const findRootId = (
   child: drive_v3.Schema$File,
   rootIdByFolderId: TRootIdByFolderId,
@@ -101,13 +108,6 @@ const toDriveTreeFile = (
 
   return { ...item, folderPath, md5Checksum: child.md5Checksum ?? null };
 };
-
-interface IPlacedDriveChild {
-  id: string;
-  name: string;
-  parentPath: string;
-  child: drive_v3.Schema$File;
-}
 
 const placeChild = (
   child: drive_v3.Schema$File,

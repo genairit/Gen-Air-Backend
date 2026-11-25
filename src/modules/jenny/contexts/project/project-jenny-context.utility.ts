@@ -14,8 +14,8 @@ import {
 import { TEXT } from '@Constants/text.constant';
 import { IJennySource } from '../../interfaces/jenny.interface';
 import { IUser } from '@Modules/user/interfaces/user.interface';
+import { toDriveFileLink } from '@Utilities/google-drive.utility';
 import { IDriveTreeFile } from '@Interfaces/google-drive.interface';
-import { buildDriveFileUrl } from '@Utilities/google-drive.utility';
 import { TProjectRead } from '@Modules/project/interfaces/project.interface';
 import { JENNY_PROJECT_CONTEXT_LABEL } from '../../constants/jenny-prompt.constant';
 import { IProjectQuotationView } from '@Modules/quotation/interfaces/quotation-document.interface';
@@ -28,8 +28,8 @@ const toFullName = (user?: IUser): string | null => {
   return `${user.firstName} ${user.lastName}`;
 };
 
-const toFileUrl = (file: IDriveTreeFile): string =>
-  file.webViewLink ?? buildDriveFileUrl(file.id);
+const toModifiedTimestamp = (file: IDriveTreeFile): number =>
+  file.modifiedTime?.getTime() ?? 0;
 
 export const buildProjectContextPrompt = (project: TProjectRead): string =>
   [
@@ -84,16 +84,14 @@ export const sortByRecentlyModified = (
   files: IDriveTreeFile[],
 ): IDriveTreeFile[] =>
   [...files].sort(
-    (first, second) =>
-      (second.modifiedTime?.getTime() ?? 0) -
-      (first.modifiedTime?.getTime() ?? 0),
+    (first, second) => toModifiedTimestamp(second) - toModifiedTimestamp(first),
   );
 
 export const toListedDocument = (
   file: IDriveTreeFile,
 ): IJennyListedDocument => ({
   name: file.name,
-  url: toFileUrl(file),
+  url: toDriveFileLink(file),
   folder: file.folderPath || null,
   modifiedTime: file.modifiedTime?.toISOString() ?? null,
 });
@@ -101,7 +99,7 @@ export const toListedDocument = (
 export const toFileSource = (file: IDriveTreeFile): IJennySource => ({
   page: null,
   fileId: file.id,
-  url: toFileUrl(file),
+  url: toDriveFileLink(file),
   fileName: file.name,
 });
 

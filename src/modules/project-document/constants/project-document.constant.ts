@@ -36,8 +36,6 @@ export const PROJECT_DOCUMENT_LIMITS = {
 
 export const PROJECT_DOCUMENT_LOCK_PREFIX = 'project-document';
 
-export const MD5_CHECKSUM_LENGTH = 32;
-
 export const PDF_JS_ERRORS_ONLY_VERBOSITY = 0;
 
 export const PROJECT_DOCUMENT_SEARCH_QUERY = `

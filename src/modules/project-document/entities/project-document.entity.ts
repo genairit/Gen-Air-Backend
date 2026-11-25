@@ -9,7 +9,6 @@ import {
 } from 'sequelize-typescript';
 
 import {
-  MD5_CHECKSUM_LENGTH,
   type ProjectDocumentStatusType,
   PROJECT_DOCUMENT_STATUS_VALUES,
 } from '../constants/project-document.constant';
@@ -39,7 +38,7 @@ export class ProjectDocument
   @Column(DataType.DATE)
   declare driveModifiedTime: Date | null;
 
-  @Column(DataType.STRING(MD5_CHECKSUM_LENGTH))
+  @Column(DataType.STRING(FIELD_LENGTHS.MD5_CHECKSUM))
   declare md5Checksum: string | null;
 
   @Column({ allowNull: false, type: DataType.INTEGER })

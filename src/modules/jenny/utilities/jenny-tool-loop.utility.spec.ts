@@ -1,11 +1,4 @@
 import {
-  TLlmMessage,
-  ILlmProvider,
-  ILlmCompletion,
-  ILlmCompletionRequest,
-} from '@Interfaces/llm.interface';
-
-import {
   JENNY_LIMITS,
   JENNY_TOOL_ERRORS,
   JENNY_INCOMPLETE_ANSWER,
@@ -14,6 +7,8 @@ import {
 
 import { NotFoundException } from '@nestjs/common';
 import { LLM_MESSAGE_ROLES } from '@Constants/llm.constant';
+import { TLlmMessage, ILlmCompletion } from '@Interfaces/llm.interface';
+import { stubLlmProvider } from '../../../testing/llm-provider.fixture';
 import { IJennyBoundTool, IJennySource } from '../interfaces/jenny.interface';
 import { runJennyToolLoop, serializeToolData } from './jenny-tool-loop.utility';
 
@@ -46,28 +41,6 @@ const callTools = (
   toolCalls: calls.map((call) => ({ arguments: '{}', ...call })),
 });
 
-const stubProvider = (
-  completions: ILlmCompletion[],
-): ILlmProvider & { requests: ILlmCompletionRequest[] } => {
-  const requests: ILlmCompletionRequest[] = [];
-  const queue = [...completions];
-
-  return {
-    requests,
-    isConfigured: () => true,
-    complete: (request) => {
-      requests.push(request);
-      const next = queue.shift();
-
-      if (!next) {
-        return Promise.reject(new Error('No stubbed completion left'));
-      }
-
-      return Promise.resolve(next);
-    },
-  };
-};
-
 const stubTool = (
   name: string,
   run: IJennyBoundTool['run'],
@@ -78,7 +51,7 @@ const stubTool = (
 
 describe('runJennyToolLoop', () => {
   it('answers directly when the model calls no tool', async () => {
-    const provider = stubProvider([answer('שלום, אני ג׳ני')]);
+    const provider = stubLlmProvider([answer('שלום, אני ג׳ני')]);
     const status = stubTool('getProjectStatus', () =>
       Promise.resolve({ data: {}, sources: [] }),
     );
@@ -103,7 +76,7 @@ describe('runJennyToolLoop', () => {
   });
 
   it('runs several tools in one round and feeds every result back to the model', async () => {
-    const provider = stubProvider([
+    const provider = stubLlmProvider([
       callTools(
         { id: 'call-1', name: 'getProjectStatus' },
         {
@@ -164,7 +137,7 @@ describe('runJennyToolLoop', () => {
   });
 
   it('continues across rounds until the model answers', async () => {
-    const provider = stubProvider([
+    const provider = stubLlmProvider([
       callTools({ id: 'a', name: 'getProjectStatus' }),
       callTools({ id: 'b', name: 'getQuotation' }),
       answer('סיכום'),
@@ -190,7 +163,7 @@ describe('runJennyToolLoop', () => {
   });
 
   it('stops calling tools at the round cap and forces a final answer without tools', async () => {
-    const provider = stubProvider([
+    const provider = stubLlmProvider([
       callTools({ id: 'a', name: 'getProjectStatus' }),
       callTools({ id: 'b', name: 'getProjectStatus' }),
       { ...callTools({ id: 'c', name: 'getProjectStatus' }), content: 'סופי' },
@@ -217,7 +190,7 @@ describe('runJennyToolLoop', () => {
   });
 
   it('passes the request signal to every model call', async () => {
-    const provider = stubProvider([
+    const provider = stubLlmProvider([
       callTools({ id: 'a', name: 'getProjectStatus' }),
       answer('סיכום'),
     ]);
@@ -241,7 +214,7 @@ describe('runJennyToolLoop', () => {
 
   it('runs at most the per-round tool-call cap and answers the excess calls with an error', async () => {
     const callCount = JENNY_LIMITS.MAX_TOOL_CALLS_PER_ROUND + 2;
-    const provider = stubProvider([
+    const provider = stubLlmProvider([
       callTools(
         ...Array.from({ length: callCount }, (_value, index) => ({
           id: `call-${index}`,
@@ -279,7 +252,7 @@ describe('runJennyToolLoop', () => {
   });
 
   it('falls back to a Hebrew apology when the model returns no text', async () => {
-    const provider = stubProvider([answer('   ')]);
+    const provider = stubLlmProvider([answer('   ')]);
 
     const outcome = await runJennyToolLoop({
       provider,
@@ -293,7 +266,7 @@ describe('runJennyToolLoop', () => {
   });
 
   it('reports unknown tools, invalid arguments and tool failures to the model instead of failing the chat', async () => {
-    const provider = stubProvider([
+    const provider = stubLlmProvider([
       callTools(
         { id: 'unknown', name: 'deleteProject' },
         { id: 'invalid', name: 'searchProjectDocuments', arguments: '{oops' },
@@ -333,7 +306,7 @@ describe('runJennyToolLoop', () => {
   });
 
   it('propagates language model failures to the caller', async () => {
-    const provider = stubProvider([]);
+    const provider = stubLlmProvider([]);
 
     await expect(
       runJennyToolLoop({

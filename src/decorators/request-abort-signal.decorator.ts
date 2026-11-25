@@ -1,16 +1,16 @@
 import type { Response } from 'express';
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
+interface IClosableResponse {
+  writableFinished: boolean;
+  once: (event: 'close', listener: () => void) => unknown;
+}
+
 export class ClientDisconnectedError extends Error {
   constructor() {
     super('The client disconnected before the response was sent');
     this.name = ClientDisconnectedError.name;
   }
-}
-
-interface IClosableResponse {
-  writableFinished: boolean;
-  once: (event: 'close', listener: () => void) => unknown;
 }
 
 export const toRequestAbortSignal = (

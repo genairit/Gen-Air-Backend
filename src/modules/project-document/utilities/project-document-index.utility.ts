@@ -17,8 +17,8 @@ import {
 } from '../interfaces/project-document.interface';
 
 import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
+import { toDriveFileLink } from '@Utilities/google-drive.utility';
 import { IDriveTreeFile } from '@Interfaces/google-drive.interface';
-import { buildDriveFileUrl } from '@Utilities/google-drive.utility';
 import { fixVisualOrderHebrew } from '@Utilities/hebrew-text.utility';
 
 const HORIZONTAL_WHITESPACE = /[^\S\n]+/g;
@@ -200,7 +200,7 @@ export const toDocumentHits = (
         page: match.pageNumber,
         snippet: match.snippet,
         folderPath: file.folderPath,
-        url: file.webViewLink ?? buildDriveFileUrl(file.id),
+        url: toDriveFileLink(file),
       },
     ];
   });

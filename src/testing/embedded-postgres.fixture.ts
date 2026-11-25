@@ -6,6 +6,12 @@ import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { ModelCtor, Sequelize } from 'sequelize-typescript';
 
+interface IEmbeddedPostgresState {
+  started: boolean;
+  directory: string | null;
+  database: Sequelize | null;
+}
+
 const execute = promisify(execFile);
 const LOOPBACK_HOST = '127.0.0.1';
 const DATABASE_LOCALE = 'en_US.UTF-8';
@@ -17,12 +23,6 @@ const binaries = resolve(
   'native',
   'bin',
 );
-
-interface IEmbeddedPostgresState {
-  started: boolean;
-  directory: string | null;
-  database: Sequelize | null;
-}
 
 const reservePort = async (): Promise<number> => {
   const server = createServer();
