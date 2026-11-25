@@ -6,6 +6,11 @@ import {
 } from '@nestjs/common';
 
 import {
+  isDueDateBeforeToday,
+  getStartOfTodayInTimeZone,
+} from '@Utilities/date.utility';
+
+import {
   ITask,
   TTaskLink,
   ITaskCounts,
@@ -29,7 +34,6 @@ import { UserService } from '@Modules/user/user.service';
 import { TASK_SORTS } from './constants/task-sort.constant';
 import { GetTasksByFilterDto } from './dto/get-by-filter.dto';
 import { Transaction, UniqueConstraintError } from 'sequelize';
-import { isDueDateBeforeToday } from '@Utilities/date.utility';
 import { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { toCursorBatch } from '@Utilities/cursor-batch.utility';
 import { PERMISSIONS } from '@Constants/authorization.constant';
@@ -119,6 +123,13 @@ export class TaskService {
       );
       return this.requireDetailedTask(id, transaction);
     });
+  }
+
+  getOverdueCountForProject(projectId: string): Promise<number> {
+    return this.taskRepository.countOverdueForProject(
+      projectId,
+      getStartOfTodayInTimeZone(),
+    );
   }
 
   async getCounts(filter: GetTasksByFilterDto): Promise<ITaskCounts> {

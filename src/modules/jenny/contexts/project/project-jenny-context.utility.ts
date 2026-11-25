@@ -1,5 +1,6 @@
 import {
   IJennyDocumentHit,
+  IJennyTaskSummary,
   IJennyProjectStatus,
   IJennyListedDocument,
   IJennySkippedDocument,
@@ -11,7 +12,10 @@ import {
   IProjectDocumentSkip,
 } from '@Modules/project-document/interfaces/project-document.interface';
 
+import { DATE_FORMATS } from '@Constants/date';
 import { TEXT } from '@Constants/text.constant';
+import { formatDate } from '@Utilities/date.utility';
+import { ITask } from '@Modules/task/interfaces/task.interface';
 import { IJennySource } from '../../interfaces/jenny.interface';
 import { IUser } from '@Modules/user/interfaces/user.interface';
 import { toDriveFileLink } from '@Utilities/google-drive.utility';
@@ -28,7 +32,7 @@ const quotationCurrencyFormatter = new Intl.NumberFormat('he-IL', {
 const formatQuotationAmount = (amount: string): string =>
   quotationCurrencyFormatter.format(Number(amount));
 
-const toFullName = (user?: IUser): string | null => {
+const toFullName = (user?: IUser | null): string | null => {
   if (!user) {
     return null;
   }
@@ -68,6 +72,14 @@ export const toProjectStatus = (
     role: member.role,
     name: toFullName(member.user),
   })),
+});
+
+export const toTaskSummary = (task: ITask): IJennyTaskSummary => ({
+  title: task.title,
+  status: task.status,
+  isUrgent: task.isUrgent,
+  assignee: toFullName(task.assignee),
+  dueDate: formatDate(task.dueDate, DATE_FORMATS.XML_DATE) || null,
 });
 
 export const toQuotationSummary = (

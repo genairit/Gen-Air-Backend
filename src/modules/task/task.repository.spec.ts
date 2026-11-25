@@ -93,6 +93,20 @@ describe('task repository link queries', () => {
     });
   });
 
+  it('counts only project tasks due before the day boundary', async () => {
+    const count = jest
+      .spyOn(Task, 'count')
+      .mockRejectedValue(new Error('query captured'));
+    const dueBefore = new Date('2026-11-25T22:00:00Z');
+
+    await expect(
+      repository.countOverdueForProject(PROJECT_ID, dueBefore),
+    ).rejects.toThrow('query captured');
+    expect(count).toHaveBeenCalledWith({
+      where: { projectId: PROJECT_ID, dueDate: { [Op.lt]: dueBefore } },
+    });
+  });
+
   it('joins the project when counting by customer', async () => {
     const count = jest
       .spyOn(Task, 'count')

@@ -1,3 +1,4 @@
+import { TaskStatusType } from '@Modules/task/constants/task-status.constant';
 import { ProjectDocumentSkipReasonType } from '@Modules/project-document/constants/project-document.constant';
 
 export interface IJennyProjectTeamMember {
@@ -35,6 +36,14 @@ export interface IJennyQuotationSummary {
   totalBeforeVat: string;
   sharedFromCode: string | null;
   subtotalBeforeDiscount: string;
+}
+
+export interface IJennyTaskSummary {
+  title: string;
+  isUrgent: boolean;
+  status: TaskStatusType;
+  dueDate: string | null;
+  assignee: string | null;
 }
 
 export interface IJennyListedDocument {

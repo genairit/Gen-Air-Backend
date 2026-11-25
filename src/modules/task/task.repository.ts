@@ -73,6 +73,12 @@ export class TaskRepository {
     return toTaskCursorPage(rows, { batchSize: batch.batchSize, sort });
   }
 
+  countOverdueForProject(projectId: string, dueBefore: Date): Promise<number> {
+    return Task.count({
+      where: { projectId, dueDate: { [Op.lt]: dueBefore } },
+    });
+  }
+
   async countByFilter(filter: ITaskFilter): Promise<ITaskCountRow[]> {
     const rows = await Task.count({
       where: { [Op.and]: this.buildFilterWhere(filter) },

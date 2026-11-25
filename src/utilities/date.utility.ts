@@ -48,8 +48,11 @@ export const formatDate = (
   return moment(date).tz(TIME_ZONE).format(format);
 };
 
+export const getStartOfTodayInTimeZone = (): Date =>
+  moment().tz(TIME_ZONE).startOf('day').toDate();
+
 export const isDueDateBeforeToday = (value: string): boolean =>
-  moment(value).tz(TIME_ZONE).isBefore(moment().tz(TIME_ZONE).startOf('day'));
+  moment(value).isBefore(getStartOfTodayInTimeZone());
 
 export const isValidDateOnly = (value: string): boolean =>
   moment(value, DATE_FORMATS.XML_DATE, true).isValid();

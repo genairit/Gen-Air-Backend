@@ -1,4 +1,5 @@
 import { ILlmToolDefinition } from '@Interfaces/llm.interface';
+import { FIELD_LENGTHS } from '@Constants/field-length.constant';
 import { JENNY_LIMITS, JENNY_TOOL_NAMES } from '../../constants/jenny.constant';
 
 const NO_PARAMETERS = {
@@ -13,7 +14,30 @@ export const SEARCH_QUERY_ARGUMENT = {
   maxLength: JENNY_LIMITS.MAX_SEARCH_QUERY_LENGTH,
 } as const;
 
+export const TASK_SEARCH_ARGUMENT = {
+  ...SEARCH_QUERY_ARGUMENT,
+  maxLength: FIELD_LENGTHS.SEARCH_QUERY,
+} as const;
+
 export const PROJECT_JENNY_TOOL_DEFINITIONS = {
+  GET_PROJECT_TASKS: {
+    name: JENNY_TOOL_NAMES.GET_PROJECT_TASKS,
+    description:
+      'Returns counts by status and the exact overdue count for tasks directly linked to the current project. Lists tasks ordered by due date, with title, status, assignee, due date and urgency. Use the optional query to find a task using its title or part of an assignee name. Counts cover the whole project even when the list is filtered or truncated.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        [TASK_SEARCH_ARGUMENT.name]: {
+          type: 'string',
+          minLength: TASK_SEARCH_ARGUMENT.minLength,
+          maxLength: TASK_SEARCH_ARGUMENT.maxLength,
+          description:
+            'Search text such as a task title or part of the assignee name.',
+        },
+      },
+    },
+  },
   GET_PROJECT_STATUS: {
     name: JENNY_TOOL_NAMES.GET_PROJECT_STATUS,
     description:
