@@ -3,14 +3,18 @@ import {
   ILlmCompletionRequest,
 } from '@Interfaces/llm.interface';
 
+import {
+  IJennyContextRequest,
+  IJennyResolvedContext,
+} from './interfaces/jenny.interface';
+
 import { Test } from '@nestjs/testing';
 import { JennyService } from './jenny.service';
 import { JennyChatDto } from './dto/jenny-chat.dto';
 import { LLM_PROVIDER } from '@Constants/llm.constant';
 import { GatewayTimeoutException } from '@nestjs/common';
-import { JENNY_LIMITS } from './constants/jenny.constant';
 import { JennyContextRegistry } from './jenny-context.registry';
-import { IJennyContextRequest } from './interfaces/jenny.interface';
+import { JENNY_LIMITS, JennyContextType } from './constants/jenny.constant';
 import { makeCustomerProjectUser } from '../../testing/customer-project.fixture';
 import { ClientDisconnectedError } from '@Decorators/request-abort-signal.decorator';
 
@@ -40,8 +44,8 @@ describe('JennyService request deadline', () => {
   const user = { ...makeCustomerProjectUser(), permissions: [] };
   const contexts = {
     resolve: jest.fn<
-      ReturnType<JennyContextRegistry['resolve']>,
-      [string, IJennyContextRequest]
+      Promise<IJennyResolvedContext>,
+      [JennyContextType, IJennyContextRequest]
     >(),
   };
   const llmProvider = {

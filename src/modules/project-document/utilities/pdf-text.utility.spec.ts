@@ -9,14 +9,14 @@ const LIMITS = {
 
 describe('extractPdfPages', () => {
   it('extracts text page by page from a real PDF', async () => {
-    const pdf = buildTextPdf(['Cooling plan floor 1', 'Electrical layout B']);
+    const pdf = buildTextPdf(['Cooling plan floor 1', 'Electrical layout (B)']);
 
     const extracted = await extractPdfPages(pdf, LIMITS);
 
     expect(extracted.totalPages).toBe(2);
     expect(extracted.pages.map((page) => page.trim())).toEqual([
       'Cooling plan floor 1',
-      'Electrical layout B',
+      'Electrical layout (B)',
     ]);
   });
 

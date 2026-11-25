@@ -304,6 +304,30 @@ describe('runJennyToolLoop', () => {
     ]);
   });
 
+  it('reports unexpected tool failures without exposing their details', async () => {
+    const provider = stubLlmProvider([
+      callTools({ id: 'boom', name: 'getProjectStatus' }),
+      answer('לא הצלחתי'),
+    ]);
+    const status = stubTool('getProjectStatus', () =>
+      Promise.reject(new Error('connection string postgres://secret')),
+    );
+
+    await runJennyToolLoop({
+      provider,
+      maxRounds: 2,
+      signal: SIGNAL,
+      tools: [status],
+      messages: INITIAL_MESSAGES,
+    });
+
+    expect(provider.requests[1].messages.at(-1)).toEqual({
+      toolCallId: 'boom',
+      role: LLM_MESSAGE_ROLES.TOOL,
+      content: JSON.stringify({ error: JENNY_TOOL_ERRORS.FAILED }),
+    });
+  });
+
   it('propagates language model failures to the caller', async () => {
     const provider = stubLlmProvider([]);
 
@@ -330,5 +354,9 @@ describe('serializeToolData', () => {
         JENNY_REPLY_TEXT.TRUNCATION_MARKER.length,
     );
     expect(serialized.endsWith(JENNY_REPLY_TEXT.TRUNCATION_MARKER)).toBe(true);
+  });
+
+  it('serializes values JSON cannot represent as null', () => {
+    expect(serializeToolData(() => 'not serializable')).toBe('null');
   });
 });

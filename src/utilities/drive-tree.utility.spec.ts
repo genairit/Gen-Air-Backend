@@ -112,6 +112,17 @@ describe('collectFileTreeLevel', () => {
     expect(level.folderPaths).toEqual(new Map([['electric', 'תוכניות/חשמל']]));
   });
 
+  it('ignores children without any parent', () => {
+    const orphan = {
+      ...namedFile('orphan', 'יתום.pdf', 'root'),
+      parents: null,
+    };
+
+    const level = collectFileTreeLevel([orphan], new Map([['root', '']]));
+
+    expect(level.files).toEqual([]);
+  });
+
   it('ignores shortcuts and children outside the walked folders', () => {
     const level = collectFileTreeLevel(
       [

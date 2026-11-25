@@ -194,7 +194,7 @@ export const toStoredSkips = (
   );
 
   return unchanged.flatMap((file) => {
-    const status = statusByFileId.get(file.id) ?? null;
+    const status = statusByFileId.get(file.id);
 
     if (!isSkipReason(status)) {
       return [];

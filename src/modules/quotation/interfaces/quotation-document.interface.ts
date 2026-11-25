@@ -48,6 +48,11 @@ export interface IProjectQuotationView extends IQuotationView {
   sharedApartmentNumbers: string[];
   projectRole: QuotationProjectRoleType;
 }
+export interface IProjectQuotationPage {
+  total: number;
+  nextCursor: string | null;
+  items: IProjectQuotationView[];
+}
 export interface IQuotationApartmentOptions {
   apartments: IQuotationApartment[];
   building: IQuotationPrimaryProject;

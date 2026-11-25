@@ -914,10 +914,8 @@ describe('ProjectDriveService project file tree', () => {
     expect(googleDriveService.listDescendantFiles).not.toHaveBeenCalled();
   });
 
-  const stubProjectFile = (
-    context: Awaited<ReturnType<typeof createService>>,
-    fileParentId: string,
-  ) => {
+  const createProjectFileService = async (fileParentId: string) => {
+    const context = await createService();
     context.projectService.getById.mockResolvedValue({
       ...PROJECT,
       driveFolderId: PROJECT_FOLDER_ID,
@@ -937,12 +935,13 @@ describe('ProjectDriveService project file tree', () => {
     context.googleDriveService.findParentIds.mockImplementation((id: string) =>
       Promise.resolve(id === 'plans' ? [PROJECT_FOLDER_ID] : []),
     );
+
+    return context;
   };
 
   it('downloads a file inside the project folder within the byte limit and signal', async () => {
-    const context = await createService();
+    const context = await createProjectFileService('plans');
     const signal = new AbortController().signal;
-    stubProjectFile(context, 'plans');
 
     await expect(
       context.service.downloadProjectFile({
@@ -960,8 +959,7 @@ describe('ProjectDriveService project file tree', () => {
   });
 
   it('refuses to download a file outside the project folder', async () => {
-    const context = await createService();
-    stubProjectFile(context, 'another-project');
+    const context = await createProjectFileService('another-project');
 
     await expect(
       context.service.downloadProjectFile({

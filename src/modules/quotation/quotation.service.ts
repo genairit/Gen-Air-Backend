@@ -52,7 +52,7 @@ import type {
   IQuotationView,
   IQuotationDocument,
   IQuotationDetailView,
-  IProjectQuotationView,
+  IProjectQuotationPage,
   IQuotationApartmentOptions,
 } from './interfaces/quotation-document.interface';
 
@@ -210,11 +210,7 @@ export class QuotationService {
   async listByProject(
     projectId: string,
     query: GetProjectQuotationsDto,
-  ): Promise<{
-    total: number;
-    nextCursor: string | null;
-    items: IProjectQuotationView[];
-  }> {
+  ): Promise<IProjectQuotationPage> {
     await this.projects.getById(projectId);
     const cursor = decodeQuotationCursor(query);
     return this.transactions.readSnapshot(async (transaction) => {

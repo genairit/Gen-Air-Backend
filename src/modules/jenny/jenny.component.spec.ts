@@ -40,9 +40,11 @@ import { TProjectRead } from '@Modules/project/interfaces/project.interface';
 import { QuotationJennyTool } from './contexts/project/tools/quotation.tool';
 import { PERMISSIONS, PermissionType } from '@Constants/authorization.constant';
 import { ProjectStatusJennyTool } from './contexts/project/tools/project-status.tool';
+import { GetProjectQuotationsDto } from '@Modules/quotation/dto/get-project-quotations.dto';
 import { ProjectDocumentsJennyTool } from './contexts/project/tools/project-documents.tool';
 import { ProjectDocumentService } from '@Modules/project-document/project-document.service';
 import { ProjectJennyContextService } from './contexts/project/project-jenny-context.service';
+import { IProjectQuotationPage } from '@Modules/quotation/interfaces/quotation-document.interface';
 import { ProjectDocumentSearchJennyTool } from './contexts/project/tools/project-document-search.tool';
 
 const PROJECT_ID = '00000000-0000-4000-8000-0000000000d1';
@@ -92,8 +94,8 @@ describe('POST /jenny/chat', () => {
   };
   const quotationService = {
     listByProject: jest.fn<
-      ReturnType<QuotationService['listByProject']>,
-      Parameters<QuotationService['listByProject']>
+      Promise<IProjectQuotationPage>,
+      [string, GetProjectQuotationsDto]
     >(),
   };
   const documentSession = {

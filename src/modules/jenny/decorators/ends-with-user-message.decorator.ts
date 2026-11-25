@@ -8,7 +8,7 @@ const isLastMessageFromUser = (value: unknown): boolean => {
   return isObject(lastMessage) && lastMessage.role === JENNY_CHAT_ROLES.USER;
 };
 
-export const EndsWithUserMessage = () =>
+export const EndsWithUserMessage = (): PropertyDecorator =>
   ValidateBy({
     name: 'endsWithUserMessage',
     validator: {

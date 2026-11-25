@@ -25,8 +25,17 @@ import { ProjectJennyContextService } from './project-jenny-context.service';
 import { TProjectRead } from '@Modules/project/interfaces/project.interface';
 import { JENNY_LIMITS, JENNY_TOOL_NAMES } from '../../constants/jenny.constant';
 import { PERMISSIONS, PermissionType } from '@Constants/authorization.constant';
+import { quotationDocumentFixture } from '../../../../testing/quotation.fixture';
+import { QUOTATION_STATUS } from '@Modules/quotation/constants/quotation.constant';
 import { ProjectDocumentSearchJennyTool } from './tools/project-document-search.tool';
+import { quotationView } from '@Modules/quotation/utilities/quotation-calculation.utility';
+import { GetProjectQuotationsDto } from '@Modules/quotation/dto/get-project-quotations.dto';
 import { ProjectDocumentService } from '@Modules/project-document/project-document.service';
+import { CUSTOMER_PROJECT_KINDS } from '@Modules/project/constants/customer-project.constant';
+import { toProjectQuotationView } from '@Modules/quotation/utilities/quotation-sharing.utility';
+import { QUOTATION_PROJECT_ROLE } from '@Modules/quotation/constants/quotation-sharing.constant';
+import { IProjectQuotationPage } from '@Modules/quotation/interfaces/quotation-document.interface';
+import { PROJECT_DOCUMENT_SKIP_REASONS } from '@Modules/project-document/constants/project-document.constant';
 
 const CONTEXT_PROJECT_ID = '00000000-0000-4000-8000-0000000000c1';
 const OTHER_PROJECT_ID = '00000000-0000-4000-8000-0000000000c2';
@@ -72,8 +81,8 @@ describe('ProjectJennyContextService scoping', () => {
   };
   const quotationService = {
     listByProject: jest.fn<
-      ReturnType<QuotationService['listByProject']>,
-      Parameters<QuotationService['listByProject']>
+      Promise<IProjectQuotationPage>,
+      [string, GetProjectQuotationsDto]
     >(),
   };
   const documentSession = {
@@ -284,5 +293,253 @@ describe('ProjectJennyContextService scoping', () => {
     });
     expect(documentSession.listFiles).toHaveBeenCalledTimes(1);
     expect(documentSession.search).toHaveBeenCalledWith('מעבה');
+  });
+
+  describe('tool results', () => {
+    const resolveTool = async (name: string) => {
+      const resolved = await context().resolve({
+        signal: requestSignal,
+        id: CONTEXT_PROJECT_ID,
+        user: allPermissions,
+      });
+
+      return resolved.tools.find((tool) => tool.definition.name === name);
+    };
+
+    it('reports a team member whose user record is unavailable without a name', async () => {
+      projectService.getById.mockResolvedValue({
+        ...contextProject(),
+        members: [
+          {
+            id: 'member-2',
+            role: USER_ROLES.ENGINEER,
+            projectId: CONTEXT_PROJECT_ID,
+            userId: CUSTOMER_PROJECT_TEST_IDS.MEMBER,
+            createdAt: new Date('2026-10-01T10:00:00.000Z'),
+            updatedAt: new Date('2026-10-01T10:00:00.000Z'),
+          },
+        ],
+      });
+      const statusTool = await resolveTool(JENNY_TOOL_NAMES.GET_PROJECT_STATUS);
+
+      const result = await statusTool?.run({});
+
+      expect(result?.data).toMatchObject({
+        team: [{ role: USER_ROLES.ENGINEER, name: null }],
+      });
+    });
+
+    it('reports missing optional project relations as null', async () => {
+      projectService.getById.mockResolvedValue({
+        ...makeCustomerProjectParent({
+          name: 'מגדלי הים',
+          id: CONTEXT_PROJECT_ID,
+          customerName: 'לקוח פרטי',
+        }),
+        waitingReason: null,
+      });
+      const statusTool = await resolveTool(JENNY_TOOL_NAMES.GET_PROJECT_STATUS);
+
+      const result = await statusTool?.run({});
+
+      expect(result?.data).toMatchObject({
+        team: [],
+        stage: null,
+        projectType: null,
+        buildingName: null,
+        isApartment: false,
+        customerName: 'לקוח פרטי',
+      });
+    });
+
+    it('names the building of an apartment context as serialized data', async () => {
+      projectService.getById.mockResolvedValue({
+        ...makeCustomerProjectParent({
+          code: 'APT-1',
+          name: 'דירה 4',
+          id: CONTEXT_PROJECT_ID,
+          parentProjectId: CUSTOMER_PROJECT_TEST_IDS.OTHER,
+          parentProject: makeCustomerProjectParent({ name: 'מגדלי הים' }),
+        }),
+        waitingReason: null,
+      });
+
+      const resolved = await context().resolve({
+        signal: requestSignal,
+        id: CONTEXT_PROJECT_ID,
+        user: allPermissions,
+      });
+
+      expect(resolved.prompt).toContain(
+        JSON.stringify({
+          code: 'APT-1',
+          name: 'דירה 4',
+          buildingName: 'מגדלי הים',
+        }),
+      );
+    });
+
+    it('lists project files newest first with their folder, time and link', async () => {
+      documentSession.listFiles.mockResolvedValue([
+        {
+          id: 'old',
+          size: 1,
+          isFolder: false,
+          folderPath: '',
+          name: 'ישן.pdf',
+          md5Checksum: null,
+          modifiedTime: null,
+          webViewLink: null,
+          mimeType: 'application/pdf',
+        },
+        {
+          id: 'new',
+          size: 1,
+          isFolder: false,
+          name: 'חדש.pdf',
+          md5Checksum: null,
+          folderPath: 'תוכניות',
+          mimeType: 'application/pdf',
+          modifiedTime: new Date('2026-11-20T10:00:00.000Z'),
+          webViewLink: 'https://drive.google.com/file/d/new/view',
+        },
+      ]);
+      const listTool = await resolveTool(
+        JENNY_TOOL_NAMES.LIST_PROJECT_DOCUMENTS,
+      );
+
+      await expect(listTool?.run({})).resolves.toEqual({
+        sources: [
+          {
+            page: null,
+            fileId: 'new',
+            fileName: 'חדש.pdf',
+            url: 'https://drive.google.com/file/d/new/view',
+          },
+          {
+            page: null,
+            fileId: 'old',
+            fileName: 'ישן.pdf',
+            url: 'https://drive.google.com/open?id=old',
+          },
+        ],
+        data: {
+          totalFiles: 2,
+          truncated: false,
+          files: [
+            {
+              name: 'חדש.pdf',
+              folder: 'תוכניות',
+              modifiedTime: '2026-11-20T10:00:00.000Z',
+              url: 'https://drive.google.com/file/d/new/view',
+            },
+            {
+              folder: null,
+              name: 'ישן.pdf',
+              modifiedTime: null,
+              url: 'https://drive.google.com/open?id=old',
+            },
+          ],
+        },
+      });
+    });
+
+    it('returns quotation totals exactly as the existing quotation calculation produced them', async () => {
+      const view = toProjectQuotationView({
+        apartmentLinks: [],
+        projectId: CONTEXT_PROJECT_ID,
+        view: quotationView({
+          ...quotationDocumentFixture([]),
+          discountPercent: '10',
+        }),
+        primaryProject: {
+          code: 'BLDG-1',
+          name: 'מגדלי הים',
+          id: CONTEXT_PROJECT_ID,
+          kind: CUSTOMER_PROJECT_KINDS.PROJECT,
+        },
+      });
+      quotationService.listByProject.mockResolvedValue({
+        total: 1,
+        items: [view],
+        nextCursor: null,
+      });
+      const quotationTool = await resolveTool(JENNY_TOOL_NAMES.GET_QUOTATION);
+
+      const result = await quotationTool?.run({});
+
+      expect(result).toEqual({
+        sources: [],
+        data: {
+          totalQuotations: 1,
+          quotations: [
+            {
+              version: 1,
+              discount: '1.00',
+              vatAmount: '1.62',
+              status: QUOTATION_STATUS.DRAFT,
+              brand: 'אלקטרה',
+              date: '2026-10-31',
+              vatRatePercent: '18',
+              projectRole: QUOTATION_PROJECT_ROLE.PRIMARY,
+              number: '2610-000001',
+              sharedFromCode: null,
+              totalWithVat: '10.62',
+              totalBeforeVat: '9.00',
+              subtotalBeforeDiscount: '10.00',
+            },
+          ],
+        },
+      });
+    });
+
+    it('returns search hits with their sources and reports files it could not search', async () => {
+      documentSession.search.mockResolvedValue({
+        pendingFiles: 2,
+        hits: [
+          {
+            page: 3,
+            fileId: 'plan',
+            folderPath: '',
+            snippet: '«מעבה»',
+            fileName: 'plan.pdf',
+            url: 'https://drive.google.com/open?id=plan',
+          },
+        ],
+        skipped: [
+          {
+            fileId: 'scan',
+            fileName: 'scan.pdf',
+            reason: PROJECT_DOCUMENT_SKIP_REASONS.SCANNED,
+          },
+        ],
+      });
+      const searchTool = await resolveTool(
+        JENNY_TOOL_NAMES.SEARCH_PROJECT_DOCUMENTS,
+      );
+
+      await expect(searchTool?.run({ query: 'מעבה' })).resolves.toEqual({
+        sources: [
+          {
+            page: 3,
+            fileId: 'plan',
+            fileName: 'plan.pdf',
+            url: 'https://drive.google.com/open?id=plan',
+          },
+        ],
+        data: {
+          pendingFiles: 2,
+          hits: [
+            { page: 3, folder: null, snippet: '«מעבה»', fileName: 'plan.pdf' },
+          ],
+          skippedFiles: [
+            {
+              fileName: 'scan.pdf',
+              reason: PROJECT_DOCUMENT_SKIP_REASONS.SCANNED,
+            },
+          ],
+        },
+      });
+    });
   });
 });

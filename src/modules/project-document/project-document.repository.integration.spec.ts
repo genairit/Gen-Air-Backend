@@ -9,6 +9,7 @@ import { TIME_UNITS } from '@Constants/time.constant';
 import { ProjectDocument } from './entities/project-document.entity';
 import { ProjectDocumentRepository } from './project-document.repository';
 import { ProjectDocumentPage } from './entities/project-document-page.entity';
+import { IIndexedProjectDocument } from './interfaces/project-document.interface';
 import { EmbeddedPostgresFixture } from '../../testing/embedded-postgres.fixture';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
@@ -33,7 +34,7 @@ const indexedDocument = (
   fileId: string,
   pages: string[],
   status: ProjectDocumentStatusType = PROJECT_DOCUMENT_STATUSES.INDEXED,
-) => ({
+): IIndexedProjectDocument => ({
   pages: pages.map((text, index) => ({
     text,
     fileId,
@@ -55,13 +56,13 @@ describe('project document search index on PostgreSQL', () => {
     ProjectDocument,
     ProjectDocumentPage,
   ]);
-  const repository = new ProjectDocumentRepository();
+  const repository = () => new ProjectDocumentRepository(postgres.database());
 
-  const replace = (indexed: ReturnType<typeof indexedDocument>) => {
+  const replace = (indexed: IIndexedProjectDocument): Promise<void> => {
     const transactions = new DatabaseTransactionService(postgres.database());
 
     return transactions.run((transaction) =>
-      repository.replaceDocument(indexed, transaction),
+      repository().replaceDocument(indexed, transaction),
     );
   };
 
@@ -91,7 +92,7 @@ describe('project document search index on PostgreSQL', () => {
       ]),
     );
 
-    const matches = await repository.searchPages({
+    const matches = await repository().searchPages({
       limit: 5,
       query: 'המעבה',
       projectId: PROJECT_ID,
@@ -110,7 +111,7 @@ describe('project document search index on PostgreSQL', () => {
       ]),
     );
 
-    const matches = await repository.searchPages({
+    const matches = await repository().searchPages({
       limit: 5,
       projectId: PROJECT_ID,
       query: 'דגם מעבה לוח',
@@ -124,7 +125,7 @@ describe('project document search index on PostgreSQL', () => {
       indexedDocument(PROJECT_ID, 'quote', ['ספק: אלקטרה מיזוג אוויר בע"מ']),
     );
 
-    const matches = await repository.searchPages({
+    const matches = await repository().searchPages({
       limit: 5,
       query: 'אלקטרא',
       projectId: PROJECT_ID,
@@ -137,7 +138,7 @@ describe('project document search index on PostgreSQL', () => {
     await replace(indexedDocument(OTHER_PROJECT_ID, 'secret', ['מעבה סודי']));
 
     await expect(
-      repository.searchPages({
+      repository().searchPages({
         limit: 5,
         query: 'מעבה',
         projectId: PROJECT_ID,
@@ -149,7 +150,7 @@ describe('project document search index on PostgreSQL', () => {
     await replace(indexedDocument(PROJECT_ID, 'plan', ['מעבה']));
 
     await expect(
-      repository.searchPages({
+      repository().searchPages({
         limit: 5,
         query: "?! '&|",
         projectId: PROJECT_ID,
@@ -170,13 +171,13 @@ describe('project document search index on PostgreSQL', () => {
     );
 
     await expect(
-      repository.searchPages({
+      repository().searchPages({
         limit: 5,
         query: 'מעבה',
         projectId: PROJECT_ID,
       }),
     ).resolves.toEqual([]);
-    await expect(repository.findStates(PROJECT_ID)).resolves.toEqual(
+    await expect(repository().findStates(PROJECT_ID)).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           fileId: 'scan',
@@ -191,8 +192,17 @@ describe('project document search index on PostgreSQL', () => {
       ]),
     );
 
-    await repository.deleteDocuments(PROJECT_ID, ['plan']);
+    await repository().deleteDocuments(PROJECT_ID, ['plan']);
 
     await expect(ProjectDocumentPage.count()).resolves.toBe(0);
+  });
+
+  it('keeps every document when there is nothing to delete', async () => {
+    await replace(indexedDocument(PROJECT_ID, 'plan', ['מעבה']));
+
+    await repository().deleteDocuments(PROJECT_ID, []);
+
+    await expect(repository().findStates(PROJECT_ID)).resolves.toHaveLength(1);
+    await expect(ProjectDocumentPage.count()).resolves.toBe(1);
   });
 });

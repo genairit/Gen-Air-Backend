@@ -22,7 +22,7 @@ const reverseCharacters = (text: string): string =>
   [...text].reverse().join('');
 
 const mirrorCharacter = (character: string): string =>
-  MIRRORED_CHARACTERS[character] ?? character;
+  MIRRORED_CHARACTERS[character];
 
 export const isVisualOrderHebrewLine = (line: string): boolean => {
   const words = line.match(HEBREW_TEXT.WORD_PATTERN) ?? [];

@@ -10,13 +10,19 @@ import {
   IProjectDocumentPageSearch,
 } from './interfaces/project-document.interface';
 
-import { Injectable } from '@nestjs/common';
-import { Sequelize, QueryTypes, Transaction } from 'sequelize';
+import { Sequelize } from 'sequelize-typescript';
+import { Inject, Injectable } from '@nestjs/common';
+import { QueryTypes, Transaction } from 'sequelize';
+import { ProviderNames } from '@Providers/database/provider-names';
 import { ProjectDocument } from './entities/project-document.entity';
 import { ProjectDocumentPage } from './entities/project-document-page.entity';
 
 @Injectable()
 export class ProjectDocumentRepository {
+  constructor(
+    @Inject(ProviderNames.SEQUELIZE) private readonly sequelize: Sequelize,
+  ) {}
+
   findStates(projectId: string): Promise<TProjectDocumentState[]> {
     return ProjectDocument.findAll({
       raw: true,
@@ -51,7 +57,7 @@ export class ProjectDocumentRepository {
   searchPages(
     search: IProjectDocumentPageSearch,
   ): Promise<IProjectDocumentPageMatch[]> {
-    return this.database().query<IProjectDocumentPageMatch>(
+    return this.sequelize.query<IProjectDocumentPageMatch>(
       PROJECT_DOCUMENT_SEARCH_QUERY,
       {
         type: QueryTypes.SELECT,
@@ -62,15 +68,5 @@ export class ProjectDocumentRepository {
         },
       },
     );
-  }
-
-  private database(): Sequelize {
-    const database = ProjectDocumentPage.sequelize;
-
-    if (!database) {
-      throw new Error('Project document database is unavailable');
-    }
-
-    return database;
   }
 }
