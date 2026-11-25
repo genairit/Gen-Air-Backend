@@ -48,6 +48,9 @@ export const toDriveItem = (file: drive_v3.Schema$File): IDriveItem | null => {
   };
 };
 
+export const buildDriveFileUrl = (fileId: string): string =>
+  `${GOOGLE_DRIVE.FILE_URL_PREFIX}${encodeURIComponent(fileId)}`;
+
 export const toDriveItems = (files: drive_v3.Schema$File[]): IDriveItem[] =>
   files.flatMap((file) => toDriveItem(file) ?? []);
 

@@ -97,6 +97,8 @@ const createService = async () => {
     moveFile: jest.fn(async (): Promise<void> => {}),
     trashFile: jest.fn(async (): Promise<void> => {}),
     countDescendantFiles: jest.fn().mockResolvedValue(new Map()),
+    listDescendantFiles: jest.fn().mockResolvedValue([]),
+    downloadFile: jest.fn().mockResolvedValue(Buffer.from('%PDF')),
     uploadFile: jest
       .fn<Promise<{ id: string }>, [IDriveUpload]>()
       .mockResolvedValue({ id: 'uploaded' }),
@@ -880,6 +882,58 @@ describe('ProjectDriveService.handleProjectCreated', () => {
     await expect(
       service.handleProjectCreated({ projectId: PROJECT.id }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('ProjectDriveService project file tree', () => {
+  it('lists every file below the project root folder', async () => {
+    const { service, projectService, googleDriveService } =
+      await createService();
+    const planFile = { id: 'plan', name: 'plan.pdf', folderPath: 'תוכניות' };
+    projectService.getById.mockResolvedValue({
+      ...PROJECT,
+      driveFolderId: PROJECT_FOLDER_ID,
+    });
+    googleDriveService.listDescendantFiles.mockResolvedValue([planFile]);
+
+    await expect(service.listProjectFiles(PROJECT.id)).resolves.toEqual([
+      planFile,
+    ]);
+    expect(googleDriveService.listDescendantFiles).toHaveBeenCalledWith(
+      PROJECT_FOLDER_ID,
+      MAX_FOLDER_DEPTH,
+    );
+  });
+
+  it('reports a project without a Drive folder as not provisioned', async () => {
+    const { service, googleDriveService } = await createService();
+
+    await expect(service.listProjectFiles(PROJECT.id)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(googleDriveService.listDescendantFiles).not.toHaveBeenCalled();
+  });
+
+  it('downloads a listed project file within the byte limit', async () => {
+    const { service, googleDriveService } = await createService();
+
+    await expect(
+      service.downloadListedProjectFile(
+        {
+          id: 'plan',
+          size: 10,
+          isFolder: false,
+          folderPath: '',
+          name: 'plan.pdf',
+          md5Checksum: null,
+          modifiedTime: null,
+          webViewLink: null,
+          mimeType: GOOGLE_DRIVE.PDF_MIME_TYPE,
+        },
+        1024,
+      ),
+    ).resolves.toEqual(Buffer.from('%PDF'));
+    expect(googleDriveService.downloadFile).toHaveBeenCalledWith('plan', 1024);
   });
 });
 

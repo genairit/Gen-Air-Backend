@@ -396,3 +396,77 @@ describe('Google Drive file management', () => {
     },
   );
 });
+
+describe('Google Drive project file tree', () => {
+  beforeEach(() => {
+    mockList.mockReset();
+  });
+
+  it('walks the folder tree level by level and returns every file with its folder path', async () => {
+    mockList
+      .mockResolvedValueOnce({
+        data: {
+          files: [
+            {
+              id: 'plans',
+              name: 'תוכניות',
+              parents: ['root'],
+              mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+            },
+            {
+              id: 'summary',
+              name: 'סיכום.pdf',
+              parents: ['root'],
+              md5Checksum: 'md5-summary',
+              mimeType: GOOGLE_DRIVE.PDF_MIME_TYPE,
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          files: [
+            {
+              id: 'plan',
+              name: 'קומה 1.pdf',
+              parents: ['plans'],
+              mimeType: GOOGLE_DRIVE.PDF_MIME_TYPE,
+            },
+          ],
+        },
+      });
+
+    const files = await new GoogleDriveService().listDescendantFiles('root', 5);
+
+    expect(files.map(({ id, folderPath }) => ({ id, folderPath }))).toEqual([
+      { id: 'summary', folderPath: '' },
+      { id: 'plan', folderPath: 'תוכניות' },
+    ]);
+    expect(mockList).toHaveBeenCalledTimes(2);
+    expect(mockList).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        q: "('plans' in parents) and trashed = false",
+        fields: `nextPageToken, files(${GOOGLE_DRIVE.FILE_TREE_FIELDS})`,
+      }),
+    );
+  });
+
+  it('refuses folder trees deeper than the supported depth', async () => {
+    mockList.mockResolvedValue({
+      data: {
+        files: [
+          {
+            id: 'nested',
+            name: 'nested',
+            parents: ['root'],
+            mimeType: GOOGLE_DRIVE.FOLDER_MIME_TYPE,
+          },
+        ],
+      },
+    });
+
+    await expect(
+      new GoogleDriveService().listDescendantFiles('root', 1),
+    ).rejects.toThrow('deeper than the supported depth');
+  });
+});

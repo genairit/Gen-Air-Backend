@@ -20,6 +20,7 @@ import {
 
 import {
   IDriveItem,
+  IDriveTreeFile,
   IDriveFileMetadata,
   TFileCountByFolderId,
 } from '@Interfaces/google-drive.interface';
@@ -47,6 +48,7 @@ import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { DOMAIN_EVENTS } from '@Constants/domain-events.constant';
 import { decodeUploadedFileName } from '@Utilities/upload.utility';
+import { buildDriveFileUrl } from '@Utilities/google-drive.utility';
 import { IProject } from '@Modules/project/interfaces/project.interface';
 import { ISharedDocument } from './interfaces/shared-document.interface';
 import { ApartmentFolderRepairDto } from './dto/apartment-folder-repair.dto';
@@ -458,6 +460,23 @@ export class ProjectDriveService {
     };
   }
 
+  async listProjectFiles(projectId: string): Promise<IDriveTreeFile[]> {
+    const rootId = await this.resolveProjectFolder(projectId, {});
+
+    return this.callDrive(() =>
+      this.googleDriveService.listDescendantFiles(rootId, MAX_FOLDER_DEPTH),
+    );
+  }
+
+  downloadListedProjectFile(
+    file: IDriveTreeFile,
+    maxBytes: number,
+  ): Promise<Buffer> {
+    return this.callDrive(() =>
+      this.googleDriveService.downloadFile(file.id, maxBytes),
+    );
+  }
+
   async upload(
     projectId: string,
     folder: DriveFolderDto,
@@ -587,7 +606,7 @@ export class ProjectDriveService {
         file: {
           id: file.id,
           name: file.name ?? 'מסמך משותף',
-          url: `https://drive.google.com/open?id=${encodeURIComponent(file.id)}`,
+          url: buildDriveFileUrl(file.id),
         },
       };
     } catch (error) {

@@ -1,4 +1,11 @@
 import {
+  addFileCounts,
+  tallyTreeLevel,
+  uniqueTreeFiles,
+  collectFileTreeLevel,
+} from '@Utilities/drive-tree.utility';
+
+import {
   toDriveItem,
   toDriveItems,
   buildChildrenQuery,
@@ -12,8 +19,10 @@ import {
   IDriveItem,
   IDriveUpload,
   IDriveFileMove,
+  IDriveTreeFile,
   IDriveTreeWalk,
   IDriveFileMetadata,
+  IDriveFileTreeWalk,
   TFileCountByFolderId,
 } from '@Interfaces/google-drive.interface';
 
@@ -43,7 +52,6 @@ import { Meta, TypedLogger } from '@Logger/logger.service';
 import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 import { createDriveAuth } from './utilities/drive-auth.utility';
 import { EnvironmentManager } from '@Utilities/environment-manager.utility';
-import { addFileCounts, tallyTreeLevel } from '@Utilities/drive-tree.utility';
 import { IDriveConnectionResult } from './interfaces/drive-connection.interface';
 import { PUBLICATION_LIMITS } from '@Modules/quotation-publication/constants/publication.constant';
 
@@ -289,6 +297,19 @@ export class GoogleDriveService {
     });
   }
 
+  async listDescendantFiles(
+    rootFolderId: string,
+    maxDepth: number,
+  ): Promise<IDriveTreeFile[]> {
+    const files = await this.collectRemainingFiles({
+      files: [],
+      depthLeft: maxDepth,
+      folderPaths: new Map([[rootFolderId, '']]),
+    });
+
+    return uniqueTreeFiles(files);
+  }
+
   async ensureFolder(
     name: string,
     parentId: string,
@@ -452,13 +473,38 @@ export class GoogleDriveService {
     });
   }
 
+  private async collectRemainingFiles(
+    walk: IDriveFileTreeWalk,
+  ): Promise<IDriveTreeFile[]> {
+    if (walk.folderPaths.size === 0) {
+      return walk.files;
+    }
+
+    if (walk.depthLeft === 0) {
+      throw new Error('Drive folder tree is deeper than the supported depth');
+    }
+
+    const children = await this.listChildrenOfAny(
+      [...walk.folderPaths.keys()],
+      GOOGLE_DRIVE.FILE_TREE_FIELDS,
+    );
+    const level = collectFileTreeLevel(children, walk.folderPaths);
+
+    return this.collectRemainingFiles({
+      depthLeft: walk.depthLeft - 1,
+      folderPaths: level.folderPaths,
+      files: [...walk.files, ...level.files],
+    });
+  }
+
   private async listChildrenOfAny(
     parentIds: string[],
+    fields: string = GOOGLE_DRIVE.TREE_FIELDS,
   ): Promise<drive_v3.Schema$File[]> {
     const parentBatches = chunkItems(parentIds, GOOGLE_DRIVE.PARENTS_PER_QUERY);
     const childBatches = await Promise.all(
       parentBatches.map((batch) =>
-        this.listAll(buildChildrenOfAnyQuery(batch), GOOGLE_DRIVE.TREE_FIELDS),
+        this.listAll(buildChildrenOfAnyQuery(batch), fields),
       ),
     );
 

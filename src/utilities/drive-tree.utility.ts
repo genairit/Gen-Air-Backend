@@ -1,10 +1,15 @@
 import {
+  IDriveTreeFile,
+  TFolderPathById,
   IDriveTreeLevel,
   TRootIdByFolderId,
+  IDriveFileTreeLevel,
   TFileCountByFolderId,
 } from '@Interfaces/google-drive.interface';
 
+import { uniqueBy } from './array.utility';
 import { drive_v3 } from '@googleapis/drive';
+import { toDriveItem } from './google-drive.utility';
 import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
 
 const findRootId = (
@@ -58,3 +63,69 @@ export const addFileCounts = (
       count + (increments.get(rootId) ?? 0),
     ]),
   );
+
+const findParentPath = (
+  child: drive_v3.Schema$File,
+  folderPaths: TFolderPathById,
+): string | null => {
+  const parentIds = child.parents ?? [];
+  const walkedParentId = parentIds.find((parentId) =>
+    folderPaths.has(parentId),
+  );
+
+  if (!walkedParentId) {
+    return null;
+  }
+
+  return folderPaths.get(walkedParentId) ?? null;
+};
+
+const joinFolderPath = (parentPath: string, name: string): string => {
+  if (!parentPath) {
+    return name;
+  }
+
+  return [parentPath, name].join(GOOGLE_DRIVE.FOLDER_PATH_SEPARATOR);
+};
+
+const toDriveTreeFile = (
+  child: drive_v3.Schema$File,
+  folderPath: string,
+): IDriveTreeFile | null => {
+  const item = toDriveItem(child);
+  const isShortcut = child.mimeType === GOOGLE_DRIVE.SHORTCUT_MIME_TYPE;
+
+  if (!item || isShortcut) {
+    return null;
+  }
+
+  return { ...item, folderPath, md5Checksum: child.md5Checksum ?? null };
+};
+
+export const collectFileTreeLevel = (
+  children: drive_v3.Schema$File[],
+  folderPaths: TFolderPathById,
+): IDriveFileTreeLevel =>
+  children.reduce<IDriveFileTreeLevel>(
+    (level, child) => {
+      const parentPath = findParentPath(child, folderPaths);
+
+      if (parentPath === null || !child.id || !child.name) {
+        return level;
+      }
+
+      if (child.mimeType === GOOGLE_DRIVE.FOLDER_MIME_TYPE) {
+        level.folderPaths.set(child.id, joinFolderPath(parentPath, child.name));
+
+        return level;
+      }
+
+      const file = toDriveTreeFile(child, parentPath);
+
+      return file ? { ...level, files: [...level.files, file] } : level;
+    },
+    { files: [], folderPaths: new Map() },
+  );
+
+export const uniqueTreeFiles = (files: IDriveTreeFile[]): IDriveTreeFile[] =>
+  uniqueBy(files, (file) => file.id);
