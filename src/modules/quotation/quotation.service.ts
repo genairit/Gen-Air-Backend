@@ -64,7 +64,11 @@ import {
 } from './utilities/quotation-cancellation.utility';
 
 import {
+  SYSTEM_TYPE,
+  SYSTEM_TYPES,
+  MAX_SECTIONS,
   QUOTATION_STATUS,
+  MAX_ITEMS_PER_SECTION,
   WARNING_SCOPE_VERSION,
   type TQuotationStatus,
   QUOTATION_CANCELLATION_KIND,
@@ -128,6 +132,7 @@ import { QuotationSectionService } from '@Modules/quotation-section/quotation-se
 import type { IQuotationItem } from '@Modules/quotation-item/interfaces/quotation-item.interface';
 import { validateRuleConfiguration } from '@Modules/quotation-rule/utilities/quotation-rule.utility';
 import type { IPublicationSummary } from '@Modules/quotation-publication/interfaces/publication.interface';
+import type { IEstimateLine } from '@Modules/engineering-estimate/interfaces/engineering-estimate.interface';
 import type { IQuotationPrimaryProject } from '@Modules/quotation-project/interfaces/quotation-project.interface';
 import type { IQuotationCloneTransactionRequest } from './interfaces/quotation-clone-transaction-request.interface';
 
@@ -481,6 +486,114 @@ export class QuotationService {
     await this.links.replacePrimary(id, input.projectId ?? null, transaction);
     return id;
   }
+  async createEngineeringEstimateDraft(
+    input: CreateQuotationDto & { lines: IEstimateLine[] },
+    actor: IAuthorizedUser,
+    transaction: Transaction,
+  ): Promise<string> {
+    const catalogueIds = input.lines.flatMap((line): string[] =>
+      line.catalogueItemId ? [line.catalogueItemId] : [],
+    );
+    const catalogue = await this.catalogue.getByIds(catalogueIds, transaction);
+    const byId = new Map(catalogue.map((item) => [item.id, item]));
+    const priced = input.lines.map((line) => {
+      const item = line.catalogueItemId ? byId.get(line.catalogueItemId) : null;
+      const quantity = new Decimal(line.quantity);
+      if (
+        !item ||
+        item.status !== CATALOGUE_STATUS.ACTIVE ||
+        line.unitPrice === null ||
+        !quantity.gt(0)
+      ) {
+        throw new ConflictException('פריט מכתב הכמויות אינו זמין בהצעת המחיר');
+      }
+
+      const systemType =
+        SYSTEM_TYPES.find(
+          (candidate): boolean => candidate === item.systemType,
+        ) ?? SYSTEM_TYPE.GENERAL;
+      const brand = systemType === SYSTEM_TYPE.GENERAL ? null : item.brand;
+      return { line, item, brand, systemType, unitPrice: line.unitPrice };
+    });
+    const id = await this.createDraft(input, actor, transaction);
+    const groups = new Map<string, typeof priced>();
+    for (const entry of priced) {
+      const { line, brand, systemType } = entry;
+      const key = JSON.stringify([line.areaId, brand, systemType]);
+      const group = groups.get(key) ?? [];
+      group.push(entry);
+      groups.set(key, group);
+    }
+
+    const sectionTooLarge = [...groups.values()].some(
+      (group): boolean => group.length > MAX_ITEMS_PER_SECTION,
+    );
+    if (groups.size > MAX_SECTIONS || sectionTooLarge) {
+      throw new BadRequestException(
+        'כתב הכמויות גדול מדי להעברה להצעת מחיר אחת',
+      );
+    }
+
+    const sections = [...groups.values()].flatMap((entries, displayOrder) => {
+      const first = entries[0];
+      return first
+        ? [
+            {
+              id: randomUUID(),
+              title: first.line.areaName.slice(0, 200),
+              brand: first.brand,
+              systemType: first.systemType,
+              displayOrder,
+              quotationId: id,
+              entries,
+            },
+          ]
+        : [];
+    });
+    await this.sections.insert(
+      sections.map(({ entries, ...section }) => {
+        void entries;
+        return section;
+      }),
+      transaction,
+    );
+    const snapshots = sections.flatMap(({ id: sectionId, entries }) =>
+      entries.map(({ line, item, unitPrice }, displayOrder) => ({
+        ...quotationItemSnapshot({
+          item: {
+            id: randomUUID(),
+            parentItemId: null,
+            catalogueItemId: item.id,
+            description: line.description,
+            quotedPrice: unitPrice,
+            quantity: line.quantity,
+            location: '',
+            circuit: null,
+            requestedCapacityBtu: null,
+          },
+          catalogue: item,
+          previous: null,
+          sectionId,
+          displayOrder,
+        }),
+        sku: line.sku,
+        unit: line.unit,
+      })),
+    );
+    await this.items.insert(snapshots, transaction);
+    const brands = [
+      ...new Set(
+        sections.flatMap(({ brand }): string[] => (brand ? [brand] : [])),
+      ),
+    ];
+    await this.repository.update(
+      id,
+      { brand: brands[0] ?? '', brands },
+      transaction,
+    );
+    return id;
+  }
+
   async taskQuotations(
     taskId: string,
     actor: IAuthorizedUser,

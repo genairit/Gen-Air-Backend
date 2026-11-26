@@ -1,4 +1,7 @@
 export const PERMISSIONS = {
+  ENGINEERING_ESTIMATES_READ: 'engineering_estimates.read',
+  ENGINEERING_ESTIMATES_MANAGE: 'engineering_estimates.manage',
+  ENGINEERING_ESTIMATES_APPROVE: 'engineering_estimates.approve',
   QUOTATIONS_READ: 'quotations.read',
   QUOTATIONS_CREATE: 'quotations.create',
   QUOTATIONS_UPDATE: 'quotations.update',

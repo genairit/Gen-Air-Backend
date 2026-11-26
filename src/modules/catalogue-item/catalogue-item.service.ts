@@ -32,6 +32,12 @@ export class CatalogueItemService {
   getByIds(ids: string[], transaction: Transaction): Promise<CatalogueItem[]> {
     return this.repository.findByIds(ids, transaction);
   }
+  getActiveBySkus(
+    skus: string[],
+    transaction: Transaction,
+  ): Promise<CatalogueItem[]> {
+    return this.repository.findActiveBySkus(skus, transaction);
+  }
   search(query: CatalogueQueryDto, userId: string): Promise<CatalogueItem[]> {
     return this.repository.search(query, userId);
   }

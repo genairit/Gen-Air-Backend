@@ -21,6 +21,7 @@ import { ExecutionPlanModule } from '@Modules/execution-plan/execution-plan.modu
 import { PurchaseRecordModule } from '@Modules/purchase-record/purchase-record.module';
 import { CustomerContactModule } from '@Modules/customer-contact/customer-contact.module';
 import { SupplierAgreementModule } from '@Modules/supplier-agreement/supplier-agreement.module';
+import { EngineeringEstimateModule } from '@Modules/engineering-estimate/engineering-estimate.module';
 import { DriveTemplateFolderModule } from '@Modules/drive-template-folder/drive-template-folder.module';
 import { ProjectStageTransitionModule } from '@Modules/project-stage-transition/project-stage-transition.module';
 import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-email/quotation-execution-email.module';
@@ -30,6 +31,7 @@ import { QuotationExecutionEmailModule } from '@Modules/quotation-execution-emai
     DatabaseModule,
     MaterialModule,
     QuotationModule,
+    EngineeringEstimateModule,
     QuotationExecutionEmailModule,
     ExecutionPlanModule,
     EventEmitterModule.forRoot(),
