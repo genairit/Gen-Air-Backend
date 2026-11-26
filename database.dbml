@@ -1002,3 +1002,39 @@ Table project_document_pages {
 }
 
 Ref: project_document_pages.(project_id, file_id) > project_documents.(project_id, file_id) [delete: cascade]
+
+Table engineering_estimates {
+  id uuid [pk]
+  name varchar(250) [not null]
+  created_by_id uuid [not null, ref: > users.id]
+  project_id uuid [ref: > projects.id]
+  version integer [not null]
+  updated_at timestamptz [not null]
+  contents jsonb [not null, note: 'Validated setup step, scope, measured areas and clarification answers']
+}
+
+Table engineering_estimate_plans {
+  estimate_id uuid [not null, ref: > engineering_estimates.id]
+  id uuid [not null]
+  name varchar(255) [not null]
+  mime_type text [not null]
+  marked boolean [not null]
+  content bytea [not null]
+  created_at timestamptz [not null, default: `now()`]
+  indexes {
+    (estimate_id, id) [pk]
+  }
+}
+
+Table engineering_estimate_revisions {
+  estimate_id uuid [not null, ref: > engineering_estimates.id]
+  version integer [not null]
+  snapshot jsonb [not null, note: 'Immutable verified measurement, catalogue price, and sample plan snapshot']
+  sketch_pdf bytea [not null]
+  approved_at timestamptz
+  approved_by_id uuid [ref: > users.id]
+  quotation_id uuid [unique, ref: > quotations.id]
+  indexes {
+    (estimate_id, version) [pk]
+  }
+}

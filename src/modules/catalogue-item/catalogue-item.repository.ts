@@ -51,6 +51,17 @@ export class CatalogueItemRepository {
       lock: transaction.LOCK.SHARE,
     });
   }
+  findActiveBySkus(
+    skus: string[],
+    transaction: Transaction,
+  ): Promise<CatalogueItem[]> {
+    return CatalogueItem.findAll({
+      where: { sku: { [Op.in]: skus }, status: CATALOGUE_STATUS.ACTIVE },
+      order: [['id', 'ASC']],
+      transaction,
+      lock: transaction.LOCK.SHARE,
+    });
+  }
   search(query: CatalogueQueryDto, userId: string): Promise<CatalogueItem[]> {
     return this.rankedSearch({ query, userId, exactBrand: null });
   }
