@@ -69,6 +69,34 @@ const splitLabel = (text: string): string[] => {
   );
 };
 
+const readPdfBody = async (response: Response): Promise<Buffer> => {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new BadGatewayException('התקבל מסמך ללא תוכן');
+  }
+
+  const chunks: Uint8Array[] = [];
+  const received = { bytes: 0 };
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) {
+        return Buffer.concat(chunks, received.bytes);
+      }
+
+      received.bytes += result.value.byteLength;
+      if (received.bytes > MAX_PDF_BYTES) {
+        await reader.cancel();
+        throw new BadGatewayException('המסמך חורג מהגודל המותר');
+      }
+
+      chunks.push(result.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+};
+
 @Injectable()
 export class EstimateDocumentService {
   private readonly logger = new Logger(EstimateDocumentService.name);
@@ -196,7 +224,7 @@ export class EstimateDocumentService {
         signal: AbortSignal.timeout(RENDER_TIMEOUT),
       },
     ).catch((error: unknown): never => {
-      this.logger.warn(
+      this.logger.error(
         error instanceof Error
           ? error.name
           : 'Estimate document transport failed',
@@ -210,7 +238,12 @@ export class EstimateDocumentService {
       throw new BadGatewayException('לא ניתן להפיק את המסמך');
     }
 
-    const pdf = Buffer.from(await response.arrayBuffer());
+    const pdf = await readPdfBody(response).catch((error: unknown): never => {
+      this.logger.error(
+        error instanceof Error ? error.name : 'Estimate PDF body read failed',
+      );
+      throw new BadGatewayException('לא ניתן לקרוא את המסמך');
+    });
     if (
       pdf.length > MAX_PDF_BYTES ||
       pdf.subarray(0, 5).toString() !== '%PDF-'

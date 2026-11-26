@@ -21,7 +21,7 @@ test('estimate migration permits standalone private drafts and freezes priced re
       CREATE ROLE anon NOLOGIN;
       CREATE ROLE authenticated NOLOGIN;
       CREATE TYPE user_role AS ENUM ('system_admin', 'engineering_lead', 'engineer');
-      CREATE TABLE permissions (key text PRIMARY KEY, feature text, action text);
+      CREATE TABLE permissions (key text PRIMARY KEY);
       CREATE TABLE role_permissions (role user_role, permission_key text REFERENCES permissions(key), PRIMARY KEY (role, permission_key));
       CREATE TABLE projects (id uuid PRIMARY KEY);
       CREATE TABLE quotations (id uuid PRIMARY KEY);

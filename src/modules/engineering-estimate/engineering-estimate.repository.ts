@@ -1,7 +1,14 @@
+import {
+  decodeCursor,
+  toCursorPage,
+} from '@Utilities/cursor-pagination.utility';
+
 import type {
   IEstimatePlan,
   IEstimateRecord,
+  IEstimateSummary,
   IEstimateRevision,
+  IStoredEstimatePlan,
   IEstimateReviewSnapshot,
 } from './interfaces/engineering-estimate.interface';
 
@@ -9,15 +16,14 @@ import { Sequelize } from 'sequelize-typescript';
 import { Injectable, Inject } from '@nestjs/common';
 import { QueryTypes, Transaction } from 'sequelize';
 import { ProviderNames } from '@Providers/database/provider-names';
+import type { ICursorPage } from '@Interfaces/cursor-page.interface';
 
 interface IEstimateListing {
   actorId: string;
+  batchSize: number;
   canReview: boolean;
   canReadProjects: boolean;
-}
-
-interface IStoredPlan extends IEstimatePlan {
-  content: Buffer;
+  batchCursor: string | null;
 }
 
 const ESTIMATE_FIELDS = `id, name, project_id AS "projectId", created_by_id AS "createdById",
@@ -45,17 +51,45 @@ export class EngineeringEstimateRepository {
     @Inject(ProviderNames.SEQUELIZE) private readonly sequelize: Sequelize,
   ) {}
 
-  async list(filters: IEstimateListing): Promise<IEstimateRecord[]> {
-    const rows = await this.sequelize.query<TEstimateRow>(
-      `SELECT ${ESTIMATE_FIELDS} FROM engineering_estimates
-        WHERE ($canReview OR created_by_id = $actorId)
-          AND (project_id IS NULL OR ($canReadProjects AND EXISTS (
-            SELECT 1 FROM projects WHERE projects.id=project_id AND projects.deleted_at IS NULL
+  async list(
+    filters: IEstimateListing,
+  ): Promise<ICursorPage<IEstimateSummary>> {
+    const position = decodeCursor(filters.batchCursor);
+    const { batchSize, actorId, canReview, canReadProjects } = filters;
+    type TSummaryRow = IEstimateSummary & { createdAt: Date };
+    const rows = await this.sequelize.query<TSummaryRow>(
+      `SELECT e.id, e.name, e.project_id AS "projectId", e.updated_at AS "updatedAt",
+        e.updated_at AS "createdAt",
+        CASE WHEN r.approved_at IS NOT NULL THEN 'approved'
+             WHEN r.version IS NOT NULL THEN 'sketch' ELSE 'draft' END status
+        FROM engineering_estimates e
+        LEFT JOIN engineering_estimate_revisions r ON r.estimate_id=e.id AND r.version=e.version
+        WHERE ($canReview OR e.created_by_id = $actorId)
+          AND (e.project_id IS NULL OR ($canReadProjects AND EXISTS (
+            SELECT 1 FROM projects p WHERE p.id=e.project_id AND p.deleted_at IS NULL
           )))
-        ORDER BY updated_at DESC, id LIMIT 100`,
-      { bind: { ...filters }, type: QueryTypes.SELECT },
+          AND ($positionDate::timestamptz IS NULL OR (e.updated_at, e.id) < ($positionDate::timestamptz, $positionId::uuid))
+        ORDER BY e.updated_at DESC, e.id DESC LIMIT $limit`,
+      {
+        bind: {
+          actorId,
+          canReview,
+          canReadProjects,
+          limit: batchSize + 1,
+          positionDate: position?.createdAt ?? null,
+          positionId: position?.id ?? null,
+        },
+        type: QueryTypes.SELECT,
+      },
     );
-    return rows.map(hydrate);
+    const page = toCursorPage(rows, batchSize);
+    return {
+      nextCursor: page.nextCursor,
+      items: page.items.map(({ createdAt, ...item }): IEstimateSummary => {
+        void createdAt;
+        return item;
+      }),
+    };
   }
 
   async find(
@@ -132,10 +166,14 @@ export class EngineeringEstimateRepository {
     );
   }
 
-  plans(id: string, transaction?: Transaction): Promise<IEstimatePlan[]> {
+  plans(
+    id: string,
+    transaction?: Transaction,
+    allowCopied = true,
+  ): Promise<IEstimatePlan[]> {
     return this.sequelize.query<IEstimatePlan>(
-      `SELECT ${PLAN_FIELDS} FROM engineering_estimate_plans WHERE estimate_id=$id ORDER BY created_at,id`,
-      { bind: { id }, transaction, type: QueryTypes.SELECT },
+      `SELECT ${PLAN_FIELDS} FROM engineering_estimate_plans WHERE estimate_id=$id AND ($allowCopied OR source_project_id IS NULL) ORDER BY created_at,id`,
+      { bind: { id, allowCopied }, transaction, type: QueryTypes.SELECT },
     );
   }
 
@@ -143,23 +181,43 @@ export class EngineeringEstimateRepository {
     id: string,
     planId: string,
     transaction?: Transaction,
-  ): Promise<IStoredPlan | null> {
-    const rows = await this.sequelize.query<IStoredPlan>(
-      `SELECT ${PLAN_FIELDS}, content FROM engineering_estimate_plans WHERE estimate_id=$id AND id=$planId`,
+  ): Promise<IStoredEstimatePlan | null> {
+    const rows = await this.sequelize.query<IStoredEstimatePlan>(
+      `SELECT ${PLAN_FIELDS}, content,
+        CASE WHEN source_project_id IS NULL THEN NULL
+             ELSE jsonb_build_object('projectId',source_project_id,'fileId',source_drive_file_id)
+        END source FROM engineering_estimate_plans WHERE estimate_id=$id AND id=$planId`,
       { bind: { id, planId }, transaction, type: QueryTypes.SELECT },
     );
     return rows[0] ?? null;
   }
 
+  async hasCopiedPlans(id: string, transaction: Transaction): Promise<boolean> {
+    const rows = await this.sequelize.query<{ found: boolean }>(
+      'SELECT EXISTS(SELECT 1 FROM engineering_estimate_plans WHERE estimate_id=$id AND source_project_id IS NOT NULL) found',
+      { bind: { id }, transaction, type: QueryTypes.SELECT },
+    );
+    return rows[0]?.found ?? false;
+  }
+
   async addPlan(
     estimateId: string,
-    plan: IStoredPlan,
+    plan: IStoredEstimatePlan,
     transaction: Transaction,
   ): Promise<void> {
+    const { source, ...file } = plan;
     await this.sequelize.query(
-      `INSERT INTO engineering_estimate_plans (estimate_id,id,name,mime_type,marked,content)
-        VALUES ($estimateId,$id,$name,$mimeType,$marked,$content)`,
-      { bind: { estimateId, ...plan }, transaction },
+      `INSERT INTO engineering_estimate_plans (estimate_id,id,name,mime_type,marked,content,source_project_id,source_drive_file_id)
+        VALUES ($estimateId,$id,$name,$mimeType,$marked,$content,$projectId,$fileId)`,
+      {
+        bind: {
+          estimateId,
+          ...file,
+          projectId: source?.projectId ?? null,
+          fileId: source?.fileId ?? null,
+        },
+        transaction,
+      },
     );
   }
 
@@ -169,9 +227,12 @@ export class EngineeringEstimateRepository {
     transaction?: Transaction,
   ): Promise<IEstimateRevision | null> {
     const rows = await this.sequelize.query<IEstimateRevision>(
-      `SELECT version, CASE WHEN approved_at IS NULL THEN 'sketch' ELSE 'approved' END status,
-        snapshot, quotation_id AS "quotationId"
-        FROM engineering_estimate_revisions WHERE estimate_id=$id AND version=$version`,
+      `SELECT r.version, CASE WHEN r.approved_at IS NULL THEN 'sketch' ELSE 'approved' END status,
+        r.snapshot, r.quotation_id AS "quotationId",
+        (r.quotation_id IS NOT NULL AND q.id IS NULL) AS "quotationUnavailable"
+        FROM engineering_estimate_revisions r
+        LEFT JOIN quotations q ON q.id=r.quotation_id AND q.deleted_at IS NULL
+        WHERE r.estimate_id=$id AND r.version=$version`,
       { bind: { id, version }, transaction, type: QueryTypes.SELECT },
     );
     return rows[0] ?? null;

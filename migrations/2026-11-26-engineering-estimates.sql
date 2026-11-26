@@ -22,11 +22,17 @@ CREATE TABLE public.engineering_estimate_plans (
   name varchar(255) NOT NULL,
   mime_type text NOT NULL CHECK (mime_type IN ('application/pdf', 'image/png', 'image/jpeg')),
   marked boolean NOT NULL,
+  source_project_id uuid REFERENCES public.projects(id) ON DELETE RESTRICT,
+  source_drive_file_id text,
+  CHECK ((source_project_id IS NULL) = (source_drive_file_id IS NULL)),
   content bytea NOT NULL CHECK (octet_length(content) BETWEEN 1 AND 4194304),
   created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (estimate_id, id),
   CHECK (NOT marked OR (mime_type IN ('image/png', 'image/jpeg') AND octet_length(content) <= 524288))
 );
+
+CREATE INDEX engineering_estimate_plans_source_project_idx
+  ON public.engineering_estimate_plans(source_project_id);
 
 CREATE TABLE public.engineering_estimate_revisions (
   estimate_id uuid NOT NULL REFERENCES public.engineering_estimates(id) ON DELETE RESTRICT,
@@ -73,10 +79,10 @@ REVOKE ALL ON public.engineering_estimates, public.engineering_estimate_plans,
   public.engineering_estimate_revisions FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.guard_engineering_estimate_revision() FROM PUBLIC, anon, authenticated;
 
-INSERT INTO public.permissions(key,feature,action) VALUES
-  ('engineering_estimates.read','engineering_estimates','read'),
-  ('engineering_estimates.manage','engineering_estimates','manage'),
-  ('engineering_estimates.approve','engineering_estimates','approve')
+INSERT INTO public.permissions(key) VALUES
+  ('engineering_estimates.read'),
+  ('engineering_estimates.manage'),
+  ('engineering_estimates.approve')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO public.role_permissions(role,permission_key) VALUES

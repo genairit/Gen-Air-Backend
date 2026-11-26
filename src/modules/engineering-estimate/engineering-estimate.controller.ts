@@ -3,6 +3,7 @@ import {
   Body,
   Post,
   Param,
+  Query,
   Patch,
   Header,
   HttpCode,
@@ -31,13 +32,16 @@ import {
 
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PERMISSIONS } from '@Constants/authorization.constant';
+import { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
 import { decodeUploadedFileName } from '@Utilities/upload.utility';
+import type { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { EstimateApprovalService } from './estimate-approval.service';
 import { EngineeringEstimateService } from './engineering-estimate.service';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 import type { IEstimateView } from './interfaces/engineering-estimate.interface';
+import type { IEstimateSummary } from './interfaces/engineering-estimate.interface';
 
 const attachment = (
   content: Buffer,
@@ -58,8 +62,11 @@ export class EngineeringEstimateController {
 
   @Get()
   @RequirePermissions(PERMISSIONS.ENGINEERING_ESTIMATES_READ)
-  list(@AuthenticatedUser() actor: IAuthorizedUser): Promise<IEstimateView[]> {
-    return this.estimates.list(actor);
+  list(
+    @AuthenticatedUser() actor: IAuthorizedUser,
+    @Query() query: CursorPaginationDto,
+  ): Promise<ICursorPage<IEstimateSummary>> {
+    return this.estimates.list(actor, query);
   }
 
   @Post()

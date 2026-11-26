@@ -88,6 +88,12 @@ export class EstimateApprovalService {
         { ...request, version: input.version },
         transaction,
       );
+      const prior = await this.repository.revision(
+        record.id,
+        record.version,
+        transaction,
+      );
+      this.assertSameSamples(prior?.snapshot.samples ?? null, input.samples);
       const saved = await this.repository.getSketch(
         record.id,
         record.version,
@@ -175,11 +181,17 @@ export class EstimateApprovalService {
       snapshot: { ...snapshot, lines, subtotal: estimateSubtotal(lines) },
       markedPlans: captured.images,
     });
-    await this.transactions.run(async (transaction): Promise<void> => {
+    return this.transactions.run(async (transaction): Promise<Buffer> => {
       await this.estimates.lockVersion(
         { ...request, version: input.version },
         transaction,
       );
+      const prior = await this.repository.revision(
+        request.id,
+        input.version,
+        transaction,
+      );
+      this.assertSameSamples(prior?.snapshot.samples ?? null, input.samples);
       await this.repository.addSketch(
         request.id,
         input.version,
@@ -187,8 +199,17 @@ export class EstimateApprovalService {
         pdf,
         transaction,
       );
+      const persisted = await this.repository.getSketch(
+        request.id,
+        input.version,
+        transaction,
+      );
+      if (!persisted) {
+        throw new ConflictException('הסקיצה לא נשמרה');
+      }
+
+      return persisted;
     });
-    return this.currentSketch(request);
   }
 
   async currentSketch(request: IEstimateActor): Promise<Buffer> {
@@ -250,11 +271,21 @@ export class EstimateApprovalService {
           throw new ConflictException('יש לאשר את הסקיצה לפני יצירת הצעת מחיר');
         }
 
+        if (revision.quotationUnavailable) {
+          throw new ConflictException(
+            'ההצעה המקושרת נמחקה. יש ליצור ולאשר מהדורה חדשה',
+          );
+        }
+
         if (revision.quotationId) {
           return { quotationId: revision.quotationId };
         }
 
-        const customerId = revision.snapshot.customerId ?? input.customerId;
+        const customerId = await this.quotationCustomer(
+          revision.snapshot,
+          input,
+          transaction,
+        );
         if (!customerId) {
           throw new BadRequestException('יש לבחור לקוח להצעת המחיר');
         }
@@ -312,6 +343,55 @@ export class EstimateApprovalService {
       quotation,
       customer,
     );
+  }
+
+  private assertSameSamples(
+    previous: IEstimateReviewSnapshot['samples'] | null,
+    next: IEstimateReviewSnapshot['samples'],
+  ): void {
+    if (previous === null) {
+      return;
+    }
+
+    const same =
+      previous.length === next.length &&
+      previous.every(
+        ({ areaId, planId }, index): boolean =>
+          areaId === next[index]?.areaId && planId === next[index]?.planId,
+      );
+    if (!same) {
+      throw new ConflictException(
+        'יש ליצור מהדורה חדשה לפני שינוי האזורים בסקיצה',
+      );
+    }
+  }
+
+  private async quotationCustomer(
+    snapshot: IEstimateReviewSnapshot,
+    input: EstimateQuotationDto,
+    transaction: Transaction,
+  ): Promise<string | null> {
+    if (!snapshot.projectId) {
+      return input.customerId ?? null;
+    }
+
+    if (!snapshot.customerId) {
+      throw new ConflictException(
+        'יש לשייך לקוח לפרויקט וליצור מהדורה לאישור מחדש',
+      );
+    }
+
+    const project = await this.projects.quotationContext(
+      snapshot.projectId,
+      transaction,
+    );
+    if (project.customerId !== snapshot.customerId) {
+      throw new ConflictException(
+        'הלקוח בפרויקט השתנה. יש ליצור מהדורה לאישור מחדש',
+      );
+    }
+
+    return snapshot.customerId;
   }
 
   private async pairedSamples(

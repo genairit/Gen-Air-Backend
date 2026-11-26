@@ -77,6 +77,7 @@ export interface IEstimateRevision {
   version: number;
   status: TEstimateStatus;
   quotationId: string | null;
+  quotationUnavailable: boolean;
   snapshot: IEstimateReviewSnapshot;
 }
 
@@ -95,11 +96,31 @@ export interface IEstimateReviewSnapshot {
   samples: { areaId: string; planId: string }[];
 }
 
+export interface IEstimateSummary {
+  id: string;
+  name: string;
+  updatedAt: Date;
+  status: TEstimateStatus;
+  projectId: string | null;
+}
+
+export interface IEstimatePlanSource {
+  fileId: string;
+  projectId: string;
+}
+
+export interface IStoredEstimatePlan extends IEstimatePlan {
+  content: Buffer;
+  source: IEstimatePlanSource | null;
+}
+
 export interface IEstimateView extends Omit<IEstimateRecord, 'createdById'> {
   subtotal: string;
   lines: IEstimateLine[];
   plans: IEstimatePlan[];
   status: TEstimateStatus;
   quotationId: string | null;
+  quotationUnavailable: boolean;
   approvedVersion: number | null;
+  quotationCustomerId: string | null;
 }

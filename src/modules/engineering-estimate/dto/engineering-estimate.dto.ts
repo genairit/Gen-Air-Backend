@@ -6,6 +6,7 @@ import {
   IsUUID,
   Matches,
   IsArray,
+  IsObject,
   IsNumber,
   IsString,
   IsBoolean,
@@ -100,6 +101,7 @@ class EstimateMeasurementDto {
   shelterSupply!: boolean;
 
   @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => EstimateDistributionDto)
   distribution!: EstimateDistributionDto;
@@ -122,6 +124,7 @@ export class EstimateLineDto {
   source?: string;
 
   @IsOptional()
+  @IsObject()
   @ValidateNested()
   @Type(() => EstimateMeasurementDto)
   measurements?: EstimateMeasurementDto;
@@ -143,6 +146,7 @@ export class EstimateAreaDto {
 
   @IsArray()
   @ArrayMaxSize(ESTIMATE_LIMITS.AREA_LINES)
+  @IsObject({ each: true })
   @ValidateNested({ each: true })
   @Type(() => EstimateLineDto)
   lines!: EstimateLineDto[];
@@ -194,6 +198,7 @@ export class UpdateEngineeringEstimateDto extends EstimateVersionDto {
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(ESTIMATE_LIMITS.AREAS)
+  @IsObject({ each: true })
   @ValidateNested({ each: true })
   @Type(() => EstimateAreaDto)
   areas?: EstimateAreaDto[];
@@ -201,6 +206,7 @@ export class UpdateEngineeringEstimateDto extends EstimateVersionDto {
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(ESTIMATE_LIMITS.QUESTIONS)
+  @IsObject({ each: true })
   @ValidateNested({ each: true })
   @Type(() => EstimateQuestionDto)
   questions?: EstimateQuestionDto[];
@@ -218,8 +224,13 @@ export class EstimateSketchDto extends EstimateVersionDto {
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(4)
-  @ArrayUnique((sample: EstimateSketchSampleDto) => sample.areaId)
-  @ArrayUnique((sample: EstimateSketchSampleDto) => sample.planId)
+  @ArrayUnique(
+    (sample: EstimateSketchSampleDto | null) => sample?.areaId ?? null,
+  )
+  @ArrayUnique(
+    (sample: EstimateSketchSampleDto | null) => sample?.planId ?? null,
+  )
+  @IsObject({ each: true })
   @ValidateNested({ each: true })
   @Type(() => EstimateSketchSampleDto)
   samples!: EstimateSketchSampleDto[];

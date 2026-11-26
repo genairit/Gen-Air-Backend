@@ -1020,6 +1020,8 @@ Table engineering_estimate_plans {
   mime_type text [not null]
   marked boolean [not null]
   content bytea [not null]
+  source_project_id uuid [ref: > projects.id]
+  source_drive_file_id text
   created_at timestamptz [not null, default: `now()`]
   indexes {
     (estimate_id, id) [pk]

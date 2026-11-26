@@ -37,13 +37,18 @@ import type {
   IEstimatePlan,
   IEstimateView,
   IEstimateRecord,
+  IEstimateSummary,
+  IEstimatePlanSource,
 } from './interfaces/engineering-estimate.interface';
 
 import { Transaction } from 'sequelize';
 import { randomUUID } from 'node:crypto';
 import { TIME_UNITS } from '@Constants/time.constant';
+import { PAGINATION } from '@Constants/pagination.constant';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectService } from '@Modules/project/project.service';
+import type { ICursorPage } from '@Interfaces/cursor-page.interface';
+import type { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { EngineeringEstimateRepository } from './engineering-estimate.repository';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
@@ -62,6 +67,7 @@ interface IEstimatePlanInput extends IEstimateCommand {
   name: string;
   marked: boolean;
   content: Buffer;
+  source?: IEstimatePlanSource;
 }
 
 const ALLOWED_MIME: readonly string[] = Object.values(ESTIMATE_PLAN_MIME);
@@ -80,24 +86,24 @@ export class EngineeringEstimateService {
     private readonly pricing: EstimatePricingService,
   ) {}
 
-  async list(actor: IAuthorizedUser): Promise<IEstimateView[]> {
-    const canReview = hasPermission(
-      actor,
-      PERMISSIONS.ENGINEERING_ESTIMATES_APPROVE,
-    );
-    const canReadProjects = hasPermission(actor, PERMISSIONS.PROJECTS_READ);
-    const records = await this.repository.list({
+  list(
+    actor: IAuthorizedUser,
+    query: CursorPaginationDto,
+  ): Promise<ICursorPage<IEstimateSummary>> {
+    return this.repository.list({
       actorId: actor.id,
-      canReview,
-      canReadProjects,
+      canReview: hasPermission(
+        actor,
+        PERMISSIONS.ENGINEERING_ESTIMATES_APPROVE,
+      ),
+      canReadProjects: hasPermission(actor, PERMISSIONS.PROJECTS_READ),
+      batchCursor: query.batchCursor ?? null,
+      batchSize: query.batchSize ?? PAGINATION.DEFAULT_BATCH_SIZE,
     });
-    return Promise.all(
-      records.map((record): Promise<IEstimateView> => this.view(record)),
-    );
   }
 
   async get(request: IEstimateActor): Promise<IEstimateView> {
-    return this.view(await this.requireVisible(request));
+    return this.view(await this.requireVisible(request), request.actor);
   }
 
   async create(
@@ -121,7 +127,7 @@ export class EngineeringEstimateService {
     await this.transactions.run((transaction): Promise<void> =>
       this.repository.insert(record, transaction),
     );
-    return this.view(record);
+    return this.view(record, actor);
   }
 
   async update(
@@ -135,6 +141,16 @@ export class EngineeringEstimateService {
       );
       const projectId =
         'projectId' in input ? (input.projectId ?? null) : record.projectId;
+      const reassigningProject = projectId !== record.projectId;
+      if (
+        reassigningProject &&
+        (await this.repository.hasCopiedPlans(record.id, transaction))
+      ) {
+        throw new ConflictException(
+          'אי אפשר לשנות את הפרויקט לאחר צירוף תוכנית ממנו',
+        );
+      }
+
       await this.requireProject(projectId, request.actor, transaction);
       const areas = input.areas ?? record.areas;
       const questions = input.questions ?? record.questions;
@@ -182,6 +198,7 @@ export class EngineeringEstimateService {
   async addPlan({
     content,
     marked,
+    source,
     name,
     ...request
   }: IEstimatePlanInput): Promise<IEstimateView> {
@@ -197,6 +214,10 @@ export class EngineeringEstimateService {
     assertUploadContent(type, content);
     await this.transactions.run(async (transaction): Promise<void> => {
       const record = await this.lockVersion(request, transaction);
+      if (source && source.projectId !== record.projectId) {
+        throw new ConflictException('הפרויקט שאליו משויך כתב הכמויות השתנה');
+      }
+
       const plans = await this.repository.plans(record.id, transaction);
       if (plans.length >= ESTIMATE_LIMITS.PLANS) {
         throw new BadRequestException('הגעת למספר התוכניות המרבי');
@@ -204,7 +225,14 @@ export class EngineeringEstimateService {
 
       await this.repository.addPlan(
         record.id,
-        { id: randomUUID(), content, name, marked, mimeType: type.mimeType },
+        {
+          id: randomUUID(),
+          content,
+          name,
+          marked,
+          mimeType: type.mimeType,
+          source: source ?? null,
+        },
         transaction,
       );
       await this.repository.update(
@@ -247,6 +275,7 @@ export class EngineeringEstimateService {
       name: file.name,
       content,
       marked: false,
+      source: { projectId, fileId },
     });
   }
 
@@ -254,10 +283,18 @@ export class EngineeringEstimateService {
     request: IEstimateActor,
     planId: string,
   ): Promise<IEstimatePlan & { content: Buffer }> {
-    await this.requireVisible(request);
+    const record = await this.requireVisible(request);
     const plan = await this.repository.getPlan(request.id, planId);
     if (!plan) {
       throw new NotFoundException('התוכנית לא נמצאה');
+    }
+
+    if (plan.source) {
+      const canReadDrive = hasPermission(request.actor, PERMISSIONS.DRIVE_READ);
+      const sameProject = plan.source.projectId === record.projectId;
+      if (!canReadDrive || !sameProject) {
+        throw new NotFoundException('התוכנית לא נמצאה');
+      }
     }
 
     return plan;
@@ -310,7 +347,10 @@ export class EngineeringEstimateService {
     await this.projects.quotationSnapshot(projectId, transaction);
   }
 
-  private view(record: IEstimateRecord): Promise<IEstimateView> {
+  private view(
+    record: IEstimateRecord,
+    actor: IAuthorizedUser,
+  ): Promise<IEstimateView> {
     return this.transactions.run(
       async (transaction): Promise<IEstimateView> => {
         const revision = await this.repository.revision(
@@ -318,7 +358,12 @@ export class EngineeringEstimateService {
           record.version,
           transaction,
         );
-        const plans = await this.repository.plans(record.id, transaction);
+        const canReadDrive = hasPermission(actor, PERMISSIONS.DRIVE_READ);
+        const plans = await this.repository.plans(
+          record.id,
+          transaction,
+          canReadDrive,
+        );
         const lines =
           revision?.snapshot.lines ??
           (await this.pricing.calculate(
@@ -337,7 +382,11 @@ export class EngineeringEstimateService {
           status,
           approvedVersion:
             status === ESTIMATE_STATUS.APPROVED ? record.version : null,
-          quotationId: revision?.quotationId ?? null,
+          quotationId: revision?.quotationUnavailable
+            ? null
+            : (revision?.quotationId ?? null),
+          quotationUnavailable: revision?.quotationUnavailable ?? false,
+          quotationCustomerId: revision?.snapshot.customerId ?? null,
         };
       },
     );
