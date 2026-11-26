@@ -139,8 +139,10 @@ export class EngineeringEstimateService {
         { ...request, version: input.version },
         transaction,
       );
-      const projectId =
-        'projectId' in input ? (input.projectId ?? null) : record.projectId;
+      const requestedProject = input.projectId;
+      const changesProject =
+        requestedProject === null || typeof requestedProject === 'string';
+      const projectId = changesProject ? requestedProject : record.projectId;
       const reassigningProject = projectId !== record.projectId;
       if (
         reassigningProject &&
