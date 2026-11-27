@@ -1,14 +1,8 @@
-import {
-  IsString,
-  MaxLength,
-  IsOptional,
-  IsBooleanString,
-} from 'class-validator';
-
 import { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
+import { IsString, MaxLength, IsOptional, IsIn } from 'class-validator';
 
 export class GetCatalogueMaintenanceDto extends CursorPaginationDto {
   @IsOptional() @IsString() @MaxLength(200) declare search?: string;
-  @IsOptional() @IsBooleanString() declare pricedOnly?: string;
-  @IsOptional() @IsBooleanString() declare excludeArchived?: string;
+  @IsOptional() @IsIn(['true', 'false']) declare pricedOnly?: string;
+  @IsOptional() @IsIn(['true', 'false']) declare excludeArchived?: string;
 }
