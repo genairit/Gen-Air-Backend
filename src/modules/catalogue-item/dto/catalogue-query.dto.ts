@@ -3,11 +3,14 @@ import {
   Max,
   IsIn,
   IsInt,
+  IsArray,
   Matches,
   IsString,
+  IsBoolean,
   MaxLength,
   IsOptional,
   ValidateIf,
+  ArrayMaxSize,
 } from 'class-validator';
 
 import {
@@ -55,6 +58,39 @@ export class CatalogueQueryDto {
   declare limit?: number;
 }
 export class CatalogueUpdateDto {
+  @ValidateIf(
+    (object: object, value: unknown) =>
+      Reflect.has(object, 'capacityBtu') && value !== null,
+  )
+  @IsInt()
+  @Min(1)
+  @Max(100000000)
+  declare capacityBtu?: number | null;
+  @ValidateIf(
+    (object: object, value: unknown) =>
+      Reflect.has(object, 'systemType') && value !== null,
+  )
+  @IsIn(SYSTEM_TYPES)
+  declare systemType?: string | null;
+  @ValidateIf((object: object) => Reflect.has(object, 'brand'))
+  @IsString()
+  @MaxLength(100)
+  declare brand?: string;
+  @ValidateIf((object: object) => Reflect.has(object, 'equipmentRole'))
+  @IsIn(EQUIPMENT_ROLES)
+  declare equipmentRole?: string;
+  @ValidateIf((object: object) => Reflect.has(object, 'equipmentTypes'))
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  declare equipmentTypes?: string[];
+  @ValidateIf((object: object) => Reflect.has(object, 'includesRemote'))
+  @IsBoolean()
+  declare includesRemote?: boolean;
+  @ValidateIf((object: object) => Reflect.has(object, 'includesThermostat'))
+  @IsBoolean()
+  declare includesThermostat?: boolean;
   @ValidateIf((object: object) => Reflect.has(object, 'price'))
   @Matches(/^\d{1,12}(?:\.\d{1,4})?$/)
   declare price?: string;

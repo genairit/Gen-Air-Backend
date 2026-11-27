@@ -1,5 +1,6 @@
 import {
   Get,
+  Post,
   Body,
   Patch,
   Param,
@@ -14,6 +15,7 @@ import {
 } from './dto/catalogue-query.dto';
 
 import { PERMISSIONS } from '@Constants/authorization.constant';
+import { CatalogueCreateDto } from './dto/catalogue-create.dto';
 import { CatalogueItemService } from './catalogue-item.service';
 import type { IUser } from '@Modules/user/interfaces/user.interface';
 import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
@@ -40,6 +42,22 @@ export class CatalogueItemController {
     query: GetCatalogueMaintenanceDto,
   ): ReturnType<CatalogueItemService['listForMaintenance']> {
     return this.service.listForMaintenance(query);
+  }
+  @Get('directory')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
+  directory(
+    @Query()
+    query: GetCatalogueMaintenanceDto,
+  ): ReturnType<CatalogueItemService['listDirectory']> {
+    return this.service.listDirectory(query);
+  }
+  @Post()
+  @RequirePermissions(PERMISSIONS.CATALOGUE_MANAGE)
+  create(
+    @Body()
+    input: CatalogueCreateDto,
+  ): ReturnType<CatalogueItemService['create']> {
+    return this.service.create(input);
   }
   @Get(':id')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
