@@ -129,11 +129,10 @@ export class CatalogueItemRepository {
       where: {
         [Op.and]: [
           ...buildCursorWhere(query.batchCursor),
-          ...(activeOnly
-            ? [{ status: CATALOGUE_STATUS.ACTIVE }]
-            : query.excludeArchived === 'true'
-              ? [{ status: { [Op.ne]: CATALOGUE_STATUS.ARCHIVED } }]
-              : []),
+          ...(activeOnly ? [{ status: CATALOGUE_STATUS.ACTIVE }] : []),
+          ...(query.excludeArchived === 'true'
+            ? [{ status: { [Op.ne]: CATALOGUE_STATUS.ARCHIVED } }]
+            : []),
           ...(query.pricedOnly === 'true' ? [{ price: { [Op.gt]: 0 } }] : []),
           ...(search
             ? [

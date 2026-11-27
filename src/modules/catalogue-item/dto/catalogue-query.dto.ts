@@ -66,16 +66,6 @@ export class CatalogueUpdateDto {
   @Min(1)
   @Max(100000000)
   declare capacityBtu?: number | null;
-  @ValidateIf(
-    (object: object, value: unknown) =>
-      Reflect.has(object, 'systemType') && value !== null,
-  )
-  @IsIn(SYSTEM_TYPES)
-  declare systemType?: string | null;
-  @ValidateIf((object: object) => Reflect.has(object, 'brand'))
-  @IsString()
-  @MaxLength(100)
-  declare brand?: string;
   @ValidateIf((object: object) => Reflect.has(object, 'equipmentRole'))
   @IsIn(EQUIPMENT_ROLES)
   declare equipmentRole?: string;
