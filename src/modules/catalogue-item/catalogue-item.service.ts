@@ -23,6 +23,8 @@ import { CatalogueItemRepository } from './catalogue-item.repository';
 import type { GetCatalogueMaintenanceDto } from './dto/get-catalogue-maintenance.dto';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
+const catalogueSkuLockKey = (sku: string): string => `catalogue:${sku}`;
+
 @Injectable()
 export class CatalogueItemService {
   constructor(
@@ -67,7 +69,10 @@ export class CatalogueItemService {
   }
   create(input: CatalogueCreateDto): Promise<CatalogueItem> {
     return this.transactions.run(async (transaction) => {
-      await this.transactions.lockKey(`catalogue:${input.sku}`, transaction);
+      await this.transactions.lockKey(
+        catalogueSkuLockKey(input.sku),
+        transaction,
+      );
       await this.assertAvailableSku(input.sku, null, transaction);
       return this.repository.create(
         {
@@ -105,7 +110,10 @@ export class CatalogueItemService {
   ): Promise<CatalogueItem> {
     const existing = await this.getById(id);
     await this.transactions.run(async (transaction) => {
-      await this.transactions.lockKey(`catalogue:${existing.sku}`, transaction);
+      await this.transactions.lockKey(
+        catalogueSkuLockKey(existing.sku),
+        transaction,
+      );
       const item = await this.repository.findForUpdate(id, transaction);
       if (!item) {
         throw new NotFoundException('פריט קטלוג לא נמצא');
