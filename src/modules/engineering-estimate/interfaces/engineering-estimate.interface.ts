@@ -101,7 +101,15 @@ export interface IEstimateSummary {
   name: string;
   updatedAt: Date;
   status: TEstimateStatus;
+  subtotal: string | null;
   projectId: string | null;
+  createdByName: string | null;
+}
+
+export interface IEstimateListRow extends Omit<IEstimateSummary, 'subtotal'> {
+  scope: TEstimateScope;
+  areas: IEstimateArea[];
+  snapshotSubtotal: string | null;
 }
 
 export interface IEstimatePlanSource {
