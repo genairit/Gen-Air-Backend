@@ -16,6 +16,7 @@ import {
 } from '@Utilities/permission.utility';
 
 import type {
+  ListEngineeringEstimatesDto,
   CreateEngineeringEstimateDto,
   UpdateEngineeringEstimateDto,
 } from './dto/engineering-estimate.dto';
@@ -48,7 +49,6 @@ import { PAGINATION } from '@Constants/pagination.constant';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import type { ICursorPage } from '@Interfaces/cursor-page.interface';
-import type { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { EngineeringEstimateRepository } from './engineering-estimate.repository';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
@@ -88,10 +88,11 @@ export class EngineeringEstimateService {
 
   list(
     actor: IAuthorizedUser,
-    query: CursorPaginationDto,
+    query: ListEngineeringEstimatesDto,
   ): Promise<ICursorPage<IEstimateSummary>> {
     return this.repository.list({
       actorId: actor.id,
+      projectId: query.projectId ?? null,
       canReview: hasPermission(
         actor,
         PERMISSIONS.ENGINEERING_ESTIMATES_APPROVE,
@@ -143,6 +144,10 @@ export class EngineeringEstimateService {
       const changesProject =
         requestedProject === null || typeof requestedProject === 'string';
       const projectId = changesProject ? requestedProject : record.projectId;
+      if (record.projectId && projectId === null) {
+        throw new ConflictException('יש לשייך את כתב הכמויות לפרויקט');
+      }
+
       const reassigningProject = projectId !== record.projectId;
       if (
         reassigningProject &&
