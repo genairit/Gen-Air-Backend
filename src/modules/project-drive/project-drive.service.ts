@@ -65,6 +65,7 @@ import { PreviewDriveFolderDto } from '@Modules/project-drive-link/dto/preview-d
 import { DRIVE_CONNECTION_STATUS } from '@Providers/google-drive/constants/drive-connection.constant';
 import { getDriveConnectionFailure } from '@Providers/google-drive/utilities/drive-connection.utility';
 import { IDriveConnectionResult } from '@Providers/google-drive/interfaces/drive-connection.interface';
+import type { PublicationRoleType } from '@Modules/quotation-publication/constants/publication.constant';
 import { IExistingDriveFolder } from '@Modules/project-drive-link/interfaces/drive-folder-link.interface';
 import { DriveTemplateFolderService } from '@Modules/drive-template-folder/drive-template-folder.service';
 import { PublicationDestinationService } from '@Modules/quotation-publication/publication-destination.service';
@@ -93,8 +94,25 @@ export class ProjectDriveService {
     return this.googleDriveService.checkConnection();
   }
 
-  async uploadQuotationPdf(
+  uploadQuotationPdf(
     projectId: string,
+    name: string,
+    pdf: Buffer,
+  ): Promise<IDriveItem> {
+    return this.uploadRolePdf(projectId, PUBLICATION_ROLE.QUOTATION, name, pdf);
+  }
+
+  uploadBoqPdf(
+    projectId: string,
+    name: string,
+    pdf: Buffer,
+  ): Promise<IDriveItem> {
+    return this.uploadRolePdf(projectId, PUBLICATION_ROLE.BOQ, name, pdf);
+  }
+
+  private async uploadRolePdf(
+    projectId: string,
+    role: PublicationRoleType,
     name: string,
     pdf: Buffer,
   ): Promise<IDriveItem> {
@@ -102,16 +120,18 @@ export class ProjectDriveService {
     await this.projectService.withDriveRootLock(
       projectId,
       (transaction): Promise<string> =>
-        this.prepareQuotationRoleFolder(
+        this.prepareRoleFolder(
           { projectId, rootId: projectFolderId },
+          role,
           transaction,
         ),
     );
-    const quotationsFolderId = await this.projectService.withDriveRootLock(
+    const roleFolderId = await this.projectService.withDriveRootLock(
       projectId,
       (transaction): Promise<string> =>
-        this.confirmQuotationRoleFolder(
+        this.confirmRoleFolder(
           { projectId, rootId: projectFolderId },
+          role,
           transaction,
         ),
     );
@@ -125,7 +145,7 @@ export class ProjectDriveService {
         this.googleDriveService.uploadFile({
           name,
           localPath,
-          parentId: quotationsFolderId,
+          parentId: roleFolderId,
           mimeType: 'application/pdf',
         }),
       );
@@ -172,31 +192,25 @@ export class ProjectDriveService {
 
     return { ...context, linked: project.driveFolderLinked === true };
   }
-  private async prepareQuotationRoleFolder(
+  private async prepareRoleFolder(
     context: Pick<IPublicationFolderScope, 'projectId' | 'rootId'>,
+    role: PublicationRoleType,
     transaction: Transaction,
   ): Promise<string> {
     const scope = await this.quotationRoleScope(context, transaction);
     const folder = await this.callDrive((): Promise<IPublicationFolder> =>
-      this.publicationDestinations.prepareRoleFolder(
-        scope,
-        PUBLICATION_ROLE.QUOTATION,
-        transaction,
-      ),
+      this.publicationDestinations.prepareRoleFolder(scope, role, transaction),
     );
     return folder.folderId;
   }
-  private async confirmQuotationRoleFolder(
+  private async confirmRoleFolder(
     context: Pick<IPublicationFolderScope, 'projectId' | 'rootId'>,
+    role: PublicationRoleType,
     transaction: Transaction,
   ): Promise<string> {
     const scope = await this.quotationRoleScope(context, transaction);
     return this.callDrive((): Promise<string> =>
-      this.publicationDestinations.ensureRoleFolder(
-        scope,
-        PUBLICATION_ROLE.QUOTATION,
-        transaction,
-      ),
+      this.publicationDestinations.ensureRoleFolder(scope, role, transaction),
     );
   }
   previewExistingFolder(

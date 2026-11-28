@@ -101,7 +101,15 @@ export interface IEstimateSummary {
   name: string;
   updatedAt: Date;
   status: TEstimateStatus;
+  subtotal: string | null;
   projectId: string | null;
+  createdByName: string | null;
+}
+
+export interface IEstimateListRow extends Omit<IEstimateSummary, 'subtotal'> {
+  scope: TEstimateScope;
+  areas: IEstimateArea[];
+  snapshotSubtotal: string | null;
 }
 
 export interface IEstimatePlanSource {
@@ -123,4 +131,14 @@ export interface IEstimateView extends Omit<IEstimateRecord, 'createdById'> {
   quotationUnavailable: boolean;
   approvedVersion: number | null;
   quotationCustomerId: string | null;
+}
+
+export interface IEstimatePreview {
+  subtotal: string;
+  lines: IEstimateLine[];
+}
+
+export interface IEstimateExport {
+  fileName: string;
+  fileUrl: string | null;
 }

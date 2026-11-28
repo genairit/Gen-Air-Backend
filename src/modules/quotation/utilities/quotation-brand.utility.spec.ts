@@ -44,6 +44,42 @@ describe('quotation brand groups', () => {
     ]);
   });
 
+  it('validates complete floor pairs and canonicalizes UUID case before assigning headings', () => {
+    const original = input();
+    const floorId = 'ae000000-0000-4000-8000-000000000001';
+    const floor = { floorId, floorName: 'Hall' };
+    const withFloor = { ...original.sections[0], ...floor };
+    const sameFloor = {
+      ...original.sections[1],
+      ...floor,
+      floorId: floorId.toUpperCase(),
+    };
+    const resolve = (sections: SaveQuotationDto['sections']) =>
+      resolveQuotationBrandGroups({ ...original, sections });
+    expect(
+      resolve([sameFloor, withFloor]).sections.map(
+        (section) => section.floorId,
+      ),
+    ).toEqual([floorId, floorId]);
+    expect(() => resolve([{ ...withFloor, floorName: null }])).toThrow();
+    expect(() => resolve([{ ...withFloor, floorName: '  ' }])).toThrow();
+    expect(() => resolve([{ ...original.sections[2], ...floor }])).toThrow();
+    expect(() =>
+      resolve([withFloor, { ...sameFloor, floorName: 'Other' }]),
+    ).toThrow();
+    const cleared = resolveQuotationBrandGroups(
+      {
+        ...original,
+        sections: [{ ...withFloor, floorId: null, floorName: null }],
+      },
+      [withFloor],
+    );
+    expect(cleared.sections[0]).toMatchObject({
+      floorId: null,
+      floorName: null,
+    });
+  });
+
   it('rejects duplicate, missing, and mismatched brands', () => {
     expect(() =>
       resolveQuotationBrandGroups(input({ brands: ['אלקטרה', 'אלקטרה'] })),

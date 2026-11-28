@@ -1,4 +1,5 @@
 import { QueryTypes } from 'sequelize';
+import { randomUUID } from 'node:crypto';
 import { TIME_UNITS } from '@Constants/time.constant';
 import { Quotation } from './entities/quotation.entity';
 import { USER_ROLES } from '@Constants/user-role.constant';
@@ -17,7 +18,7 @@ jest.setTimeout(2 * TIME_UNITS.MINUTE_MS);
 const saveInput = (quotation: IQuotationDetailView): SaveQuotationDto => ({
   version: quotation.version,
   customerId: quotation.customerId,
-  projectId: quotation.projectId,
+  projectId: quotation.projectId!,
   date: quotation.date,
   brand: quotation.brand,
   brands: quotation.brands,
@@ -39,6 +40,105 @@ afterAll(async (): Promise<void> => {
 });
 
 describe('immutable quotation lifecycle PostgreSQL', (): void => {
+  it('persists floor order across saves and preserves assignments written by a newer client', async () => {
+    const service = fixture.service();
+    const created = await service.create(
+      { customerId: fixture.customerId, projectId: fixture.projectId },
+      fixture.actor,
+    );
+    const floorId = randomUUID();
+    const anotherFloor = randomUUID();
+    const system = (
+      title: string,
+      brand: string | null,
+      floor: string | null = null,
+    ) => ({
+      id: randomUUID(),
+      title,
+      brand,
+      systemType: brand ? ('SINGLE' as const) : ('GEN' as const),
+      items: [],
+      floorId: floor,
+      floorName: floor
+        ? floor === floorId
+          ? 'Lobby floor'
+          : 'Mezzanine'
+        : null,
+    });
+    const sections = [
+      system('Shared labor', null),
+      system('Roof', 'A'),
+      system('Office', 'B', floorId),
+      system('Hall', 'A', anotherFloor),
+      system('Lobby', 'A', floorId),
+    ];
+    const saved = await service.save(
+      created.id,
+      {
+        ...saveInput(created),
+        brand: 'A',
+        brands: ['A', 'B'],
+        sections,
+      },
+      fixture.actor,
+    );
+    expect(saved.sections.map((section) => section.title)).toEqual([
+      'Lobby',
+      'Office',
+      'Hall',
+      'Roof',
+      'Shared labor',
+    ]);
+    expect(saved.sections.map((section) => section.floorId)).toEqual([
+      floorId,
+      floorId,
+      anotherFloor,
+      null,
+      null,
+    ]);
+    const olderClientSections = saved.sections.map(
+      ({ id, title, brand, systemType }) => ({
+        id,
+        title,
+        brand,
+        systemType,
+        items: [],
+      }),
+    );
+    const updated = await service.save(
+      saved.id,
+      {
+        ...saveInput(saved),
+        sections: olderClientSections,
+        internalNotes: 'Staff only',
+      },
+      fixture.actor,
+    );
+    expect(
+      (await service.getById(updated.id)).sections.map(
+        (section) => section.floorId,
+      ),
+    ).toEqual(saved.sections.map((section) => section.floorId));
+    await expect(
+      service.save(
+        updated.id,
+        {
+          ...saveInput(updated),
+          sections: updated.sections.map((section) => ({
+            ...section,
+            items: [],
+            floorName:
+              section.title === 'Office'
+                ? 'Conflicting floor'
+                : section.floorName,
+          })),
+        },
+        fixture.actor,
+      ),
+    ).rejects.toThrow();
+    expect((await service.getById(updated.id)).version).toBe(updated.version);
+  });
+
   it('records reasonless returns atomically and retains private approval evidence', async (): Promise<void> => {
     const service = fixture.service();
     const created = await service.createForTask(fixture.taskId, fixture.actor);

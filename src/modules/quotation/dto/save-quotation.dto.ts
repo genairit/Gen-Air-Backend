@@ -71,6 +71,14 @@ export class QuotationSectionDto {
   @IsString()
   @MaxLength(100)
   declare brand?: string | null;
+  @ValidateIf((_o, v) => v != null)
+  @IsUUID()
+  declare floorId?: string | null;
+  @ValidateIf((_o, v) => v != null)
+  @IsString()
+  @MaxLength(200)
+  @Matches(/\S/u)
+  declare floorName?: string | null;
   @IsArray()
   @ArrayMaxSize(MAX_ITEMS_PER_SECTION)
   @ValidateNested({ each: true })
@@ -80,9 +88,8 @@ export class QuotationSectionDto {
 export class CreateQuotationDto {
   @IsUUID()
   declare customerId: string;
-  @ValidateIf((_o, v) => v != null)
   @IsUUID()
-  declare projectId?: string | null;
+  declare projectId: string;
   @ValidateIf((_o, v) => v != null)
   @IsUUID()
   declare salesAgentId?: string | null;
@@ -93,9 +100,8 @@ export class SaveQuotationDto {
   declare version: number;
   @IsUUID()
   declare customerId: string;
-  @ValidateIf((_o, v) => v !== null)
   @IsUUID()
-  declare projectId: string | null;
+  declare projectId: string;
   @ValidateIf((_o, v) => v != null)
   @IsUUID()
   declare salesAgentId?: string | null;

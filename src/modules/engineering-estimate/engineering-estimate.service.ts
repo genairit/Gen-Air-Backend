@@ -16,8 +16,10 @@ import {
 } from '@Utilities/permission.utility';
 
 import type {
+  ListEngineeringEstimatesDto,
   CreateEngineeringEstimateDto,
   UpdateEngineeringEstimateDto,
+  PreviewEngineeringEstimateDto,
 } from './dto/engineering-estimate.dto';
 
 import {
@@ -35,9 +37,13 @@ import {
 
 import type {
   IEstimatePlan,
+  IEstimateArea,
   IEstimateView,
+  TEstimateScope,
   IEstimateRecord,
+  IEstimatePreview,
   IEstimateSummary,
+  IEstimateContents,
   IEstimatePlanSource,
 } from './interfaces/engineering-estimate.interface';
 
@@ -48,7 +54,6 @@ import { PAGINATION } from '@Constants/pagination.constant';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import type { ICursorPage } from '@Interfaces/cursor-page.interface';
-import type { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { EngineeringEstimateRepository } from './engineering-estimate.repository';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
@@ -86,12 +91,13 @@ export class EngineeringEstimateService {
     private readonly pricing: EstimatePricingService,
   ) {}
 
-  list(
+  async list(
     actor: IAuthorizedUser,
-    query: CursorPaginationDto,
+    query: ListEngineeringEstimatesDto,
   ): Promise<ICursorPage<IEstimateSummary>> {
-    return this.repository.list({
+    const page = await this.repository.list({
       actorId: actor.id,
+      projectId: query.projectId ?? null,
       canReview: hasPermission(
         actor,
         PERMISSIONS.ENGINEERING_ESTIMATES_APPROVE,
@@ -100,6 +106,36 @@ export class EngineeringEstimateService {
       batchCursor: query.batchCursor ?? null,
       batchSize: query.batchSize ?? PAGINATION.DEFAULT_BATCH_SIZE,
     });
+    const items = await this.transactions.run(
+      async (transaction): Promise<IEstimateSummary[]> => {
+        const summaries: IEstimateSummary[] = [];
+        for (const { areas, scope, snapshotSubtotal, ...item } of page.items) {
+          summaries.push({
+            ...item,
+            subtotal:
+              snapshotSubtotal ??
+              (await this.draftSubtotal(areas, scope, transaction)),
+          });
+        }
+
+        return summaries;
+      },
+    );
+    return { nextCursor: page.nextCursor, items };
+  }
+
+  private async draftSubtotal(
+    areas: IEstimateArea[],
+    scope: TEstimateScope,
+    transaction: Transaction,
+  ): Promise<string | null> {
+    try {
+      return estimateSubtotal(
+        await this.pricing.calculate(areas, scope, transaction),
+      );
+    } catch {
+      return null;
+    }
   }
 
   async get(request: IEstimateActor): Promise<IEstimateView> {
@@ -119,15 +155,33 @@ export class EngineeringEstimateService {
       version: 1,
       createdById: actor.id,
       updatedAt: new Date(),
-      scope: ESTIMATE_SCOPE.HVAC,
+      scope: input.scope ?? ESTIMATE_SCOPE.HVAC,
       setupStep: ESTIMATE_SETUP_STEP.PROJECT,
-      areas: [],
+      areas: input.areas ?? [],
       questions: [],
     };
-    await this.transactions.run((transaction): Promise<void> =>
-      this.repository.insert(record, transaction),
-    );
+    this.validateContents(record);
+    await this.transactions.run(async (transaction): Promise<void> => {
+      await this.pricing.calculate(record.areas, record.scope, transaction);
+      await this.repository.insert(record, transaction);
+    });
     return this.view(record, actor);
+  }
+
+  async preview(
+    input: PreviewEngineeringEstimateDto,
+  ): Promise<IEstimatePreview> {
+    this.validateContents({ areas: input.areas, questions: [] });
+    return this.transactions.run(
+      async (transaction): Promise<IEstimatePreview> => {
+        const lines = await this.pricing.calculate(
+          input.areas,
+          input.scope,
+          transaction,
+        );
+        return { lines, subtotal: estimateSubtotal(lines) };
+      },
+    );
   }
 
   async update(
@@ -143,6 +197,10 @@ export class EngineeringEstimateService {
       const changesProject =
         requestedProject === null || typeof requestedProject === 'string';
       const projectId = changesProject ? requestedProject : record.projectId;
+      if (record.projectId && projectId === null) {
+        throw new ConflictException('יש לשייך את כתב הכמויות לפרויקט');
+      }
+
       const reassigningProject = projectId !== record.projectId;
       if (
         reassigningProject &&
@@ -156,23 +214,7 @@ export class EngineeringEstimateService {
       await this.requireProject(projectId, request.actor, transaction);
       const areas = input.areas ?? record.areas;
       const questions = input.questions ?? record.questions;
-      const areaIds = areas.map((area): string => area.id);
-      const lineIds = areas.flatMap((area): string[] =>
-        area.lines.map((line): string => line.id),
-      );
-      const questionIds = questions.map((question): string => question.id);
-      const duplicates = [areaIds, lineIds, questionIds].some(
-        (ids): boolean => new Set(ids).size !== ids.length,
-      );
-      const invalidAnswers = questions.some(
-        ({ answer, options }): boolean =>
-          answer != null && !options.includes(answer),
-      );
-      if (duplicates || invalidAnswers) {
-        throw new BadRequestException(
-          'נמצאו שורות כפולות או תשובה שאינה ברשימה',
-        );
-      }
+      this.validateContents({ areas, questions });
 
       const scope = input.scope ?? record.scope;
       await this.pricing.calculate(areas, scope, transaction);
@@ -334,6 +376,27 @@ export class EngineeringEstimateService {
     }
 
     return record;
+  }
+
+  private validateContents({
+    areas,
+    questions,
+  }: Pick<IEstimateContents, 'areas' | 'questions'>): void {
+    const areaIds = areas.map((area): string => area.id);
+    const lineIds = areas.flatMap((area): string[] =>
+      area.lines.map((line): string => line.id),
+    );
+    const questionIds = questions.map((question): string => question.id);
+    const duplicates = [areaIds, lineIds, questionIds].some(
+      (ids): boolean => new Set(ids).size !== ids.length,
+    );
+    const invalidAnswers = questions.some(
+      ({ answer, options }): boolean =>
+        answer != null && !options.includes(answer),
+    );
+    if (duplicates || invalidAnswers) {
+      throw new BadRequestException('נמצאו שורות כפולות או תשובה שאינה ברשימה');
+    }
   }
 
   private async requireProject(

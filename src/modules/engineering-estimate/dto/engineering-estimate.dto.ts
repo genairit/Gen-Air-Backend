@@ -32,16 +32,13 @@ import type {
 } from '../interfaces/engineering-estimate.interface';
 
 import { Type } from 'class-transformer';
+import { PartialType } from '@nestjs/swagger';
+import { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
 
-export class CreateEngineeringEstimateDto {
-  @IsString()
-  @Matches(/\S/u)
-  @MaxLength(ESTIMATE_LIMITS.NAME)
-  name!: string;
-
+export class ListEngineeringEstimatesDto extends CursorPaginationDto {
   @IsOptional()
   @IsUUID()
-  projectId?: string | null;
+  declare projectId?: string;
 }
 
 export class EstimateVersionDto {
@@ -150,6 +147,31 @@ export class EstimateAreaDto {
   @ValidateNested({ each: true })
   @Type(() => EstimateLineDto)
   lines!: EstimateLineDto[];
+}
+
+export class PreviewEngineeringEstimateDto {
+  @IsIn(Object.values(ESTIMATE_SCOPE))
+  scope!: TEstimateScope;
+
+  @IsArray()
+  @ArrayMaxSize(ESTIMATE_LIMITS.AREAS)
+  @IsObject({ each: true })
+  @ValidateNested({ each: true })
+  @Type(() => EstimateAreaDto)
+  areas!: EstimateAreaDto[];
+}
+
+export class CreateEngineeringEstimateDto extends PartialType(
+  PreviewEngineeringEstimateDto,
+) {
+  @IsString()
+  @Matches(/\S/u)
+  @MaxLength(ESTIMATE_LIMITS.NAME)
+  name!: string;
+
+  @IsOptional()
+  @IsUUID()
+  projectId?: string | null;
 }
 
 export class EstimateQuestionDto {

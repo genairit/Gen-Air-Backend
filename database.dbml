@@ -514,7 +514,7 @@ Table quotations {
     approved_by_id
     (updated_at,id) [note: 'Keyset pagination of the activity list, newest first']
   }
-  Note: 'A price offer (הצעת מחיר) for one customer, optionally tied to projects through quotation_projects. The aggregate root of the quotation builder: sections hold the lines, totals are computed from them, and approved is presented as הזמנה without changing its stored approval semantics. Cancellation is retained and restorable to the prior status. Every content save returns it to draft and clears the approval. Soft deleted.'
+  Note: 'A price offer (הצעת מחיר) for one customer, saved under a required primary project through quotation_projects. The aggregate root of the quotation builder: sections hold the lines, totals are computed from them, and approved is presented as הזמנה without changing its stored approval semantics. Cancellation is retained and restorable to the prior status. Every content save returns it to draft and clears the approval. Soft deleted.'
 }
 
 Table quotation_projects {
@@ -528,7 +528,7 @@ Table quotation_projects {
     quotation_id [unique, name: 'uq_quotation_projects_primary', note: 'Partial: WHERE is_primary, so each quotation has at most one primary project']
     project_id [name: 'idx_quotation_projects_project_id']
   }
-  Note: 'Associates one quotation with its primary project and, when that primary is a building, with selected apartments of it. Sharing never copies the quotation: number, content, approval and totals stay on quotations. Apartment links are edited only while the quotation is approved and never change its version; links to apartments that were deleted or left the building grant nothing. Removing a link deletes only that row.'
+  Note: 'Associates one quotation with its primary project and, when that primary is a building, with selected apartments of it. A database trigger guards project deletion and customer changes while live primary quotations depend on the project. Sharing never copies the quotation: number, content, approval and totals stay on quotations. Apartment links are edited only while the quotation is approved and never change its version; links to apartments that were deleted or left the building grant nothing. Removing a link deletes only that row.'
 }
 
 Table quotation_sections {
@@ -537,6 +537,8 @@ Table quotation_sections {
   title varchar(200) [not null, note: 'Heading of the block as it appears on the offer']
   system_type varchar(10) [not null, note: 'VRF, MULTI, SINGLE or GEN (general works); decides which catalogue items the lines may use and which rules apply']
   brand varchar(100) [note: 'Manufacturer tab owning this section; null means the General tab and permits only unbranded catalogue items']
+  floor_id uuid [note: 'Stable floor identity scoped to this quotation. Null when the section has no floor.']
+  floor_name varchar(200) [note: 'Display name shared by sections assigned to the same floor.']
   display_order integer [not null, note: 'Position of the section within the quotation; unique per quotation']
   created_at timestamptz [note: 'When the section was created']
   updated_at timestamptz [note: 'When the section last changed']
@@ -622,7 +624,8 @@ Table quotation_rules {
 
 Table project_boqs {
   id uuid [pk, default: `gen_random_uuid()`]
-  project_id uuid [not null, unique]
+  name varchar(200) [not null, default: 'כתב רכש כללי']
+  project_id uuid [not null]
   source_quotation_id uuid
   source_quotation_version integer
   revision integer [not null, default: 0]
@@ -630,6 +633,10 @@ Table project_boqs {
   updated_by_id uuid [not null]
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (project_id, created_at, id)
+  }
 }
 
 Table project_boq_lines {
@@ -899,7 +906,7 @@ Table quotation_lifecycle_events {
 }
 
 Table quotation_publication_roles {
-  role text [pk, note: 'quotation/order/archive stable semantic destination']
+  role text [pk, note: 'quotation/order/archive/boq stable semantic destination']
   template_id uuid [not null, unique, ref: > drive_template_folders.id]
 }
 Table quotation_publication_folders {

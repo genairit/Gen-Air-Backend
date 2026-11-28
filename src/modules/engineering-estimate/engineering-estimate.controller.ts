@@ -21,8 +21,10 @@ import {
   EstimateLinkPlanDto,
   EstimateQuotationDto,
   EstimateUploadPlanDto,
+  ListEngineeringEstimatesDto,
   CreateEngineeringEstimateDto,
   UpdateEngineeringEstimateDto,
+  PreviewEngineeringEstimateDto,
 } from './dto/engineering-estimate.dto';
 
 import {
@@ -32,7 +34,7 @@ import {
 
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PERMISSIONS } from '@Constants/authorization.constant';
-import { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
+import { EstimateExportService } from './estimate-export.service';
 import { decodeUploadedFileName } from '@Utilities/upload.utility';
 import type { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { EstimateApprovalService } from './estimate-approval.service';
@@ -41,6 +43,8 @@ import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 import type { IEstimateView } from './interfaces/engineering-estimate.interface';
+import type { IEstimateExport } from './interfaces/engineering-estimate.interface';
+import type { IEstimatePreview } from './interfaces/engineering-estimate.interface';
 import type { IEstimateSummary } from './interfaces/engineering-estimate.interface';
 
 const attachment = (
@@ -58,13 +62,14 @@ export class EngineeringEstimateController {
   constructor(
     private readonly estimates: EngineeringEstimateService,
     private readonly approval: EstimateApprovalService,
+    private readonly exports: EstimateExportService,
   ) {}
 
   @Get()
   @RequirePermissions(PERMISSIONS.ENGINEERING_ESTIMATES_READ)
   list(
     @AuthenticatedUser() actor: IAuthorizedUser,
-    @Query() query: CursorPaginationDto,
+    @Query() query: ListEngineeringEstimatesDto,
   ): Promise<ICursorPage<IEstimateSummary>> {
     return this.estimates.list(actor, query);
   }
@@ -79,6 +84,18 @@ export class EngineeringEstimateController {
     @AuthenticatedUser() actor: IAuthorizedUser,
   ): Promise<IEstimateView> {
     return this.estimates.create(input, actor);
+  }
+
+  @Post('preview')
+  @HttpCode(200)
+  @RequirePermissions(
+    PERMISSIONS.ENGINEERING_ESTIMATES_READ,
+    PERMISSIONS.ENGINEERING_ESTIMATES_MANAGE,
+  )
+  preview(
+    @Body() input: PreviewEngineeringEstimateDto,
+  ): Promise<IEstimatePreview> {
+    return this.estimates.preview(input);
   }
 
   @Get(':id')
@@ -189,6 +206,21 @@ export class EngineeringEstimateController {
   ): Promise<StreamableFile> {
     const pdf = await this.approval.currentSketch({ id, actor });
     return attachment(pdf, 'סקיצת כתב כמויות.pdf', ESTIMATE_PLAN_MIME.PDF);
+  }
+
+  @Post(':id/export')
+  @HttpCode(200)
+  @RequirePermissions(
+    PERMISSIONS.DRIVE_UPLOAD,
+    PERMISSIONS.ENGINEERING_ESTIMATES_READ,
+    PERMISSIONS.ENGINEERING_ESTIMATES_MANAGE,
+  )
+  exportToDrive(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: EstimateVersionDto,
+    @AuthenticatedUser() actor: IAuthorizedUser,
+  ): Promise<IEstimateExport> {
+    return this.exports.exportToDrive({ id, actor }, input.version);
   }
 
   @Post(':id/approve')

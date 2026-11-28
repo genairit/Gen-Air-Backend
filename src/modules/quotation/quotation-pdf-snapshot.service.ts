@@ -6,6 +6,7 @@ import {
 import {
   PAYMENT_TERM_LABELS,
   QUOTATION_PDF_COMPANY,
+  QUOTATION_PDF_SYSTEM_LABELS,
 } from './constants/quotation-pdf.constant';
 
 import type {
@@ -38,13 +39,15 @@ export class QuotationPdfSnapshotService {
     private readonly projects: ProjectService,
     private readonly users: UserService,
   ) {}
-  async capture(
-    document: IQuotationDocument,
+  private async context(
+    quotation: IQuotationDocument,
+    includeCustomerDetails: boolean,
     transaction?: Transaction,
-  ): Promise<IPublicationSnapshot> {
-    const quotation = quotationView(document);
+  ) {
     const [customer, project, salesAgent] = await Promise.all([
-      this.customers.getById(quotation.customerId, transaction),
+      includeCustomerDetails
+        ? this.customers.getById(quotation.customerId, transaction)
+        : Promise.resolve(null),
       quotation.projectId
         ? this.projects.quotationSnapshot(quotation.projectId, transaction)
         : Promise.resolve(null),
@@ -77,12 +80,14 @@ export class QuotationPdfSnapshotService {
       issuerName: quotation.issuerName,
       company: QUOTATION_PDF_COMPANY,
       recipient: {
-        name: project?.customerName?.trim() || customer.name,
-        address: project?.customerAddress ?? customer.address,
+        name: project?.customerName?.trim() || (customer?.name ?? ''),
+        address: project?.customerAddress ?? customer?.address ?? null,
         city: project?.addressCity ?? null,
-        email: project?.customerEmail ?? customer.primaryContact?.email ?? null,
-        phone: project?.customerPhone ?? customer.primaryContact?.phone ?? null,
-        customerNumber: customer.priorityId,
+        email:
+          project?.customerEmail ?? customer?.primaryContact?.email ?? null,
+        phone:
+          project?.customerPhone ?? customer?.primaryContact?.phone ?? null,
+        customerNumber: customer?.priorityId ?? null,
       },
       project: {
         name: project?.name ?? null,
@@ -90,9 +95,9 @@ export class QuotationPdfSnapshotService {
       },
       metadata: {
         validUntil: null,
-        customerTaxId: customer.taxId,
+        customerTaxId: customer?.taxId ?? null,
         customerTaxLabel:
-          customer.customerType === PROJECT_DETAIL_FIELD_SETS.PRIVATE_CLIENT
+          customer?.customerType === PROJECT_DETAIL_FIELD_SETS.PRIVATE_CLIENT
             ? 'מס׳ ת״ז:'
             : 'מס׳ חברה:',
         vatFileNumber: QUOTATION_PDF_COMPANY.vatFileNumber,
@@ -100,29 +105,6 @@ export class QuotationPdfSnapshotService {
           ? `${salesAgent.firstName} ${salesAgent.lastName}`.trim()
           : null,
         revision: quotation.version,
-      },
-      sections: quotation.sections.map((section): IQuotationPdfSection => ({
-        title: section.title,
-        brand: section.brand,
-        lines: section.items.map((item): IQuotationPdfLine => ({
-          sku: item.sku,
-          unit: item.unit,
-          quantity: item.quantity,
-          description: item.description,
-          unitPrice: item.quotedPrice,
-          totalPrice: new Decimal(item.quantity)
-            .times(item.quotedPrice)
-            .toFixed(2),
-          capacityBtu: item.capacityBtu,
-        })),
-      })),
-      totals: {
-        subtotal: quotation.totals.subtotal,
-        discount: quotation.totals.discount,
-        pretax: quotation.totals.pretax,
-        vatRate: quotation.vatRate,
-        vat: quotation.totals.vat,
-        total: quotation.totals.total,
       },
       terms: {
         ...defaultTerms,
@@ -136,6 +118,38 @@ export class QuotationPdfSnapshotService {
       },
     };
 
+    return { payload, project };
+  }
+  async preview(
+    quotation: IQuotationDocument,
+    includeCustomerDetails: boolean,
+    projectId: string | null,
+  ) {
+    const { payload } = await this.context(
+      { ...quotation, projectId },
+      includeCustomerDetails,
+    );
+    return {
+      ...payload,
+      defaultPayment: defaultTerms.payment,
+      paymentTermLabels: PAYMENT_TERM_LABELS,
+      recipientContext: {
+        customerId: quotation.customerId,
+        projectId: quotation.projectId,
+        salesAgentId: quotation.salesAgentId,
+      },
+    };
+  }
+  async capture(
+    document: IQuotationDocument,
+    transaction?: Transaction,
+  ): Promise<IPublicationSnapshot> {
+    const { payload, project } = await this.context(
+      document,
+      true,
+      transaction,
+    );
+    const quotation = quotationView(document);
     const namingInputs = quotationFilenameInputs({
       quotationId: quotation.id,
       title: payload.title,
@@ -149,7 +163,38 @@ export class QuotationPdfSnapshotService {
       brands: quotation.brands,
     });
     return {
-      document: payload,
+      document: {
+        ...payload,
+        sections: quotation.sections.map((section): IQuotationPdfSection => ({
+          title:
+            section.title.trim() ||
+            (section.brand
+              ? QUOTATION_PDF_SYSTEM_LABELS[section.systemType]
+              : ''),
+          floorId: section.floorId ?? null,
+          floorName: section.floorName ?? null,
+          brand: section.brand,
+          lines: section.items.map((item): IQuotationPdfLine => ({
+            sku: item.sku,
+            unit: item.unit,
+            quantity: item.quantity,
+            description: item.description,
+            unitPrice: item.quotedPrice,
+            totalPrice: new Decimal(item.quantity)
+              .times(item.quotedPrice)
+              .toFixed(2),
+            capacityBtu: item.capacityBtu,
+          })),
+        })),
+        totals: {
+          subtotal: quotation.totals.subtotal,
+          discount: quotation.totals.discount,
+          pretax: quotation.totals.pretax,
+          vatRate: quotation.vatRate,
+          vat: quotation.totals.vat,
+          total: quotation.totals.total,
+        },
+      },
       source: document,
       filename: quotationFilename(namingInputs),
       namingInputs: { ...namingInputs },
