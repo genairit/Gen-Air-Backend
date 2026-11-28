@@ -13,6 +13,13 @@ export const QUOTATION_PDF_COMPANY = {
   vatFileNumber: '515772564',
 } as const;
 
+export const QUOTATION_PDF_SYSTEM_LABELS = {
+  VRF: 'מערכת VRF',
+  MULTI: 'מולטי / VRF BOX',
+  SINGLE: 'סינגלים',
+  GEN: 'פריטים נוספים',
+} as const;
+
 export const PAYMENT_TERM_LABELS: Record<PaymentTermsType, string> = {
   [PAYMENT_TERMS.OTHER]: 'לפי תנאים מותאמים אישית',
   [PAYMENT_TERMS.PREPAID]: 'תשלום אחד מראש לפני תחילת העבודה',

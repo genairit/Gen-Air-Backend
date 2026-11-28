@@ -3,8 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { QuotationService } from './quotation.service';
 import { UserService } from '@Modules/user/user.service';
 import { QuotationPdfService } from './quotation-pdf.service';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { ProjectService } from '@Modules/project/project.service';
 import { QUOTATION_STATUS } from './constants/quotation.constant';
+import { authorizedUser } from '../../testing/authorization.fixture';
 import { CustomerService } from '@Modules/customer/customer.service';
 import { quotationDocumentFixture } from '../../testing/quotation.fixture';
 import { QuotationPdfSnapshotService } from './quotation-pdf-snapshot.service';
@@ -42,7 +44,10 @@ const drive = {
   uploadQuotationPdf: jest.fn().mockResolvedValue({ id: 'file-1' }),
 };
 const render = jest.spyOn(global, 'fetch');
-const quotation = { document: jest.fn().mockResolvedValue(document) };
+const quotation = {
+  document: jest.fn().mockResolvedValue(document),
+  getForActor: jest.fn().mockResolvedValue(document),
+};
 const workerConfiguration: Record<string, string> = {
   WORKER_URL: 'http://worker:3001',
   WORKER_API_TOKEN: 'a-long-worker-api-token-of-at-least-32-characters',
@@ -298,4 +303,47 @@ it('renders the explicit customer primary contact rather than unrelated or legac
   await exportPdf();
   expect(workerPayload()).toHaveProperty('recipient.email', 'own@example.com');
   expect(workerPayload()).toHaveProperty('recipient.phone', '+442071838750');
+});
+
+it('returns live preview metadata for the same document without exposing hidden project or customer fields', async () => {
+  document.projectId = project.id;
+  const reader = authorizedUser([PERMISSIONS.QUOTATIONS_READ]);
+  const preview = await state.service!.preview(document.id, reader);
+  expect(quotation.getForActor).toHaveBeenCalledWith(document.id, reader);
+  expect(preview).toMatchObject({
+    recipientContext: {
+      customerId: document.customerId,
+      projectId: project.id,
+    },
+    recipient: {
+      name: '',
+      address: null,
+      phone: null,
+      email: null,
+      customerNumber: null,
+    },
+    metadata: { customerTaxId: null },
+    project: { name: null, address: null },
+  });
+  expect(Array.isArray(preview.defaultPayment)).toBe(true);
+  expect(preview.paymentTermLabels).toHaveProperty('prepaid');
+  expect(render).not.toHaveBeenCalled();
+  expect(preview).not.toHaveProperty('source');
+  expect(preview).not.toHaveProperty('internalNotes');
+  const permitted = authorizedUser([
+    PERMISSIONS.PROJECTS_READ,
+    PERMISSIONS.CUSTOMERS_READ,
+    PERMISSIONS.QUOTATIONS_READ,
+  ]);
+  const allowedPreview = await state.service!.preview(document.id, permitted);
+  const exported = (await capture()).document;
+  expect(allowedPreview).toMatchObject({
+    metadata: exported.metadata,
+    project: exported.project,
+    recipient: exported.recipient,
+    terms: exported.terms,
+    company: exported.company,
+  });
+  expect(allowedPreview).not.toHaveProperty('sections');
+  expect(allowedPreview).not.toHaveProperty('totals');
 });

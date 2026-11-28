@@ -249,6 +249,7 @@ beforeAll(async () => {
     'migrations/2026-11-09-quotation-project-links.sql',
     'migrations/2026-11-10-quotation-cancellation.sql',
     'migrations/2026-11-10-add-quotation-sales-agent.sql',
+    'migrations/2026-11-28-quotation-section-floors.sql',
   ]) {
     await sequelize.query(
       await readFile(join(process.cwd(), migration), 'utf8'),

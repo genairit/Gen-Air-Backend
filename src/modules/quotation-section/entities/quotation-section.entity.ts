@@ -33,6 +33,10 @@ export class QuotationSection
   declare systemType: TSystemType;
   @Column({ type: DataType.STRING(100), allowNull: true })
   declare brand: string | null;
+  @Column({ type: DataType.UUID, allowNull: true })
+  declare floorId: string | null;
+  @Column({ type: DataType.STRING(200), allowNull: true })
+  declare floorName: string | null;
   @Column({ type: DataType.INTEGER, allowNull: false })
   declare displayOrder: number;
   @CreatedAt

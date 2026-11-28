@@ -71,6 +71,14 @@ export class QuotationSectionDto {
   @IsString()
   @MaxLength(100)
   declare brand?: string | null;
+  @ValidateIf((_o, v) => v != null)
+  @IsUUID()
+  declare floorId?: string | null;
+  @ValidateIf((_o, v) => v != null)
+  @IsString()
+  @MaxLength(200)
+  @Matches(/\S/u)
+  declare floorName?: string | null;
   @IsArray()
   @ArrayMaxSize(MAX_ITEMS_PER_SECTION)
   @ValidateNested({ each: true })
