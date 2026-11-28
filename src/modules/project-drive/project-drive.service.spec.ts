@@ -137,6 +137,7 @@ const createService = async () => {
     projectService,
     googleDriveService,
     driveTemplateFolderService,
+    moduleRef,
   };
 };
 
@@ -1250,6 +1251,40 @@ describe('ProjectDriveService.uploadQuotationPdf', () => {
     ).rejects.toThrow();
     const upload = googleDriveService.uploadFile.mock.calls[0][0];
     await expect(access(upload.localPath)).rejects.toThrow();
+  });
+});
+
+describe('ProjectDriveService.uploadBoqPdf', () => {
+  it('prepares and confirms the boq role folder before uploading', async () => {
+    const { service, projectService, googleDriveService, moduleRef } =
+      await createService();
+    projectService.getById.mockResolvedValue({
+      ...PROJECT,
+      driveFolderId: PROJECT_FOLDER_ID,
+    });
+    const destinations = moduleRef.get(PublicationDestinationService);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const { prepareRoleFolder, ensureRoleFolder } = destinations;
+    const result = await service.uploadBoqPdf(
+      PROJECT.id,
+      'כתב כמויות.pdf',
+      Buffer.from('%PDF-1.7'),
+    );
+    expect(result).toEqual({ id: 'uploaded' });
+    expect(prepareRoleFolder).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: PROJECT.id }),
+      'boq',
+      expect.anything(),
+    );
+    expect(ensureRoleFolder).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: PROJECT.id }),
+      'boq',
+      expect.anything(),
+    );
+    expect(googleDriveService.uploadFile.mock.calls[0][0]).toMatchObject({
+      name: 'כתב כמויות.pdf',
+      mimeType: 'application/pdf',
+    });
   });
 });
 

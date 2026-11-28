@@ -7,6 +7,7 @@ import { mock } from 'jest-mock-extended';
 import { AuthGuard } from '@Guards/auth.guard';
 import { AuthService } from '@Modules/auth/auth.service';
 import { PERMISSIONS } from '@Constants/authorization.constant';
+import { EstimateExportService } from './estimate-export.service';
 import { authorizedUser } from '../../testing/authorization.fixture';
 import { EstimateApprovalService } from './estimate-approval.service';
 import { ValidationPipe, type INestApplication } from '@nestjs/common';
@@ -37,6 +38,10 @@ describe('Estimate preview HTTP boundary', (): void => {
         {
           provide: EstimateApprovalService,
           useValue: mock<EstimateApprovalService>(),
+        },
+        {
+          provide: EstimateExportService,
+          useValue: mock<EstimateExportService>(),
         },
         {
           provide: AuthService,

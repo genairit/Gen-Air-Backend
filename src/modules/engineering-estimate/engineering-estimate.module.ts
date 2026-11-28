@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ProjectModule } from '@Modules/project/project.module';
+import { EstimateExportService } from './estimate-export.service';
 import { CustomerModule } from '@Modules/customer/customer.module';
 import { EstimatePricingService } from './estimate-pricing.service';
 import { DatabaseModule } from '@Providers/database/database.module';
@@ -30,6 +31,7 @@ import { CatalogueItemModule } from '@Modules/catalogue-item/catalogue-item.modu
     EstimatePricingService,
     EstimateApprovalService,
     EstimateDocumentService,
+    EstimateExportService,
   ],
 })
 export class EngineeringEstimateModule {}

@@ -24,6 +24,7 @@ export const PUBLICATION_ROLE = {
   QUOTATION: 'quotation',
   ORDER: 'order',
   ARCHIVE: 'archive',
+  BOQ: 'boq',
 } as const;
 export type PublicationRoleType =
   (typeof PUBLICATION_ROLE)[keyof typeof PUBLICATION_ROLE];

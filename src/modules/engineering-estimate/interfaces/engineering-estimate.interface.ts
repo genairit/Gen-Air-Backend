@@ -129,3 +129,8 @@ export interface IEstimatePreview {
   subtotal: string;
   lines: IEstimateLine[];
 }
+
+export interface IEstimateExport {
+  fileName: string;
+  fileUrl: string | null;
+}
