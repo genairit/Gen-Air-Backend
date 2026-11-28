@@ -1,5 +1,8 @@
+import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { mock } from 'jest-mock-extended';
+import { plainToInstance } from 'class-transformer';
+import { SaveQuotationDto } from './dto/save-quotation.dto';
 import { QuotationController } from './quotation.controller';
 import { PERMISSIONS } from '@Constants/authorization.constant';
 import { DEFAULT_VAT_RATE } from './constants/quotation.constant';
@@ -462,13 +465,11 @@ it('retains the project and saved content when a write omits or clears its proje
   const valid = taskQuotationSaveInput(quote, {
     internalNotes: 'Rejected edit',
   });
-  for (const missingId of [null, undefined]) {
+  const { projectId: omitted, ...withoutProject } = valid;
+  expect(omitted).toBe(projectId);
+  for (const payload of [withoutProject, { ...valid, projectId: null }]) {
     await expect(
-      current.save(
-        quote.id,
-        Object.assign({}, valid, { projectId: missingId }),
-        actor,
-      ),
+      current.save(quote.id, plainToInstance(SaveQuotationDto, payload), actor),
     ).rejects.toMatchObject({ status: 400 });
   }
   const unchanged = await current.getById(quote.id);
