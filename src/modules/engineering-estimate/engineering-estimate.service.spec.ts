@@ -32,7 +32,7 @@ interface IUpdateScenario {
   target: string | null;
 }
 
-const setup = (projectId: string, copiedPlans: boolean) => {
+const setup = (projectId: string | null, copiedPlans: boolean) => {
   const transaction = mock<Transaction>();
   const repository = mock<EngineeringEstimateRepository>();
   const projects = mock<ProjectService>();
@@ -85,18 +85,32 @@ describe('Engineer estimate project link patch', (): void => {
       target: projectId,
     },
     {
-      name: 'removes an explicit null link when no plans were copied',
-      body: { projectId: null },
-      copiedPlans: false,
-      target: null,
-    },
-    {
       name: 'changes an explicit UUID link when no plans were copied',
       body: { projectId: newProject },
       copiedPlans: false,
       target: newProject,
     },
   ];
+
+  it('cannot detach a linked bill from every project', async (): Promise<void> => {
+    const { actor, record, repository, service } = setup(projectId, false);
+    await expect(
+      service.update(
+        { id: record.id, actor },
+        { version: record.version, projectId: null },
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(repository.update.mock.calls).toHaveLength(0);
+  });
+
+  it('can assign an unlinked legacy bill to its confirmed project', async (): Promise<void> => {
+    const { actor, record, repository, service } = setup(null, false);
+    await service.update(
+      { id: record.id, actor },
+      { version: record.version, projectId },
+    );
+    expect(repository.update.mock.calls[0]?.[0].projectId).toBe(projectId);
+  });
 
   it.each(scenarios)(
     '$name',

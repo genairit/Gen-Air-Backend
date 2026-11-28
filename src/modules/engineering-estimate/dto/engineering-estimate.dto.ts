@@ -33,6 +33,13 @@ import type {
 
 import { Type } from 'class-transformer';
 import { PartialType } from '@nestjs/swagger';
+import { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
+
+export class ListEngineeringEstimatesDto extends CursorPaginationDto {
+  @IsOptional()
+  @IsUUID()
+  declare projectId?: string;
+}
 
 export class EstimateVersionDto {
   @Type(() => Number)
