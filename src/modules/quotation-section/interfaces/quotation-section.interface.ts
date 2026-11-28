@@ -9,5 +9,7 @@ export interface IQuotationSection {
   displayOrder: number;
   brand: string | null;
   deletedAt: Date | null;
+  floorId?: string | null;
   systemType: TSystemType;
+  floorName?: string | null;
 }

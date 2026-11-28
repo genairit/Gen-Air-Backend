@@ -537,6 +537,8 @@ Table quotation_sections {
   title varchar(200) [not null, note: 'Heading of the block as it appears on the offer']
   system_type varchar(10) [not null, note: 'VRF, MULTI, SINGLE or GEN (general works); decides which catalogue items the lines may use and which rules apply']
   brand varchar(100) [note: 'Manufacturer tab owning this section; null means the General tab and permits only unbranded catalogue items']
+  floor_id uuid [note: 'Stable floor identity scoped to this quotation. Null when the section has no floor.']
+  floor_name varchar(200) [note: 'Display name shared by sections assigned to the same floor.']
   display_order integer [not null, note: 'Position of the section within the quotation; unique per quotation']
   created_at timestamptz [note: 'When the section was created']
   updated_at timestamptz [note: 'When the section last changed']

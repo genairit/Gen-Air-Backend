@@ -1013,6 +1013,8 @@ export class QuotationService {
         quotationId: id,
         title: section.title,
         brand: section.brand === null ? null : targetBrand,
+        floorId: section.floorId,
+        floorName: section.floorName,
         systemType: section.systemType,
         displayOrder: section.displayOrder,
       })),
@@ -1104,7 +1106,10 @@ export class QuotationService {
         throw new BadRequestException('אחוז ההנחה חייב להיות עד100');
       }
       const configuration = await this.rules.configuration(transaction);
-      const { brands, sections } = resolveQuotationBrandGroups(input);
+      const { brands, sections } = resolveQuotationBrandGroups(
+        input,
+        current.sections,
+      );
       const snapshots = await this.selection.snapshots({
         current,
         input: { ...input, brands, sections },
@@ -1121,6 +1126,8 @@ export class QuotationService {
           quotationId: id,
           title: section.title,
           brand: section.brand,
+          floorId: section.floorId,
+          floorName: section.floorName,
           systemType: section.systemType,
           displayOrder,
         })),

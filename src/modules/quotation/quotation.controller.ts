@@ -107,6 +107,14 @@ export class QuotationController {
   ): ReturnType<QuotationService['getForActor']> {
     return this.service.getForActor(id, user);
   }
+  @Get(':id/document-preview')
+  @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
+  preview(
+    @Param('id', ParseUUIDPipe) id: string,
+    @AuthenticatedUser() actor: IAuthorizedUser,
+  ): ReturnType<QuotationPdfService['preview']> {
+    return this.pdf.preview(id, actor);
+  }
   @Get(':id/publication')
   @RequirePermissions(PERMISSIONS.QUOTATIONS_READ)
   publication(

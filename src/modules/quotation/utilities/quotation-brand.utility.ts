@@ -19,6 +19,10 @@ export const quotationSectionBrand = (
 
 export const resolveQuotationBrandGroups = (
   input: SaveQuotationDto,
+  existing: readonly Pick<
+    QuotationSectionDto,
+    'id' | 'floorId' | 'floorName'
+  >[] = [],
 ): IQuotationBrandGroups => {
   const brands = input.brands ?? (input.brand ? [input.brand] : []);
   const hasInvalidBrand = brands.some(
@@ -34,6 +38,10 @@ export const resolveQuotationBrandGroups = (
     throw new BadRequestException('קבוצות חברות המיזוג אינן תקינות');
   }
 
+  const existingById = new Map(
+    existing.map((section) => [section.id, section]),
+  );
+  const floors = new Map<string, { name: string; order: number }>();
   const sections = input.sections.map((section) => {
     const brand = quotationSectionBrand(section, input.brand);
 
@@ -45,15 +53,42 @@ export const resolveQuotationBrandGroups = (
       throw new BadRequestException('מערכת שייכת לחברה שאינה בהצעה');
     }
 
-    return { ...section, brand };
+    // Older clients omit both fields. An explicit null pair removes an assignment.
+    const assignment =
+      section.floorId === undefined && section.floorName === undefined
+        ? existingById.get(section.id)
+        : section;
+    const floorId = assignment?.floorId ?? null;
+    const floorName = assignment?.floorName?.trim() ?? null;
+    if (
+      (floorId === null) !== (floorName === null) ||
+      floorName === '' ||
+      (floorId && !brand)
+    ) {
+      throw new BadRequestException('שיוך הקומה של המערכת אינו תקין');
+    }
+    if (floorId && floorName) {
+      const floor = floors.get(floorId);
+      if (floor && floor.name !== floorName) {
+        throw new BadRequestException(
+          'למערכות באותה קומה יש לציין שם קומה זהה',
+        );
+      }
+      if (!floor) floors.set(floorId, { name: floorName, order: floors.size });
+    }
+    return { ...section, brand, floorId, floorName };
   });
 
   const groupOrder = (brand: string | null): number =>
     brand === null ? brands.length : brands.indexOf(brand);
+  const floorOrder = (section: (typeof sections)[number]): number =>
+    section.floorId ? floors.get(section.floorId)!.order : floors.size;
   return {
     brands,
     sections: sections.sort(
-      (left, right) => groupOrder(left.brand) - groupOrder(right.brand),
+      (left, right) =>
+        floorOrder(left) - floorOrder(right) ||
+        groupOrder(left.brand) - groupOrder(right.brand),
     ),
   };
 };

@@ -7,7 +7,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { QuotationService } from './quotation.service';
 import { Meta, TypedLogger } from '@Logger/logger.service';
+import { hasPermission } from '@Utilities/permission.utility';
+import { PERMISSIONS } from '@Constants/authorization.constant';
 import { GOOGLE_DRIVE } from '@Constants/google-drive.constant';
+import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { QuotationPdfSnapshotService } from './quotation-pdf-snapshot.service';
 import { PUBLICATION_LIMITS } from '@Modules/quotation-publication/constants/publication.constant';
 
@@ -19,6 +22,21 @@ export class QuotationPdfService {
     private readonly quotations: QuotationService,
     private readonly snapshots: QuotationPdfSnapshotService,
   ) {}
+  async preview(
+    id: string,
+    actor: IAuthorizedUser,
+  ): Promise<Record<string, unknown>> {
+    const quotation = await this.quotations.getForActor(id, actor);
+    const mayReadProjects = hasPermission(actor, PERMISSIONS.PROJECTS_READ);
+    const mayReadCustomer =
+      hasPermission(actor, PERMISSIONS.CUSTOMERS_READ) ||
+      (mayReadProjects && hasPermission(actor, PERMISSIONS.QUOTATIONS_EXPORT));
+    return this.snapshots.preview(
+      quotation,
+      mayReadCustomer,
+      mayReadProjects ? quotation.projectId : null,
+    );
+  }
   async export(id: string): Promise<{ filename: string; pdf: Buffer }> {
     const snapshot = await this.snapshots.capture(
       await this.quotations.document(id),
