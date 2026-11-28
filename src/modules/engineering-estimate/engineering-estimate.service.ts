@@ -37,7 +37,9 @@ import {
 
 import type {
   IEstimatePlan,
+  IEstimateArea,
   IEstimateView,
+  TEstimateScope,
   IEstimateRecord,
   IEstimatePreview,
   IEstimateSummary,
@@ -89,11 +91,11 @@ export class EngineeringEstimateService {
     private readonly pricing: EstimatePricingService,
   ) {}
 
-  list(
+  async list(
     actor: IAuthorizedUser,
     query: ListEngineeringEstimatesDto,
   ): Promise<ICursorPage<IEstimateSummary>> {
-    return this.repository.list({
+    const page = await this.repository.list({
       actorId: actor.id,
       projectId: query.projectId ?? null,
       canReview: hasPermission(
@@ -104,6 +106,36 @@ export class EngineeringEstimateService {
       batchCursor: query.batchCursor ?? null,
       batchSize: query.batchSize ?? PAGINATION.DEFAULT_BATCH_SIZE,
     });
+    const items = await this.transactions.run(
+      async (transaction): Promise<IEstimateSummary[]> => {
+        const summaries: IEstimateSummary[] = [];
+        for (const { areas, scope, snapshotSubtotal, ...item } of page.items) {
+          summaries.push({
+            ...item,
+            subtotal:
+              snapshotSubtotal ??
+              (await this.draftSubtotal(areas, scope, transaction)),
+          });
+        }
+
+        return summaries;
+      },
+    );
+    return { nextCursor: page.nextCursor, items };
+  }
+
+  private async draftSubtotal(
+    areas: IEstimateArea[],
+    scope: TEstimateScope,
+    transaction: Transaction,
+  ): Promise<string | null> {
+    try {
+      return estimateSubtotal(
+        await this.pricing.calculate(areas, scope, transaction),
+      );
+    } catch {
+      return null;
+    }
   }
 
   async get(request: IEstimateActor): Promise<IEstimateView> {

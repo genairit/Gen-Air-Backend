@@ -3,6 +3,11 @@ import {
   ESTIMATE_SETUP_STEP,
 } from './constants/engineering-estimate.constant';
 
+import type {
+  IEstimateRecord,
+  IEstimateListRow,
+} from './interfaces/engineering-estimate.interface';
+
 import 'reflect-metadata';
 import { Transaction } from 'sequelize';
 import { randomUUID } from 'node:crypto';
@@ -15,7 +20,6 @@ import { EngineeringEstimateService } from './engineering-estimate.service';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { UpdateEngineeringEstimateDto } from './dto/engineering-estimate.dto';
 import { EngineeringEstimateRepository } from './engineering-estimate.repository';
-import type { IEstimateRecord } from './interfaces/engineering-estimate.interface';
 import { ProjectDriveService } from '@Modules/project-drive/project-drive.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 
@@ -241,5 +245,54 @@ describe('Estimate draft calculation and creation', (): void => {
     ).rejects.toMatchObject({ status: 400 });
     expect(pricing.calculate.mock.calls).toHaveLength(0);
     expect(repository.insert.mock.calls).toHaveLength(0);
+  });
+});
+
+describe('Engineering estimate listing amounts', (): void => {
+  const row = (overrides: Partial<IEstimateListRow>): IEstimateListRow => ({
+    id: randomUUID(),
+    name: 'טיוטה',
+    updatedAt: new Date(),
+    status: 'draft',
+    projectId: null,
+    areas: [],
+    scope: ESTIMATE_SCOPE.HVAC,
+    createdByName: 'כפיר מור',
+    snapshotSubtotal: null,
+    ...overrides,
+  });
+
+  it('uses the saved snapshot amount and prices drafts live', async (): Promise<void> => {
+    const { actor, repository, pricing, service } = setup(null, false);
+    repository.list.mockResolvedValue({
+      nextCursor: null,
+      items: [
+        row({ status: 'approved', snapshotSubtotal: '387900.00' }),
+        row({}),
+      ],
+    });
+    pricing.calculate.mockResolvedValue([
+      { total: '100.00' },
+      { total: '25.50' },
+    ] as never);
+
+    const page = await service.list(actor, {});
+
+    expect(page.items.map((item) => item.subtotal)).toEqual([
+      '387900.00',
+      '125.50',
+    ]);
+    expect(page.items[0]).toMatchObject({ createdByName: 'כפיר מור' });
+    expect(pricing.calculate.mock.calls).toHaveLength(1);
+  });
+
+  it('keeps the list available when a draft cannot be priced', async (): Promise<void> => {
+    const { actor, repository, pricing, service } = setup(null, false);
+    repository.list.mockResolvedValue({ nextCursor: null, items: [row({})] });
+    pricing.calculate.mockRejectedValue(new Error('Catalogue unavailable'));
+
+    const page = await service.list(actor, {});
+
+    expect(page.items[0].subtotal).toBeNull();
   });
 });

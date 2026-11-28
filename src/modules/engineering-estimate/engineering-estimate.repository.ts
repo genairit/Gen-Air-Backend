@@ -6,7 +6,8 @@ import {
 import type {
   IEstimatePlan,
   IEstimateRecord,
-  IEstimateSummary,
+  IEstimateListRow,
+  IEstimateContents,
   IEstimateRevision,
   IStoredEstimatePlan,
   IEstimateReviewSnapshot,
@@ -54,17 +55,23 @@ export class EngineeringEstimateRepository {
 
   async list(
     filters: IEstimateListing,
-  ): Promise<ICursorPage<IEstimateSummary>> {
+  ): Promise<ICursorPage<IEstimateListRow>> {
     const position = decodeCursor(filters.batchCursor);
     const { batchSize, actorId, canReview, canReadProjects } = filters;
-    type TSummaryRow = IEstimateSummary & { createdAt: Date };
+    type TSummaryRow = Omit<IEstimateListRow, 'areas' | 'scope'> & {
+      createdAt: Date;
+      contents: IEstimateContents;
+    };
     const rows = await this.sequelize.query<TSummaryRow>(
       `SELECT e.id, e.name, e.project_id AS "projectId", e.updated_at AS "updatedAt",
-        e.updated_at AS "createdAt",
+        e.updated_at AS "createdAt", e.contents,
+        NULLIF(concat_ws(' ', u.first_name, u.last_name), '') AS "createdByName",
+        r.snapshot->>'subtotal' AS "snapshotSubtotal",
         CASE WHEN r.approved_at IS NOT NULL THEN 'approved'
              WHEN r.version IS NOT NULL THEN 'sketch' ELSE 'draft' END status
         FROM engineering_estimates e
         LEFT JOIN engineering_estimate_revisions r ON r.estimate_id=e.id AND r.version=e.version
+        LEFT JOIN users u ON u.id=e.created_by_id
         WHERE ($canReview OR e.created_by_id = $actorId)
           AND ($projectId::uuid IS NULL OR e.project_id = $projectId::uuid)
           AND (e.project_id IS NULL OR ($canReadProjects AND EXISTS (
@@ -88,10 +95,12 @@ export class EngineeringEstimateRepository {
     const page = toCursorPage(rows, batchSize);
     return {
       nextCursor: page.nextCursor,
-      items: page.items.map(({ createdAt, ...item }): IEstimateSummary => {
-        void createdAt;
-        return item;
-      }),
+      items: page.items.map(
+        ({ createdAt, contents, ...item }): IEstimateListRow => {
+          void createdAt;
+          return { ...item, areas: contents.areas, scope: contents.scope };
+        },
+      ),
     };
   }
 
