@@ -24,6 +24,7 @@ import {
   ListEngineeringEstimatesDto,
   CreateEngineeringEstimateDto,
   UpdateEngineeringEstimateDto,
+  PreviewEngineeringEstimateDto,
 } from './dto/engineering-estimate.dto';
 
 import {
@@ -41,6 +42,7 @@ import { AuthenticatedUser } from '@Decorators/authenticated-user.decorator';
 import type { IAuthorizedUser } from '@Interfaces/authorized-user.interface';
 import { RequirePermissions } from '@Decorators/require-permissions.decorator';
 import type { IEstimateView } from './interfaces/engineering-estimate.interface';
+import type { IEstimatePreview } from './interfaces/engineering-estimate.interface';
 import type { IEstimateSummary } from './interfaces/engineering-estimate.interface';
 
 const attachment = (
@@ -79,6 +81,18 @@ export class EngineeringEstimateController {
     @AuthenticatedUser() actor: IAuthorizedUser,
   ): Promise<IEstimateView> {
     return this.estimates.create(input, actor);
+  }
+
+  @Post('preview')
+  @HttpCode(200)
+  @RequirePermissions(
+    PERMISSIONS.ENGINEERING_ESTIMATES_READ,
+    PERMISSIONS.ENGINEERING_ESTIMATES_MANAGE,
+  )
+  preview(
+    @Body() input: PreviewEngineeringEstimateDto,
+  ): Promise<IEstimatePreview> {
+    return this.estimates.preview(input);
   }
 
   @Get(':id')

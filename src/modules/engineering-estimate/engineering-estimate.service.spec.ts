@@ -70,7 +70,8 @@ const setup = (projectId: string | null, copiedPlans: boolean) => {
     mock<ProjectDriveService>(),
     pricing,
   );
-  return { actor, record, repository, service };
+  repository.plans.mockResolvedValue([]);
+  return { actor, record, repository, service, pricing, transaction };
 };
 
 describe('Engineer estimate project link patch', (): void => {
@@ -136,4 +137,109 @@ describe('Engineer estimate project link patch', (): void => {
       );
     },
   );
+});
+
+describe('Estimate draft calculation and creation', (): void => {
+  const area = {
+    id: randomUUID(),
+    name: 'דירה',
+    repeatCount: 3,
+    lines: [{ id: randomUUID(), catalogueItemId: randomUUID(), quantity: '2' }],
+  };
+
+  it('returns calculated quantities and prices without writing an estimate', async (): Promise<void> => {
+    const { service, repository, pricing, transaction } = setup(
+      randomUUID(),
+      false,
+    );
+    const lines = [
+      {
+        sku: 'AC',
+        unit: 'יחידה',
+        areaId: area.id,
+        areaName: area.name,
+        quantity: '6',
+        description: 'מזגן',
+        total: '600.00',
+        unitPrice: '100.00',
+        provenance: null,
+        catalogueItemId: area.lines[0].catalogueItemId,
+        source: 'manual' as const,
+      },
+    ];
+    pricing.calculate.mockResolvedValue(lines);
+    await expect(
+      service.preview({ scope: ESTIMATE_SCOPE.HVAC, areas: [area] }),
+    ).resolves.toEqual({ lines, subtotal: '600.00' });
+    expect(pricing.calculate.mock.calls).toContainEqual([
+      [area],
+      ESTIMATE_SCOPE.HVAC,
+      transaction,
+    ]);
+    expect(repository.insert.mock.calls).toHaveLength(0);
+    expect(repository.update.mock.calls).toHaveLength(0);
+  });
+
+  it('stores the populated first draft as version one in the pricing transaction', async (): Promise<void> => {
+    const { actor, service, repository, pricing, transaction } = setup(
+      randomUUID(),
+      false,
+    );
+    const created = await service.create(
+      { name: ' כתב כמויות ', scope: ESTIMATE_SCOPE.HVAC, areas: [area] },
+      actor,
+    );
+    expect(repository.insert.mock.calls[0]).toEqual([
+      expect.objectContaining({
+        name: 'כתב כמויות',
+        version: 1,
+        areas: [area],
+        scope: ESTIMATE_SCOPE.HVAC,
+      }),
+      transaction,
+    ]);
+    expect(pricing.calculate.mock.invocationCallOrder[0]).toBeLessThan(
+      repository.insert.mock.invocationCallOrder[0],
+    );
+    expect(created.areas).toEqual([area]);
+    expect(repository.update.mock.calls).toHaveLength(0);
+  });
+
+  it('preserves name-only creation', async (): Promise<void> => {
+    const { actor, service, repository, transaction } = setup(
+      randomUUID(),
+      false,
+    );
+    await service.create({ name: 'טיוטה' }, actor);
+    expect(repository.insert.mock.calls[0]).toEqual([
+      expect.objectContaining({
+        version: 1,
+        areas: [],
+        scope: ESTIMATE_SCOPE.HVAC,
+      }),
+      transaction,
+    ]);
+  });
+
+  it('does not insert when calculation fails', async (): Promise<void> => {
+    const { actor, service, repository, pricing } = setup(randomUUID(), false);
+    pricing.calculate.mockRejectedValue(new Error('Catalogue unavailable'));
+    await expect(
+      service.create({ name: 'טיוטה', areas: [area] }, actor),
+    ).rejects.toThrow('Catalogue unavailable');
+    expect(repository.insert.mock.calls).toHaveLength(0);
+  });
+
+  it('rejects duplicate row identities in both preview and create', async (): Promise<void> => {
+    const { actor, service, repository, pricing } = setup(randomUUID(), false);
+    const areas = [area, { ...area, id: randomUUID() }];
+    await expect(
+      service.preview({ scope: ESTIMATE_SCOPE.HVAC, areas }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.create({ name: 'טיוטה', areas }, actor),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(pricing.calculate.mock.calls).toHaveLength(0);
+    expect(repository.insert.mock.calls).toHaveLength(0);
+  });
 });
