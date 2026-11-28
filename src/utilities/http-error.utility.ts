@@ -73,6 +73,18 @@ export const getHttpErrorResponse = (error: unknown): IHttpErrorResponse => {
   if (
     isDatabaseCheckConstraint(
       error,
+      DATABASE_CHECK_CONSTRAINTS.LIVE_QUOTATION_PROJECT,
+    )
+  ) {
+    return {
+      statusCode: 409,
+      ...getHttpErrorPayload(HTTP_ERROR_CODES.PROJECT_HAS_QUOTATIONS),
+    };
+  }
+
+  if (
+    isDatabaseCheckConstraint(
+      error,
       DATABASE_CHECK_CONSTRAINTS.TASK_QUOTATION_CONTEXT,
     )
   ) {
