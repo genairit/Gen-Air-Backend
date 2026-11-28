@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
 import { Op, Transaction } from 'sequelize';
 import { ProjectBoq } from './entities/project-boq.entity';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { ProjectBoqLine } from './entities/project-boq-line.entity';
 import { Quotation } from '@Modules/quotation/entities/quotation.entity';
 import { ProjectBoqRevision } from './entities/project-boq-revision.entity';
@@ -52,15 +52,32 @@ export class ProjectBoqRepository {
           });
     return { lines, corrections };
   }
-  find(
+  list(projectId: string): Promise<ProjectBoq[]> {
+    return ProjectBoq.findAll({
+      where: { projectId },
+      order: [
+        ['createdAt', 'ASC'],
+        ['id', 'ASC'],
+      ],
+    });
+  }
+  async find(
     projectId: string,
     transaction?: Transaction,
   ): Promise<ProjectBoq | null> {
-    return ProjectBoq.findOne({
+    const documents = await ProjectBoq.findAll({
       where: { projectId },
+      limit: 2,
       transaction,
       lock: transaction?.LOCK.UPDATE,
     });
+    if (documents.length > 1) {
+      throw new ConflictException(
+        'בפרויקט יש כמה כתבי רכש; יש לבחור מסמך מסוים',
+      );
+    }
+
+    return documents[0] ?? null;
   }
   lines(boqId: string, transaction?: Transaction): Promise<ProjectBoqLine[]> {
     return ProjectBoqLine.findAll({

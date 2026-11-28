@@ -624,7 +624,8 @@ Table quotation_rules {
 
 Table project_boqs {
   id uuid [pk, default: `gen_random_uuid()`]
-  project_id uuid [not null, unique]
+  name varchar(200) [not null, default: 'כתב רכש כללי']
+  project_id uuid [not null]
   source_quotation_id uuid
   source_quotation_version integer
   revision integer [not null, default: 0]
@@ -632,6 +633,10 @@ Table project_boqs {
   updated_by_id uuid [not null]
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (project_id, created_at, id)
+  }
 }
 
 Table project_boq_lines {
