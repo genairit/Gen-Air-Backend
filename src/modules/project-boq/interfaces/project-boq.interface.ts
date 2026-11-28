@@ -1,3 +1,9 @@
+export interface IProjectBoqSummary {
+  id: string;
+  name: string;
+  estimatedTotal: string;
+}
+
 export interface IProjectBoqLine {
   id: string;
   notes: string;

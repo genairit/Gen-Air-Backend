@@ -103,6 +103,40 @@ describe('ProjectBoqService', () => {
     transactions.run.mockImplementation((work) => work(transaction));
   });
 
+  it('lists named documents with independent estimates from their own lines', async () => {
+    const first = mock<ProjectBoq>({
+      id: randomUUID(),
+      name: 'קומה א',
+      projectId,
+    });
+    const second = mock<ProjectBoq>({
+      id: randomUUID(),
+      name: 'קומה ב',
+      projectId,
+    });
+    repository.list.mockResolvedValue([first, second]);
+    repository.lines.mockImplementation((documentId) =>
+      Promise.resolve([
+        mock<ProjectBoqLine>({
+          requiredQuantity: documentId === first.id ? '2' : '3',
+          estimatedUnitCost: '12.5',
+          sourceSnapshot: {},
+        }),
+      ]),
+    );
+    expect(await service.list(projectId)).toEqual([
+      { id: first.id, name: first.name, estimatedTotal: '25.0000' },
+      { id: second.id, name: second.name, estimatedTotal: '37.5000' },
+    ]);
+    expect(jest.spyOn(projects, 'getById')).toHaveBeenCalledWith(projectId);
+  });
+
+  it('returns an empty document list without creating a document', async () => {
+    repository.list.mockResolvedValue([]);
+    expect(await service.list(projectId)).toEqual([]);
+    expect(jest.spyOn(repository, 'create')).not.toHaveBeenCalled();
+  });
+
   it('multiplies fixed quantities by quotation quantity and leaves measured quantities unresolved', async () => {
     const fixed = await service.preview(projectId, quoteId);
     expect(fixed.lines).toHaveLength(1);
