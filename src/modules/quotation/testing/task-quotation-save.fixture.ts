@@ -10,7 +10,7 @@ export const taskQuotationSaveInput = (
   brands: quotation.brands,
   version: quotation.version,
   customerId: quotation.customerId,
-  projectId: quotation.projectId,
+  projectId: quotation.projectId!,
   sections: quotation.sections,
   paymentTerms: quotation.paymentTerms,
   internalNotes: quotation.internalNotes,

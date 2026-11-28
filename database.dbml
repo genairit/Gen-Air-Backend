@@ -514,7 +514,7 @@ Table quotations {
     approved_by_id
     (updated_at,id) [note: 'Keyset pagination of the activity list, newest first']
   }
-  Note: 'A price offer (הצעת מחיר) for one customer, optionally tied to projects through quotation_projects. The aggregate root of the quotation builder: sections hold the lines, totals are computed from them, and approved is presented as הזמנה without changing its stored approval semantics. Cancellation is retained and restorable to the prior status. Every content save returns it to draft and clears the approval. Soft deleted.'
+  Note: 'A price offer (הצעת מחיר) for one customer, saved under a required primary project through quotation_projects. The aggregate root of the quotation builder: sections hold the lines, totals are computed from them, and approved is presented as הזמנה without changing its stored approval semantics. Cancellation is retained and restorable to the prior status. Every content save returns it to draft and clears the approval. Soft deleted.'
 }
 
 Table quotation_projects {

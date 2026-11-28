@@ -281,20 +281,23 @@ export class EstimateApprovalService {
           return { quotationId: revision.quotationId };
         }
 
+        const projectId = revision.snapshot.projectId;
+        if (!projectId) {
+          throw new BadRequestException(
+            'יש לשייך את האומדן לפרויקט וליצור מהדורה לאישור מחדש',
+          );
+        }
         const customerId = await this.quotationCustomer(
           revision.snapshot,
-          input,
+          projectId,
           transaction,
         );
-        if (!customerId) {
-          throw new BadRequestException('יש לבחור לקוח להצעת המחיר');
-        }
 
         const quotationId =
           await this.quotations.createEngineeringEstimateDraft(
             {
               customerId,
-              projectId: revision.snapshot.projectId,
+              projectId,
               lines: revision.snapshot.lines,
             },
             request.actor,
@@ -368,13 +371,9 @@ export class EstimateApprovalService {
 
   private async quotationCustomer(
     snapshot: IEstimateReviewSnapshot,
-    input: EstimateQuotationDto,
+    projectId: string,
     transaction: Transaction,
-  ): Promise<string | null> {
-    if (!snapshot.projectId) {
-      return input.customerId ?? null;
-    }
-
+  ): Promise<string> {
     if (!snapshot.customerId) {
       throw new ConflictException(
         'יש לשייך לקוח לפרויקט וליצור מהדורה לאישור מחדש',
@@ -382,7 +381,7 @@ export class EstimateApprovalService {
     }
 
     const project = await this.projects.quotationContext(
-      snapshot.projectId,
+      projectId,
       transaction,
     );
     if (project.customerId !== snapshot.customerId) {

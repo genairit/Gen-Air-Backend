@@ -442,11 +442,7 @@ export class QuotationService {
       transaction,
     );
     const payment = customerPaymentSnapshot(customer);
-    await this.validateProject(
-      input.customerId,
-      input.projectId ?? null,
-      transaction,
-    );
+    await this.validateProject(input.customerId, input.projectId, transaction);
     const id = randomUUID();
     const configuration = await this.rules.configuration(transaction);
     const date = new Date().toISOString().slice(0, 10);
@@ -483,7 +479,7 @@ export class QuotationService {
       },
       transaction,
     );
-    await this.links.replacePrimary(id, input.projectId ?? null, transaction);
+    await this.links.replacePrimary(id, input.projectId, transaction);
     return id;
   }
   async createEngineeringEstimateDraft(
@@ -620,7 +616,7 @@ export class QuotationService {
       this.taskLinks.assertContextPermissions(context, actor);
       assertPermissions(actor, PERMISSIONS.QUOTATIONS_CREATE);
       const quotationId = await this.createDraft(
-        { customerId: context.customerId!, projectId: context.projectId },
+        { customerId: context.customerId, projectId: context.projectId },
         actor,
         transaction,
       );
@@ -966,7 +962,7 @@ export class QuotationService {
       }
     }
     validateQuotationAccessories(snapshots);
-    await this.validateProject(
+    const projectId = await this.validateProject(
       source.customerId,
       source.projectId,
       transaction,
@@ -1029,7 +1025,7 @@ export class QuotationService {
       }),
       transaction,
     );
-    await this.links.replacePrimary(id, source.projectId, transaction);
+    await this.links.replacePrimary(id, projectId, transaction);
     await this.taskLinks.copy(sourceId, id, transaction);
     const apartmentLinks = await this.links.apartmentLinks(
       [sourceId],
@@ -1175,7 +1171,7 @@ export class QuotationService {
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
     await this.transactions.run(async (transaction) => {
-      const current = await this.document(id, transaction);
+      const current = await this.linkedDocument(id, transaction);
       this.assertVersion(current, input.version);
       if (current.status === QUOTATION_STATUS.CANCELLED) {
         throw new ConflictException('לא ניתן לעדכן הצעת מחיר מבוטלת');
@@ -1204,7 +1200,7 @@ export class QuotationService {
   ): Promise<IQuotationDetailView> {
     assertPermissions(actor, PERMISSIONS.QUOTATIONS_APPROVE);
     await this.transactions.run(async (transaction): Promise<void> => {
-      const current = await this.document(id, transaction);
+      const current = await this.linkedDocument(id, transaction);
       this.assertVersion(current, input.version);
       const allowed: Record<TQuotationStatus, TQuotationStatus[]> = {
         [QUOTATION_STATUS.DRAFT]: [QUOTATION_STATUS.REVIEW],
@@ -1324,7 +1320,7 @@ export class QuotationService {
       throw new BadRequestException('יש להזין סיבת דחייה');
     }
     await this.transactions.run(async (transaction): Promise<void> => {
-      const current = await this.document(id, transaction);
+      const current = await this.linkedDocument(id, transaction);
       this.assertVersion(current, input.version);
       if (current.status !== QUOTATION_STATUS.REVIEW) {
         throw new ConflictException('ניתן להחזיר לתיקון רק הצעה בבדיקה');
@@ -1370,7 +1366,7 @@ export class QuotationService {
     actor: IAuthorizedUser,
   ): Promise<IQuotationDetailView> {
     await this.transactions.run(async (transaction): Promise<void> => {
-      const current = await this.document(id, transaction);
+      const current = await this.linkedDocument(id, transaction);
       this.assertVersion(current, input.version);
       const latest = current.rejectionHistory.at(-1);
       if (
@@ -1424,7 +1420,7 @@ export class QuotationService {
       );
     }
     await this.transactions.run(async (transaction): Promise<void> => {
-      const current = await this.document(id, transaction);
+      const current = await this.linkedDocument(id, transaction);
       this.assertVersion(current, input.version);
 
       if (current.status === QUOTATION_STATUS.CANCELLED) {
@@ -1461,7 +1457,7 @@ export class QuotationService {
       throw new ForbiddenException('רק מנהל מערכת רשאי לשחזר הצעת מחיר');
     }
     await this.transactions.run(async (transaction): Promise<void> => {
-      const current = await this.document(id, transaction);
+      const current = await this.linkedDocument(id, transaction);
       this.assertVersion(current, input.version);
       const restored = restoreQuotationCancellation({
         history: current.cancellationHistory,
@@ -1506,7 +1502,7 @@ export class QuotationService {
     userId: string,
   ): Promise<IQuotationDetailView> {
     await this.transactions.run(async (transaction) => {
-      const current = await this.document(id, transaction);
+      const current = await this.linkedDocument(id, transaction);
       this.assertVersion(current, input.version);
       if (current.status === QUOTATION_STATUS.APPROVED) {
         throw new ConflictException('הצעה מאושרת נעולה');
@@ -1819,14 +1815,29 @@ export class QuotationService {
       throw new ForbiddenException('אין הרשאה לבטל או לשחזר הצעות מחיר');
     }
   }
+  private async linkedDocument(
+    id: string,
+    transaction: Transaction,
+  ): Promise<IQuotationDocument> {
+    const quotation = await this.document(id, transaction);
+    await this.validateProject(
+      quotation.customerId,
+      quotation.projectId,
+      transaction,
+    );
+
+    return quotation;
+  }
+
   private async validateProject(
     customerId: string,
     projectId: string | null,
     transaction: Transaction,
-  ): Promise<void> {
+  ): Promise<string> {
     if (!projectId) {
-      return;
+      throw new BadRequestException('יש לשייך את הצעת המחיר לפרויקט');
     }
+
     const project = await this.projects.quotationContext(
       projectId,
       transaction,
@@ -1834,6 +1845,7 @@ export class QuotationService {
     if (project.customerId !== customerId) {
       throw new BadRequestException('הפרויקט אינו משויך ללקוח שנבחר');
     }
+    return projectId;
   }
 
   private async validateSalesAgent(

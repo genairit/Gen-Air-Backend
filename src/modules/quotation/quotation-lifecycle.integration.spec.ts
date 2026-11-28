@@ -18,7 +18,7 @@ jest.setTimeout(2 * TIME_UNITS.MINUTE_MS);
 const saveInput = (quotation: IQuotationDetailView): SaveQuotationDto => ({
   version: quotation.version,
   customerId: quotation.customerId,
-  projectId: quotation.projectId,
+  projectId: quotation.projectId!,
   date: quotation.date,
   brand: quotation.brand,
   brands: quotation.brands,
@@ -43,7 +43,7 @@ describe('immutable quotation lifecycle PostgreSQL', (): void => {
   it('persists floor order across saves and preserves assignments written by a newer client', async () => {
     const service = fixture.service();
     const created = await service.create(
-      { customerId: fixture.customerId },
+      { customerId: fixture.customerId, projectId: fixture.projectId },
       fixture.actor,
     );
     const floorId = randomUUID();

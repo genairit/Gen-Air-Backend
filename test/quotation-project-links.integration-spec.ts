@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { Test } from '@nestjs/testing';
 import { QueryTypes } from 'sequelize';
 import { randomUUID } from 'node:crypto';
+import { mock } from 'jest-mock-extended';
 import { readFile } from 'node:fs/promises';
 import { UserService } from '@Modules/user/user.service';
 import { PERMISSIONS } from '@Constants/authorization.constant';
@@ -30,8 +31,10 @@ import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.ser
 import { QuotationItem } from '@Modules/quotation-item/entities/quotation-item.entity';
 import { CatalogueItem } from '@Modules/catalogue-item/entities/catalogue-item.entity';
 import { QuotationRule } from '@Modules/quotation-rule/entities/quotation-rule.entity';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
 import { QuotationSelectionService } from '@Modules/quotation/quotation-selection.service';
+import { TaskQuotationLinksService } from '@Modules/quotation/task-quotation-links.service';
 import { QuotationItemRepository } from '@Modules/quotation-item/quotation-item.repository';
 import { CatalogueItemRepository } from '@Modules/catalogue-item/catalogue-item.repository';
 import { QuotationRuleRepository } from '@Modules/quotation-rule/quotation-rule.repository';
@@ -112,7 +115,7 @@ const savePayload = (
 ): SaveQuotationDto => ({
   version: quotation.version,
   customerId: quotation.customerId,
-  projectId: quotation.projectId,
+  projectId: quotation.projectId!,
   date: quotation.date,
   brand: quotation.brand,
   brands: quotation.brands,
@@ -178,8 +181,8 @@ const createFixture = async (
   });
   const legacyQuotationId = randomUUID();
   await environment.sequelize.query(
-    `INSERT INTO quotations (id, number, customer_id, project_id, status, date, brand, brands, warning_scope_version, payment_terms_note, payment_schedule, discount_percent, vat_rate, internal_notes, version, acknowledged_warnings, created_by_id, updated_by_id, rule_configuration, created_at, updated_at)
-     VALUES ($id, '2611-900001', $customerId, $projectId, 'approved', '2026-11-01', '', '[]', 2, '', '[]', 0, 18, '', 3, '[]', $creatorId, $creatorId, $rules::jsonb, now(), now())`,
+    `INSERT INTO quotations (id, number, customer_id, project_id, issuer_name, status, date, brand, brands, warning_scope_version, payment_terms_note, payment_schedule, discount_percent, vat_rate, internal_notes, version, acknowledged_warnings, created_by_id, updated_by_id, rule_configuration, created_at, updated_at)
+     VALUES ($id, '2611-900001', $customerId, $projectId, 'Fixture creator', 'approved', '2026-11-01', '', '[]', 2, '', '[]', 0, 18, '', 3, '[]', $creatorId, $creatorId, $rules::jsonb, now(), now())`,
     {
       bind: {
         id: legacyQuotationId,
@@ -221,6 +224,11 @@ const createService = async (environment: TProjectTaskEnvironment) => {
       QuotationRuleService,
       QuotationRuleRepository,
       DatabaseTransactionService,
+      {
+        provide: TaskQuotationLinksService,
+        useValue: mock<TaskQuotationLinksService>(),
+      },
+      { provide: PublicationService, useValue: mock<PublicationService>() },
       { provide: ProviderNames.SEQUELIZE, useValue: environment.sequelize },
       { provide: UserService, useValue: {} },
       { provide: UserRoleService, useValue: {} },
@@ -265,6 +273,15 @@ describe('quotation project links on isolated PostgreSQL', () => {
     const migration = await readFile(MIGRATION_FILE, 'utf8');
     await environment.sequelize.query(migration);
     await environment.sequelize.query(migration);
+    await environment.sequelize.query(
+      await readFile(
+        resolve(
+          __dirname,
+          '../migrations/2026-11-23-quotation-lifecycle-events.sql',
+        ),
+        'utf8',
+      ),
+    );
     state.service = await createService(environment);
   });
 
@@ -597,17 +614,19 @@ describe('quotation project links on isolated PostgreSQL', () => {
       savePayload(quotation, { projectId: fixture.standalone.id }),
       quotationActor(environment.creator.id),
     );
-    const cleared = await service.save(
-      quotation.id,
-      savePayload(moved, { projectId: null }),
-      quotationActor(environment.creator.id),
+    await expect(
+      service.save(
+        quotation.id,
+        Object.assign(savePayload(moved), { projectId: null }),
+        quotationActor(environment.creator.id),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    expect((await service.getById(quotation.id)).primaryProject?.id).toBe(
+      fixture.standalone.id,
     );
-
-    expect(moved.primaryProject?.id).toBe(fixture.standalone.id);
-    expect(cleared.primaryProject).toBeNull();
     expect(
       await QuotationProject.count({ where: { quotationId: quotation.id } }),
-    ).toBe(0);
+    ).toBe(1);
   });
 
   it('marks deleted apartments unavailable, uncounted and without access', async () => {

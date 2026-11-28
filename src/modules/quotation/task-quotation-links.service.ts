@@ -82,7 +82,7 @@ export class TaskQuotationLinksService {
     if (task.taskType !== TASK_TYPES.QUOTATION) {
       return TASK_QUOTATION_UNAVAILABLE_REASONS.WRONG_TASK_TYPE;
     }
-    return task.customerId
+    return task.customerId && task.projectId
       ? null
       : TASK_QUOTATION_UNAVAILABLE_REASONS.MISSING_CONTEXT;
   }
@@ -204,7 +204,9 @@ export class TaskQuotationLinksService {
         : [],
     };
   }
-  assertAvailable(task: ITaskContext): void {
+  assertAvailable(
+    task: ITaskContext,
+  ): asserts task is ITaskContext & { customerId: string; projectId: string } {
     const reason = this.unavailableReason(task);
     if (reason) {
       throw new BadRequestException(

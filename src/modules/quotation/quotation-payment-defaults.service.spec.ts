@@ -23,6 +23,8 @@ import type { DatabaseTransactionService } from '@Providers/database/database-tr
 import type { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 import type { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
 
+const projectId = randomUUID();
+
 const customConfiguration = (): IPaymentConfiguration => ({
   paymentTerms: null,
   paymentSchedule: [
@@ -78,6 +80,10 @@ const setup = (configuration: IPaymentConfiguration) => {
   jest.spyOn(service, 'document').mockResolvedValue(current);
   transactions.run.mockImplementation((work) => work(transaction));
   customers.getById.mockResolvedValue(customer);
+  projects.quotationContext.mockResolvedValue({
+    id: projectId,
+    customerId: customer.id,
+  });
   repository.nextNumber.mockResolvedValue('2611-000001');
   rules.configuration.mockResolvedValue({
     rules: current.ruleConfiguration,
@@ -98,7 +104,7 @@ describe('quotation customer payment snapshots', () => {
         paymentTerms,
         paymentSchedule: [],
       });
-      await service.create({ customerId: customer.id }, actor);
+      await service.create({ customerId: customer.id, projectId }, actor);
       expect(jest.spyOn(repository, 'create')).toHaveBeenCalledWith(
         expect.objectContaining({
           paymentTerms,
@@ -113,8 +119,8 @@ describe('quotation customer payment snapshots', () => {
   it('keeps custom stages independent across customer and sibling quotation snapshots', async () => {
     const configuration = customConfiguration();
     const { service, repository, customer, actor } = setup(configuration);
-    await service.create({ customerId: customer.id }, actor);
-    await service.create({ customerId: customer.id }, actor);
+    await service.create({ customerId: customer.id, projectId }, actor);
+    await service.create({ customerId: customer.id, projectId }, actor);
     const first = repository.create.mock.calls[0][0];
     const second = repository.create.mock.calls[1][0];
     expect(first.paymentSchedule).toEqual(configuration.paymentSchedule);
@@ -134,7 +140,7 @@ describe('quotation customer payment snapshots', () => {
         paymentTerms,
         paymentSchedule: [],
       });
-      await service.create({ customerId: customer.id }, actor);
+      await service.create({ customerId: customer.id, projectId }, actor);
       expect(jest.spyOn(repository, 'create')).toHaveBeenCalledWith(
         expect.objectContaining({
           paymentTerms: null,
@@ -154,7 +160,7 @@ describe('quotation customer payment snapshots', () => {
       });
     const input: SaveQuotationDto = {
       customerId: customer.id,
-      projectId: null,
+      projectId,
       version: current.version,
       date: current.date,
       brand: '',

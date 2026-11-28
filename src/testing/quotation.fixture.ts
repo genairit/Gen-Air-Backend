@@ -62,7 +62,7 @@ export const quotationDocumentFixture = (
     id: randomUUID(),
     number: '2610-000001',
     customerId: randomUUID(),
-    projectId: null,
+    projectId: randomUUID(),
     salesAgentId: null,
     status: 'draft',
     cancelledFromStatus: null,

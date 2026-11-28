@@ -97,15 +97,16 @@ it('allows readers to reopen but requires create permission for a new draft', as
       .taskLinks,
   ).toEqual([]);
 });
-it('supports legacy customer-only tasks while blocking missing direct customer and wrong task type', async () => {
+it('requires a project and customer on quotation tasks before creating a draft', async () => {
   const current = service();
   await database().query(
     'UPDATE tasks SET project_id=NULL,customer_id=$customerId WHERE id=$taskId',
     { bind: { taskId, customerId } },
   );
   try {
-    const result = await current.createForTask(taskId, actor);
-    expect(result.created).toBe(true);
+    await expect(current.createForTask(taskId, actor)).rejects.toMatchObject({
+      status: 400,
+    });
     expect(
       (await database().query('SELECT * FROM quotation_projects'))[0],
     ).toHaveLength(0);
@@ -185,7 +186,7 @@ it('preserves readable existing documents without customer or project read, whil
     created: false,
   });
 });
-it('creates customer-only legacy quotation without project read permission', async () => {
+it('keeps customer-only tasks unavailable until they are assigned a project', async () => {
   const creator = {
     ...actor,
     permissions: actor.permissions.filter(
@@ -197,8 +198,10 @@ it('creates customer-only legacy quotation without project read permission', asy
     { bind: { customerId, taskId } },
   );
   try {
-    expect((await links().read(taskId, creator)).canCreate).toBe(true);
-    expect((await service().createForTask(taskId, creator)).created).toBe(true);
+    expect((await links().read(taskId, creator)).canCreate).toBe(false);
+    await expect(
+      service().createForTask(taskId, creator),
+    ).rejects.toMatchObject({ status: 400 });
   } finally {
     await database().query('TRUNCATE task_quotation_links,quotations');
     await database().query(
@@ -443,7 +446,59 @@ it('preserves ordinary project existence, deletion and exact-customer validation
     );
   }
   expect((await database().query('SELECT id FROM quotations'))[0]).toEqual([]);
-  const unlinked = await current.create({ customerId }, actor);
-  expect(unlinked.projectId).toBeNull();
+  await expect(
+    current.create(
+      Object.assign({ customerId, projectId }, { projectId: null }),
+      actor,
+    ),
+  ).rejects.toMatchObject({ status: 400 });
+  expect((await database().query('SELECT id FROM quotations'))[0]).toEqual([]);
   expect(await links().list(taskId)).toEqual([]);
+});
+
+it('retains the project and saved content when a write omits or clears its project', async () => {
+  const current = service();
+  const quote = await current.create({ customerId, projectId }, actor);
+  const valid = taskQuotationSaveInput(quote, {
+    internalNotes: 'Rejected edit',
+  });
+  for (const missingId of [null, undefined]) {
+    await expect(
+      current.save(
+        quote.id,
+        Object.assign({}, valid, { projectId: missingId }),
+        actor,
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+  }
+  const unchanged = await current.getById(quote.id);
+  expect(unchanged).toMatchObject({
+    projectId,
+    internalNotes: '',
+    version: quote.version,
+  });
+});
+
+it('lets reviewers read a legacy unlinked quote and requires assignment before lifecycle writes', async () => {
+  const current = service();
+  const quote = await current.create({ customerId, projectId }, actor);
+  await database().query(
+    'DELETE FROM quotation_projects WHERE quotation_id=$id',
+    { bind: { id: quote.id } },
+  );
+  expect((await current.getById(quote.id)).projectId).toBeNull();
+  await expect(
+    current.updateSalesAgent(
+      quote.id,
+      { version: quote.version, salesAgentId: null },
+      actor,
+    ),
+  ).rejects.toMatchObject({ status: 400 });
+  const assigned = await current.save(
+    quote.id,
+    taskQuotationSaveInput(quote),
+    actor,
+  );
+  expect(assigned.projectId).toBe(projectId);
+  expect(assigned.version).toBe(quote.version + 1);
 });
