@@ -76,6 +76,7 @@ export class ProjectBoqRepository {
         'בפרויקט יש כמה כתבי רכש; יש לבחור מסמך מסוים',
       );
     }
+
     return documents[0] ?? null;
   }
   lines(boqId: string, transaction?: Transaction): Promise<ProjectBoqLine[]> {
