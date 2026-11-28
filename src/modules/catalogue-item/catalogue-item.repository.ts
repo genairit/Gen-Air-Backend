@@ -20,6 +20,7 @@ import { Op, Transaction } from 'sequelize';
 import { toContainsPattern } from '@Utilities/query.utility';
 import { CatalogueItem } from './entities/catalogue-item.entity';
 import type { ICursorPage } from '@Interfaces/cursor-page.interface';
+import type { ICatalogueItem } from './interfaces/catalogue-item.interface';
 import type { GetCatalogueMaintenanceDto } from './dto/get-catalogue-maintenance.dto';
 import type { ICatalogueRankedSearchRequest } from './interfaces/catalogue-ranked-search-request.interface';
 
@@ -117,13 +118,34 @@ export class CatalogueItemRepository {
   }
   async listForMaintenance(
     query: GetCatalogueMaintenanceDto,
+    activeOnly = false,
   ): Promise<ICursorPage<CatalogueItem>> {
+    const search = query.search?.trim() ?? '';
+    const pattern = toContainsPattern(search);
+    const capacity = /^\d+$|^\d{1,3}(,\d{3})+$/.test(search)
+      ? Number(search.replaceAll(',', ''))
+      : 0;
     const rows = await CatalogueItem.findAll({
       where: {
         [Op.and]: [
           ...buildCursorWhere(query.batchCursor),
-          ...(query.search
-            ? [{ sku: { [Op.iLike]: toContainsPattern(query.search) } }]
+          ...(activeOnly ? [{ status: CATALOGUE_STATUS.ACTIVE }] : []),
+          ...(query.excludeArchived === 'true'
+            ? [{ status: { [Op.ne]: CATALOGUE_STATUS.ARCHIVED } }]
+            : []),
+          ...(query.pricedOnly === 'true' ? [{ price: { [Op.gt]: 0 } }] : []),
+          ...(search
+            ? [
+                {
+                  [Op.or]: [
+                    { sku: { [Op.iLike]: pattern } },
+                    { description: { [Op.iLike]: pattern } },
+                    ...(capacity > 0 && capacity <= 100000000
+                      ? [{ capacityBtu: capacity }]
+                      : []),
+                  ],
+                },
+              ]
             : []),
         ],
       },
@@ -131,6 +153,12 @@ export class CatalogueItemRepository {
       limit: (query.batchSize ?? 20) + 1,
     });
     return toCursorPage(rows, query.batchSize ?? 20);
+  }
+  create(
+    item: Omit<ICatalogueItem, 'createdAt' | 'updatedAt' | 'deletedAt'>,
+    transaction: Transaction,
+  ): Promise<CatalogueItem> {
+    return CatalogueItem.create(item, { transaction });
   }
   async update(
     id: string,
@@ -141,12 +169,16 @@ export class CatalogueItemRepository {
   }
   async hasActiveSku(
     sku: string,
-    id: string,
+    id: string | null,
     transaction: Transaction,
   ): Promise<boolean> {
     return (
       (await CatalogueItem.count({
-        where: { sku, status: CATALOGUE_STATUS.ACTIVE, id: { [Op.ne]: id } },
+        where: {
+          sku,
+          status: CATALOGUE_STATUS.ACTIVE,
+          ...(id ? { id: { [Op.ne]: id } } : {}),
+        },
         transaction,
       })) > 0
     );
