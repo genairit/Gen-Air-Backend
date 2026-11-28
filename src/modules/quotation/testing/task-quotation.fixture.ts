@@ -116,7 +116,7 @@ export class TaskQuotationFixture {
           id: string;
           customerId: string | null;
         }>(
-          'SELECT id,customer_id AS "customerId" FROM projects WHERE id=$id AND deleted_at IS NULL',
+          'SELECT id,customer_id AS "customerId" FROM projects WHERE id=$id AND deleted_at IS NULL FOR SHARE',
           { bind: { id }, transaction, type: QueryTypes.SELECT },
         );
         return row ?? null;
@@ -267,6 +267,17 @@ export class TaskQuotationFixture {
         resolve(
           process.cwd(),
           'migrations/2026-11-23-task-quotation-links.sql',
+        ),
+        'utf8',
+      ),
+    );
+  }
+  async installProjectGuard(): Promise<void> {
+    await this.database().query(
+      await readFile(
+        resolve(
+          process.cwd(),
+          'migrations/2026-11-28-protect-live-quotation-projects.sql',
         ),
         'utf8',
       ),

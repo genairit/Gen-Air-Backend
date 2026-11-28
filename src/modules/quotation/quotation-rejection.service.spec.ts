@@ -39,6 +39,11 @@ interface IRejectionTestContext {
 
 const setup = (): IRejectionTestContext => {
   const quotation = quotationDocumentFixture([]);
+  const projects = mock<ProjectService>();
+  projects.quotationContext.mockResolvedValue({
+    id: quotation.projectId!,
+    customerId: quotation.customerId,
+  });
   const repository = mock<QuotationRepository>();
   const transactions = mock<DatabaseTransactionService>();
   const rules = mock<QuotationRuleService>();
@@ -56,7 +61,7 @@ const setup = (): IRejectionTestContext => {
     catalogue,
     mock<QuotationSelectionService>(),
     mock<CustomerService>(),
-    mock<ProjectService>(),
+    projects,
     mock<QuotationProjectService>(),
     transactions,
     mock<UserService>(),

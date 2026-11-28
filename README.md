@@ -11,7 +11,7 @@ worker, and returns the resulting PDF. The example quotation supplies the
 company header and default contract sections; saved quotation payment terms,
 lines, totals, and status take precedence. A linked quotation is uploaded to
 that project's `הצעות מחיר` Drive folder before the PDF response is returned.
-An unlinked quotation is downloadable without a Drive upload. A later project
+Historical unlinked quotations are downloadable before reconciliation. Every new save requires a project linked to the quotation customer. Follow the [quotation project rollout](migrations/2026-11-28-reconcile-project-quotations.md) before retiring the global list. A later project
 link does not trigger a retroactive upload; export again to save a linked PDF.
 
 ## Development workflow

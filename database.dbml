@@ -514,7 +514,7 @@ Table quotations {
     approved_by_id
     (updated_at,id) [note: 'Keyset pagination of the activity list, newest first']
   }
-  Note: 'A price offer (הצעת מחיר) for one customer, optionally tied to projects through quotation_projects. The aggregate root of the quotation builder: sections hold the lines, totals are computed from them, and approved is presented as הזמנה without changing its stored approval semantics. Cancellation is retained and restorable to the prior status. Every content save returns it to draft and clears the approval. Soft deleted.'
+  Note: 'A price offer (הצעת מחיר) for one customer, saved under a required primary project through quotation_projects. The aggregate root of the quotation builder: sections hold the lines, totals are computed from them, and approved is presented as הזמנה without changing its stored approval semantics. Cancellation is retained and restorable to the prior status. Every content save returns it to draft and clears the approval. Soft deleted.'
 }
 
 Table quotation_projects {
@@ -528,7 +528,7 @@ Table quotation_projects {
     quotation_id [unique, name: 'uq_quotation_projects_primary', note: 'Partial: WHERE is_primary, so each quotation has at most one primary project']
     project_id [name: 'idx_quotation_projects_project_id']
   }
-  Note: 'Associates one quotation with its primary project and, when that primary is a building, with selected apartments of it. Sharing never copies the quotation: number, content, approval and totals stay on quotations. Apartment links are edited only while the quotation is approved and never change its version; links to apartments that were deleted or left the building grant nothing. Removing a link deletes only that row.'
+  Note: 'Associates one quotation with its primary project and, when that primary is a building, with selected apartments of it. A database trigger guards project deletion and customer changes while live primary quotations depend on the project. Sharing never copies the quotation: number, content, approval and totals stay on quotations. Apartment links are edited only while the quotation is approved and never change its version; links to apartments that were deleted or left the building grant nothing. Removing a link deletes only that row.'
 }
 
 Table quotation_sections {

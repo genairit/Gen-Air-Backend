@@ -69,6 +69,10 @@ const createService = (
   const selection = mock<QuotationSelectionService>();
   const customers = mock<CustomerService>();
   const projects = mock<ProjectService>();
+  projects.quotationContext.mockResolvedValue({
+    id: quotation.projectId!,
+    customerId: quotation.customerId,
+  });
   const links = mock<QuotationProjectService>();
   const transactions = mock<DatabaseTransactionService>();
   const users = mock<UserService>();
@@ -240,7 +244,7 @@ describe('approved quotation sales-agent updates', () => {
 
     await expect(
       service.create(
-        { customerId: 'customer', salesAgentId },
+        { customerId: 'customer', projectId: 'project', salesAgentId },
         actorWithoutEmployeeRead,
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
@@ -250,7 +254,7 @@ describe('approved quotation sales-agent updates', () => {
         mock<SaveQuotationDto>({
           version: quotation.version,
           customerId: 'customer',
-          projectId: null,
+          projectId: 'project',
           salesAgentId,
         }),
         actorWithoutEmployeeRead,
