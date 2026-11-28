@@ -99,6 +99,7 @@ export class ProjectRepository {
   ): Promise<Pick<IProject, 'id' | 'customerId'> | null> {
     const project = await Project.findByPk(id, {
       attributes: ['id', 'customerId'],
+      lock: transaction.LOCK.SHARE,
       transaction,
     });
     return project ? { id: project.id, customerId: project.customerId } : null;

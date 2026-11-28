@@ -98,6 +98,10 @@ const createService = (
   const selection = mock<QuotationSelectionService>();
   const customers = mock<CustomerService>();
   const projects = mock<ProjectService>();
+  projects.quotationContext.mockResolvedValue({
+    id: quotation.projectId!,
+    customerId: quotation.customerId,
+  });
   const links = mock<QuotationProjectService>();
   const transactions = mock<DatabaseTransactionService>();
 
@@ -194,7 +198,7 @@ const quotationForOrder = (
 const saveInput = (quotation: IQuotationDocument): SaveQuotationDto => ({
   version: quotation.version,
   customerId: quotation.customerId,
-  projectId: quotation.projectId,
+  projectId: quotation.projectId!,
   date: quotation.date,
   brand: quotation.brand,
   paymentTerms: quotation.paymentTerms,

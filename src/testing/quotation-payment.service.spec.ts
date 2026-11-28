@@ -26,11 +26,14 @@ import type { IQuotation } from '@Modules/quotation/interfaces/quotation.interfa
 import { QuotationRuleService } from '@Modules/quotation-rule/quotation-rule.service';
 import { CatalogueItemService } from '@Modules/catalogue-item/catalogue-item.service';
 import { QuotationItemService } from '@Modules/quotation-item/quotation-item.service';
+import { PublicationService } from '@Modules/quotation-publication/publication.service';
 import { QuotationSelectionService } from '@Modules/quotation/quotation-selection.service';
 import { TaskQuotationLinksService } from '@Modules/quotation/task-quotation-links.service';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
 import { QuotationSectionService } from '@Modules/quotation-section/quotation-section.service';
 import { QuotationProjectService } from '@Modules/quotation-project/quotation-project.service';
+
+const projectId = randomUUID();
 
 const makeCustomer = (): ICustomer => ({
   id: randomUUID(),
@@ -94,7 +97,16 @@ const createContext = async () => {
     fingerprint: document.ruleConfigFingerprint,
   });
   customers.getById.mockResolvedValue(customer);
-  links.primaryProject.mockResolvedValue(null);
+  projects.quotationContext.mockResolvedValue({
+    id: projectId,
+    customerId: customer.id,
+  });
+  links.primaryProject.mockResolvedValue({
+    id: projectId,
+    name: 'Fixture project',
+    code: 'P-1',
+    kind: 'project',
+  });
   links.primaryProjects.mockResolvedValue(new Map());
   links.apartmentLinks.mockResolvedValue(new Map());
   links.countApartmentLinks.mockResolvedValue(0);
@@ -134,6 +146,7 @@ const createContext = async () => {
   const module = await Test.createTestingModule({
     providers: [
       QuotationService,
+      { provide: PublicationService, useValue: mock<PublicationService>() },
       {
         provide: TaskQuotationLinksService,
         useValue: mock<TaskQuotationLinksService>(),
@@ -158,6 +171,7 @@ const createContext = async () => {
     module,
     customer,
     customers,
+    projects,
     repository,
     transaction,
     transactions,
@@ -173,7 +187,7 @@ const createContext = async () => {
 const saveInput = (quotation: IQuotation): SaveQuotationDto => ({
   version: quotation.version,
   customerId: quotation.customerId,
-  projectId: null,
+  projectId,
   salesAgentId: quotation.salesAgentId,
   date: quotation.date,
   brand: quotation.brand,
@@ -208,7 +222,10 @@ afterEach(async () => {
 describe('QuotationService card100 payment ownership', () => {
   test('approval rejects conflicting or incomplete staged terms', async () => {
     const { service, customer, repository, actor, transaction } = context();
-    const quotation = await service.create({ customerId: customer.id }, actor);
+    const quotation = await service.create(
+      { customerId: customer.id, projectId },
+      actor,
+    );
     const stages = [
       { percent: '30', text: 'בחתימה' },
       { percent: '70', text: 'במסירה' },
@@ -276,7 +293,7 @@ describe('QuotationService card100 payment ownership', () => {
       });
 
       const quotation = await service.create(
-        { customerId: customer.id, salesAgentId: agentId },
+        { customerId: customer.id, projectId, salesAgentId: agentId },
         actor,
       );
 
@@ -293,7 +310,7 @@ describe('QuotationService card100 payment ownership', () => {
 
       await expect(
         service.create(
-          { customerId: customer.id, salesAgentId: randomUUID() },
+          { customerId: customer.id, projectId, salesAgentId: randomUUID() },
           actor,
         ),
       ).rejects.toThrow('יש לבחור עובד הנדסה או מנהל מערכת פעיל');
@@ -309,7 +326,7 @@ describe('QuotationService card100 payment ownership', () => {
         const originalCustomer = { ...customer };
 
         const quotation = await service.create(
-          { customerId: customer.id },
+          { customerId: customer.id, projectId },
           actor,
         );
 
@@ -342,7 +359,7 @@ describe('QuotationService card100 payment ownership', () => {
       customers.getById.mockResolvedValue(withoutPaymentTerms);
 
       const quotation = await service.create(
-        { customerId: customer.id },
+        { customerId: customer.id, projectId },
         actor,
       );
 
@@ -360,7 +377,10 @@ describe('QuotationService card100 payment ownership', () => {
       const message = `Customer ${customer.id} was not found`;
       customers.getById.mockRejectedValue(new NotFoundException(message));
 
-      const result = service.create({ customerId: customer.id }, actor);
+      const result = service.create(
+        { customerId: customer.id, projectId },
+        actor,
+      );
 
       await expect(result).rejects.toThrow(NotFoundException);
       await expect(result).rejects.toMatchObject({ message, status: 404 });
@@ -374,7 +394,7 @@ describe('QuotationService card100 payment ownership', () => {
       repository.create.mockRejectedValue(new Error('Payment snapshot failed'));
 
       await expect(
-        service.create({ customerId: customer.id }, actor),
+        service.create({ customerId: customer.id, projectId }, actor),
       ).rejects.toThrow('Payment snapshot failed');
 
       expect(customer).toEqual(originalCustomer);
@@ -388,7 +408,7 @@ describe('QuotationService card100 payment ownership', () => {
       const { service, customer, customers, repository, transaction, actor } =
         context();
       const quotation = await service.create(
-        { customerId: customer.id },
+        { customerId: customer.id, projectId },
         actor,
       );
       const originalCustomer = { ...customer };
@@ -426,7 +446,7 @@ describe('QuotationService card100 payment ownership', () => {
     test('later customer defaults neither rewrite a saved snapshot nor override explicit save input', async () => {
       const { service, customer, customers, actor } = context();
       const quotation = await service.create(
-        { customerId: customer.id },
+        { customerId: customer.id, projectId },
         actor,
       );
       customer.paymentTerms = PAYMENT_TERMS.MILESTONES_NET_60;
@@ -458,7 +478,7 @@ describe('QuotationService card100 payment ownership', () => {
       const { service, customer, actor } = context();
       customer.paymentTerms = null;
       const quotation = await service.create(
-        { customerId: customer.id },
+        { customerId: customer.id, projectId },
         actor,
       );
       customer.paymentTerms = PAYMENT_TERMS.PREPAID;
@@ -477,7 +497,7 @@ describe('QuotationService card100 payment ownership', () => {
     test('allows explicit clearing of quotation payment terms and note', async () => {
       const { service, customer, customers, actor } = context();
       const quotation = await service.create(
-        { customerId: customer.id },
+        { customerId: customer.id, projectId },
         actor,
       );
       const overridden = await service.save(
@@ -512,7 +532,7 @@ describe('QuotationService card100 payment ownership', () => {
         const { service, customer, customers, repository, transaction, actor } =
           context();
         const quotation = await service.create(
-          { customerId: customer.id },
+          { customerId: customer.id, projectId },
           actor,
         );
         const nextCustomer = makeCustomer();
@@ -520,8 +540,14 @@ describe('QuotationService card100 payment ownership', () => {
         const originalCustomer = { ...customer };
         const originalNextCustomer = { ...nextCustomer };
         customers.getById.mockResolvedValue(nextCustomer);
+        const nextProjectId = randomUUID();
+        context().projects.quotationContext.mockResolvedValue({
+          id: nextProjectId,
+          customerId: nextCustomer.id,
+        });
         const input: SaveQuotationDto = {
           ...saveInput(quotation),
+          projectId: nextProjectId,
           customerId: nextCustomer.id,
           paymentTerms,
           paymentTermsNote: 'Explicit note retained across customer change',
@@ -563,7 +589,7 @@ describe('QuotationService card100 payment ownership', () => {
         actor,
       } = context();
       const quotation = await service.create(
-        { customerId: customer.id },
+        { customerId: customer.id, projectId },
         actor,
       );
       const missingId = randomUUID();
@@ -589,7 +615,7 @@ describe('QuotationService card100 payment ownership', () => {
     test('propagates a save failure without writing the override to the customer', async () => {
       const { service, customer, customers, repository, actor } = context();
       const quotation = await service.create(
-        { customerId: customer.id },
+        { customerId: customer.id, projectId },
         actor,
       );
       const originalCustomer = { ...customer };
@@ -630,7 +656,7 @@ describe('QuotationService card100 payment ownership', () => {
       updatedAt: new Date(),
     });
     const created = await service.create(
-      { customerId: customer.id, salesAgentId: agentId },
+      { customerId: customer.id, projectId, salesAgentId: agentId },
       actor,
     );
     users.findById.mockResolvedValue(null);

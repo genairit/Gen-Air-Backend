@@ -14,6 +14,7 @@ import type {
 import type {
   IProjectBoqLine,
   IProjectBoqView,
+  IProjectBoqSummary,
   IProjectBoqPreview,
 } from './interfaces/project-boq.interface';
 
@@ -79,6 +80,22 @@ export class ProjectBoqService {
       number: quotation.number,
       version: quotation.version,
     }));
+  }
+
+  async list(projectId: string): Promise<IProjectBoqSummary[]> {
+    await this.projects.getById(projectId);
+    const documents = await this.repository.list(projectId);
+    return Promise.all(
+      documents.map(async (document) => {
+        const lines = await this.repository.lines(document.id);
+        const view = this.view(projectId, document, lines, null);
+        return {
+          id: document.id,
+          name: document.name,
+          estimatedTotal: view.estimatedTotal,
+        };
+      }),
+    );
   }
 
   async get(projectId: string): Promise<IProjectBoqView> {

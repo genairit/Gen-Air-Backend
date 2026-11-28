@@ -57,14 +57,10 @@ export class QuotationProjectService {
   }
   async replacePrimary(
     quotationId: string,
-    projectId: string | null,
+    projectId: string,
     transaction: Transaction,
   ): Promise<void> {
     await this.repository.removePrimary(quotationId, transaction);
-    if (!projectId) {
-      return;
-    }
-
     await this.repository.createPrimary(quotationId, projectId, transaction);
   }
   replaceApartmentLinks(

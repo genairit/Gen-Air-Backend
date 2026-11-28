@@ -15,6 +15,12 @@ export class ProjectBoq extends Model {
   @Default(DataType.UUIDV4)
   @Column(DataType.UUID)
   declare id: string;
+  @Column({
+    type: DataType.STRING(200),
+    allowNull: false,
+    defaultValue: 'כתב רכש כללי',
+  })
+  declare name: string;
   @Column({ type: DataType.UUID, allowNull: false })
   declare projectId: string;
   @Column({ type: DataType.UUID, allowNull: true })

@@ -88,9 +88,8 @@ export class QuotationSectionDto {
 export class CreateQuotationDto {
   @IsUUID()
   declare customerId: string;
-  @ValidateIf((_o, v) => v != null)
   @IsUUID()
-  declare projectId?: string | null;
+  declare projectId: string;
   @ValidateIf((_o, v) => v != null)
   @IsUUID()
   declare salesAgentId?: string | null;
@@ -101,9 +100,8 @@ export class SaveQuotationDto {
   declare version: number;
   @IsUUID()
   declare customerId: string;
-  @ValidateIf((_o, v) => v !== null)
   @IsUUID()
-  declare projectId: string | null;
+  declare projectId: string;
   @ValidateIf((_o, v) => v != null)
   @IsUUID()
   declare salesAgentId?: string | null;

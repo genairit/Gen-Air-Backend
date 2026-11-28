@@ -38,11 +38,13 @@ import { ProjectTypeRepository } from '@Modules/project-type/project-type.reposi
 import { ProjectMember } from '@Modules/project-member/entities/project-member.entity';
 import { ProjectStageRepository } from '@Modules/project-stage/project-stage.repository';
 import { PROJECT_DETAIL_FIELD_SETS } from '@Constants/project-detail-field-set.constant';
+import { CustomerOwnContactService } from '@Modules/customer/customer-own-contact.service';
 import { ProjectMemberRepository } from '@Modules/project-member/project-member.repository';
 import { CustomerContactService } from '@Modules/customer-contact/customer-contact.service';
 import { TaskStatusTransition } from '@Modules/task/entities/task-status-transition.entity';
 import { CustomerContact } from '@Modules/customer-contact/entities/customer-contact.entity';
 import { DatabaseTransactionService } from '@Providers/database/database-transaction.service';
+import { ProjectDriveLinkService } from '@Modules/project-drive-link/project-drive-link.service';
 import { TaskStatusTransitionRepository } from '@Modules/task/task-status-transition.repository';
 import { CustomerContactRepository } from '@Modules/customer-contact/customer-contact.repository';
 import { ProjectApartmentImportService } from '@Modules/project/project-apartment-import.service';
@@ -220,6 +222,7 @@ export const createProjectTaskEnvironment = async () => {
     const events = { emitAsync: jest.fn().mockResolvedValue([]) };
     const module = await Test.createTestingModule({
       providers: [
+        { provide: ProjectDriveLinkService, useValue: {} },
         ProjectService,
         ProjectRepository,
         ProjectApartmentService,
@@ -234,6 +237,7 @@ export const createProjectTaskEnvironment = async () => {
         ProjectStageTransitionService,
         ProjectStageTransitionRepository,
         CustomerService,
+        { provide: CustomerOwnContactService, useValue: {} },
         CustomerRepository,
         CustomerContactService,
         CustomerContactRepository,

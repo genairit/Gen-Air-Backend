@@ -44,6 +44,14 @@ export class ProjectBoqController {
     return this.service.sources(projectId);
   }
 
+  @Get(':projectId/documents')
+  @RequirePermissions(PERMISSIONS.PROJECT_BOQ_READ)
+  list(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+  ): ReturnType<ProjectBoqService['list']> {
+    return this.service.list(projectId);
+  }
+
   @Get(':projectId')
   @RequirePermissions(PERMISSIONS.PROJECT_BOQ_READ)
   get(
