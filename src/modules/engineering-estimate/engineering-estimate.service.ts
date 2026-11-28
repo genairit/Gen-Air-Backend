@@ -18,6 +18,7 @@ import {
 import type {
   CreateEngineeringEstimateDto,
   UpdateEngineeringEstimateDto,
+  PreviewEngineeringEstimateDto,
 } from './dto/engineering-estimate.dto';
 
 import {
@@ -37,7 +38,9 @@ import type {
   IEstimatePlan,
   IEstimateView,
   IEstimateRecord,
+  IEstimatePreview,
   IEstimateSummary,
+  IEstimateContents,
   IEstimatePlanSource,
 } from './interfaces/engineering-estimate.interface';
 
@@ -119,15 +122,33 @@ export class EngineeringEstimateService {
       version: 1,
       createdById: actor.id,
       updatedAt: new Date(),
-      scope: ESTIMATE_SCOPE.HVAC,
+      scope: input.scope ?? ESTIMATE_SCOPE.HVAC,
       setupStep: ESTIMATE_SETUP_STEP.PROJECT,
-      areas: [],
+      areas: input.areas ?? [],
       questions: [],
     };
-    await this.transactions.run((transaction): Promise<void> =>
-      this.repository.insert(record, transaction),
-    );
+    this.validateContents(record);
+    await this.transactions.run(async (transaction): Promise<void> => {
+      await this.pricing.calculate(record.areas, record.scope, transaction);
+      await this.repository.insert(record, transaction);
+    });
     return this.view(record, actor);
+  }
+
+  async preview(
+    input: PreviewEngineeringEstimateDto,
+  ): Promise<IEstimatePreview> {
+    this.validateContents({ areas: input.areas, questions: [] });
+    return this.transactions.run(
+      async (transaction): Promise<IEstimatePreview> => {
+        const lines = await this.pricing.calculate(
+          input.areas,
+          input.scope,
+          transaction,
+        );
+        return { lines, subtotal: estimateSubtotal(lines) };
+      },
+    );
   }
 
   async update(
@@ -156,23 +177,7 @@ export class EngineeringEstimateService {
       await this.requireProject(projectId, request.actor, transaction);
       const areas = input.areas ?? record.areas;
       const questions = input.questions ?? record.questions;
-      const areaIds = areas.map((area): string => area.id);
-      const lineIds = areas.flatMap((area): string[] =>
-        area.lines.map((line): string => line.id),
-      );
-      const questionIds = questions.map((question): string => question.id);
-      const duplicates = [areaIds, lineIds, questionIds].some(
-        (ids): boolean => new Set(ids).size !== ids.length,
-      );
-      const invalidAnswers = questions.some(
-        ({ answer, options }): boolean =>
-          answer != null && !options.includes(answer),
-      );
-      if (duplicates || invalidAnswers) {
-        throw new BadRequestException(
-          'נמצאו שורות כפולות או תשובה שאינה ברשימה',
-        );
-      }
+      this.validateContents({ areas, questions });
 
       const scope = input.scope ?? record.scope;
       await this.pricing.calculate(areas, scope, transaction);
@@ -334,6 +339,27 @@ export class EngineeringEstimateService {
     }
 
     return record;
+  }
+
+  private validateContents({
+    areas,
+    questions,
+  }: Pick<IEstimateContents, 'areas' | 'questions'>): void {
+    const areaIds = areas.map((area): string => area.id);
+    const lineIds = areas.flatMap((area): string[] =>
+      area.lines.map((line): string => line.id),
+    );
+    const questionIds = questions.map((question): string => question.id);
+    const duplicates = [areaIds, lineIds, questionIds].some(
+      (ids): boolean => new Set(ids).size !== ids.length,
+    );
+    const invalidAnswers = questions.some(
+      ({ answer, options }): boolean =>
+        answer != null && !options.includes(answer),
+    );
+    if (duplicates || invalidAnswers) {
+      throw new BadRequestException('נמצאו שורות כפולות או תשובה שאינה ברשימה');
+    }
   }
 
   private async requireProject(

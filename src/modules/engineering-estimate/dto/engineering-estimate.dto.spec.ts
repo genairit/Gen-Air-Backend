@@ -1,3 +1,8 @@
+import {
+  CreateEngineeringEstimateDto,
+  PreviewEngineeringEstimateDto,
+} from './engineering-estimate.dto';
+
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { ValidationPipe } from '@nestjs/common';
@@ -76,5 +81,61 @@ describe('Estimate nested DTO validation', (): void => {
         ),
       ).rejects.toMatchObject({ status: 400 });
     }
+  });
+});
+
+describe('Estimate preview and initial contents validation', (): void => {
+  const area = {
+    id: randomUUID(),
+    name: 'אזור',
+    repeatCount: 3,
+    lines: [{ id: randomUUID(), catalogueItemId: randomUUID(), quantity: '2' }],
+  };
+
+  it('accepts a complete draft and legacy name-only create', async (): Promise<void> => {
+    await expect(
+      validation.transform(
+        { scope: 'hvac', areas: [area] },
+        { type: 'body', metatype: PreviewEngineeringEstimateDto },
+      ),
+    ).resolves.toMatchObject({ areas: [area] });
+    await expect(
+      validation.transform(
+        { name: 'טיוטה', scope: 'hvac', areas: [area] },
+        { type: 'body', metatype: CreateEngineeringEstimateDto },
+      ),
+    ).resolves.toMatchObject({ areas: [area] });
+    await expect(
+      validation.transform(
+        { name: 'טיוטה' },
+        { type: 'body', metatype: CreateEngineeringEstimateDto },
+      ),
+    ).resolves.toMatchObject({ name: 'טיוטה' });
+  });
+
+  it.each([
+    {},
+    { scope: 'hvac', areas: [[]] },
+    { scope: 'hvac', areas: [{ ...area, repeatCount: 0 }] },
+    { scope: 'unknown', areas: [] },
+  ])('rejects malformed preview contents %j', async (body): Promise<void> => {
+    await expect(
+      validation.transform(body, {
+        type: 'body',
+        metatype: PreviewEngineeringEstimateDto,
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('validates nested contents on create', async (): Promise<void> => {
+    await expect(
+      validation.transform(
+        {
+          name: 'טיוטה',
+          areas: [{ ...area, lines: [{ ...area.lines[0], quantity: '0' }] }],
+        },
+        { type: 'body', metatype: CreateEngineeringEstimateDto },
+      ),
+    ).rejects.toMatchObject({ status: 400 });
   });
 });

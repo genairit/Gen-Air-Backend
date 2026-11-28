@@ -124,3 +124,8 @@ export interface IEstimateView extends Omit<IEstimateRecord, 'createdById'> {
   approvedVersion: number | null;
   quotationCustomerId: string | null;
 }
+
+export interface IEstimatePreview {
+  subtotal: string;
+  lines: IEstimateLine[];
+}
