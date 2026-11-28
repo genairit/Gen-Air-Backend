@@ -21,6 +21,7 @@ import {
   EstimateLinkPlanDto,
   EstimateQuotationDto,
   EstimateUploadPlanDto,
+  ListEngineeringEstimatesDto,
   CreateEngineeringEstimateDto,
   UpdateEngineeringEstimateDto,
 } from './dto/engineering-estimate.dto';
@@ -32,7 +33,6 @@ import {
 
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PERMISSIONS } from '@Constants/authorization.constant';
-import { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
 import { decodeUploadedFileName } from '@Utilities/upload.utility';
 import type { ICursorPage } from '@Interfaces/cursor-page.interface';
 import { EstimateApprovalService } from './estimate-approval.service';
@@ -64,7 +64,7 @@ export class EngineeringEstimateController {
   @RequirePermissions(PERMISSIONS.ENGINEERING_ESTIMATES_READ)
   list(
     @AuthenticatedUser() actor: IAuthorizedUser,
-    @Query() query: CursorPaginationDto,
+    @Query() query: ListEngineeringEstimatesDto,
   ): Promise<ICursorPage<IEstimateSummary>> {
     return this.estimates.list(actor, query);
   }

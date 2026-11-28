@@ -22,6 +22,7 @@ interface IEstimateListing {
   actorId: string;
   batchSize: number;
   canReview: boolean;
+  projectId: string | null;
   canReadProjects: boolean;
   batchCursor: string | null;
 }
@@ -65,6 +66,7 @@ export class EngineeringEstimateRepository {
         FROM engineering_estimates e
         LEFT JOIN engineering_estimate_revisions r ON r.estimate_id=e.id AND r.version=e.version
         WHERE ($canReview OR e.created_by_id = $actorId)
+          AND ($projectId::uuid IS NULL OR e.project_id = $projectId::uuid)
           AND (e.project_id IS NULL OR ($canReadProjects AND EXISTS (
             SELECT 1 FROM projects p WHERE p.id=e.project_id AND p.deleted_at IS NULL
           )))
@@ -75,6 +77,7 @@ export class EngineeringEstimateRepository {
           actorId,
           canReview,
           canReadProjects,
+          projectId: filters.projectId,
           limit: batchSize + 1,
           positionDate: position?.createdAt ?? null,
           positionId: position?.id ?? null,

@@ -32,6 +32,13 @@ import type {
 } from '../interfaces/engineering-estimate.interface';
 
 import { Type } from 'class-transformer';
+import { CursorPaginationDto } from '@Dto/cursor-pagination.dto';
+
+export class ListEngineeringEstimatesDto extends CursorPaginationDto {
+  @IsOptional()
+  @IsUUID()
+  declare projectId?: string;
+}
 
 export class CreateEngineeringEstimateDto {
   @IsString()

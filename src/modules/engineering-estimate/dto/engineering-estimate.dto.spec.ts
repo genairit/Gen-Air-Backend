@@ -1,8 +1,7 @@
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { ValidationPipe } from '@nestjs/common';
-import { EstimateSketchDto } from './engineering-estimate.dto';
-import { UpdateEngineeringEstimateDto } from './engineering-estimate.dto';
+import * as estimateDto from './engineering-estimate.dto';
 
 const validation = new ValidationPipe({
   transform: true,
@@ -55,7 +54,7 @@ describe('Estimate nested DTO validation', (): void => {
       await expect(
         validation.transform(input, {
           type: 'body',
-          metatype: UpdateEngineeringEstimateDto,
+          metatype: estimateDto.UpdateEngineeringEstimateDto,
         }),
       ).rejects.toMatchObject({ status: 400 });
     }
@@ -72,9 +71,26 @@ describe('Estimate nested DTO validation', (): void => {
       await expect(
         validation.transform(
           { version: 1, samples },
-          { type: 'body', metatype: EstimateSketchDto },
+          { type: 'body', metatype: estimateDto.EstimateSketchDto },
         ),
       ).rejects.toMatchObject({ status: 400 });
     }
+  });
+});
+
+describe('Estimate list query validation', () => {
+  const query = {
+    type: 'query',
+    metatype: estimateDto.ListEngineeringEstimatesDto,
+  } as const;
+
+  it('accepts a UUID with pagination and rejects an invalid project filter', async () => {
+    const projectId = randomUUID();
+    await expect(
+      validation.transform({ projectId, batchSize: '1' }, query),
+    ).resolves.toMatchObject({ projectId, batchSize: 1 });
+    await expect(
+      validation.transform({ projectId: 'invalid' }, query),
+    ).rejects.toMatchObject({ status: 400 });
   });
 });
