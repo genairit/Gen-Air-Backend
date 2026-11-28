@@ -24,6 +24,7 @@ export const ESTIMATE_LINE_SOURCE = { MANUAL: 'manual', RULE: 'rule' } as const;
 export const ESTIMATE_DOCUMENT_KIND = {
   SKETCH: 'sketch',
   PROPOSAL: 'proposal',
+  BOQ: 'boq',
 } as const;
 
 export const ESTIMATE_LIMITS = {
