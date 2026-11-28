@@ -25,7 +25,7 @@ export class QuotationPdfService {
   async preview(
     id: string,
     actor: IAuthorizedUser,
-  ): Promise<Record<string, unknown>> {
+  ): ReturnType<QuotationPdfSnapshotService['preview']> {
     const quotation = await this.quotations.getForActor(id, actor);
     const mayReadProjects = hasPermission(actor, PERMISSIONS.PROJECTS_READ);
     const mayReadCustomer =

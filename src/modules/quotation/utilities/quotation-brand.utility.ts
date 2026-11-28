@@ -41,7 +41,7 @@ export const resolveQuotationBrandGroups = (
   const existingById = new Map(
     existing.map((section) => [section.id, section]),
   );
-  const floors = new Map<string, { name: string; order: number }>();
+  const floors = new Map<string | null, { name: string; order: number }>();
   const sections = input.sections.map((section) => {
     const brand = quotationSectionBrand(section, input.brand);
 
@@ -55,10 +55,10 @@ export const resolveQuotationBrandGroups = (
 
     // Older clients omit both fields. An explicit null pair removes an assignment.
     const assignment =
-      section.floorId === undefined && section.floorName === undefined
-        ? existingById.get(section.id)
-        : section;
-    const floorId = assignment?.floorId ?? null;
+      'floorId' in section || 'floorName' in section
+        ? section
+        : existingById.get(section.id);
+    const floorId = assignment?.floorId?.toLowerCase() ?? null;
     const floorName = assignment?.floorName?.trim() ?? null;
     if (
       (floorId === null) !== (floorName === null) ||
@@ -74,7 +74,9 @@ export const resolveQuotationBrandGroups = (
           'למערכות באותה קומה יש לציין שם קומה זהה',
         );
       }
-      if (!floor) floors.set(floorId, { name: floorName, order: floors.size });
+      if (!floor) {
+        floors.set(floorId, { name: floorName, order: floors.size });
+      }
     }
     return { ...section, brand, floorId, floorName };
   });
@@ -82,7 +84,7 @@ export const resolveQuotationBrandGroups = (
   const groupOrder = (brand: string | null): number =>
     brand === null ? brands.length : brands.indexOf(brand);
   const floorOrder = (section: (typeof sections)[number]): number =>
-    section.floorId ? floors.get(section.floorId)!.order : floors.size;
+    floors.get(section.floorId)?.order ?? floors.size;
   return {
     brands,
     sections: sections.sort(

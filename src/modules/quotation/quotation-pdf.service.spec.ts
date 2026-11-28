@@ -311,8 +311,6 @@ it('returns live preview metadata for the same document without exposing hidden 
   const preview = await state.service!.preview(document.id, reader);
   expect(quotation.getForActor).toHaveBeenCalledWith(document.id, reader);
   expect(preview).toMatchObject({
-    defaultPayment: expect.any(Array),
-    paymentTermLabels: expect.any(Object),
     recipientContext: {
       customerId: document.customerId,
       projectId: project.id,
@@ -327,6 +325,8 @@ it('returns live preview metadata for the same document without exposing hidden 
     metadata: { customerTaxId: null },
     project: { name: null, address: null },
   });
+  expect(Array.isArray(preview.defaultPayment)).toBe(true);
+  expect(preview.paymentTermLabels).toHaveProperty('prepaid');
   expect(render).not.toHaveBeenCalled();
   expect(preview).not.toHaveProperty('source');
   expect(preview).not.toHaveProperty('internalNotes');
