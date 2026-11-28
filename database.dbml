@@ -906,7 +906,7 @@ Table quotation_lifecycle_events {
 }
 
 Table quotation_publication_roles {
-  role text [pk, note: 'quotation/order/archive stable semantic destination']
+  role text [pk, note: 'quotation/order/archive/boq stable semantic destination']
   template_id uuid [not null, unique, ref: > drive_template_folders.id]
 }
 Table quotation_publication_folders {
